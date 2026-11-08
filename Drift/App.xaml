@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="Drift.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Arc-style palette: a warm window colour, translucent chips on top of it,
+                 and near-white for whatever is active. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <!-- Plain acrylic: no tint of Drift's own over it, so the windows behind show through. -->
+                    <SolidColorBrush x:Key="DriftWindowBrush" Color="Transparent" />
+                    <!-- The sidebar floats over the page when hidden, so it needs its own backdrop. -->
+                    <AcrylicBrush x:Key="DriftFloatingSidebarBrush" TintColor="#EEE8D6" TintOpacity="0.85" FallbackColor="#EEE8D6" />
+                    <SolidColorBrush x:Key="DriftPageBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="DriftPageBorderBrush" Color="#1A000000" />
+                    <SolidColorBrush x:Key="DriftPillBrush" Color="#14000000" />
+                    <SolidColorBrush x:Key="DriftPillHoverBrush" Color="#1C000000" />
+                    <SolidColorBrush x:Key="DriftTileBrush" Color="#0D000000" />
+                    <SolidColorBrush x:Key="DriftHoverBrush" Color="#14000000" />
+                    <SolidColorBrush x:Key="DriftActiveBrush" Color="#FAF9F4" />
+                    <!-- The selected tab or tile: see-through, so the acrylic carries on under it. -->
+                    <SolidColorBrush x:Key="DriftSelectedBrush" Color="#B3FFFFFF" />
+                    <SolidColorBrush x:Key="DriftActiveBorderBrush" Color="#14000000" />
+                    <SolidColorBrush x:Key="DriftDividerBrush" Color="#1A000000" />
+                    <!-- Where a dragged tab will land beside the page (split view). -->
+                    <SolidColorBrush x:Key="DriftDropOutlineBrush" Color="#33000000" />
+                    <SolidColorBrush x:Key="DriftIconBrush" Color="#4A4844" />
+                    <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#8F8875" />
+                    <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#EBEBEB" />
+                    <SolidColorBrush x:Key="DriftPeekButtonBorderBrush" Color="#1A000000" />
+                    <!-- The square holding a Peek page's icon at the end of a pinned row. -->
+                    <SolidColorBrush x:Key="DriftPeekBadgeBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="DriftPeekBadgeBorderBrush" Color="#1F000000" />
+                    <!-- The command bar's card (Ctrl+T, Ctrl+L). -->
+                    <SolidColorBrush x:Key="DriftCommandBarBrush" Color="#FFFFFF" />
+                    <!-- Ctrl+Tab's bar, frosted over the page. -->
+                    <AcrylicBrush x:Key="DriftSwitcherBrush" TintColor="#FFFFFF" TintOpacity="0.7" FallbackColor="#F7F7F5" />
+                    <!-- Private windows: a violet tint over the acrylic, and a badge saying so. -->
+                    <SolidColorBrush x:Key="DriftPrivateWindowBrush" Color="#337A5AC8" />
+                    <SolidColorBrush x:Key="DriftPrivateBadgeBrush" Color="#337A5AC8" />
+                    <SolidColorBrush x:Key="DriftPrivateBadgeTextBrush" Color="#4B2E8F" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="DriftWindowBrush" Color="Transparent" />
+                    <AcrylicBrush x:Key="DriftFloatingSidebarBrush" TintColor="#23211D" TintOpacity="0.85" FallbackColor="#23211D" />
+                    <SolidColorBrush x:Key="DriftPageBrush" Color="#1C1B19" />
+                    <SolidColorBrush x:Key="DriftPageBorderBrush" Color="#1FFFFFFF" />
+                    <SolidColorBrush x:Key="DriftPillBrush" Color="#1AFFFFFF" />
+                    <SolidColorBrush x:Key="DriftPillHoverBrush" Color="#24FFFFFF" />
+                    <SolidColorBrush x:Key="DriftTileBrush" Color="#12FFFFFF" />
+                    <SolidColorBrush x:Key="DriftHoverBrush" Color="#1AFFFFFF" />
+                    <SolidColorBrush x:Key="DriftActiveBrush" Color="#3D3A34" />
+                    <SolidColorBrush x:Key="DriftSelectedBrush" Color="#2EFFFFFF" />
+                    <SolidColorBrush x:Key="DriftActiveBorderBrush" Color="#1FFFFFFF" />
+                    <SolidColorBrush x:Key="DriftDividerBrush" Color="#1FFFFFFF" />
+                    <SolidColorBrush x:Key="DriftDropOutlineBrush" Color="#40FFFFFF" />
+                    <SolidColorBrush x:Key="DriftIconBrush" Color="#D8D3C8" />
+                    <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#9C9688" />
+                    <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#383838" />
+                    <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#323232" />
+                    <SolidColorBrush x:Key="DriftPeekBadgeBrush" Color="#56514A" />
+                    <SolidColorBrush x:Key="DriftPeekBadgeBorderBrush" Color="#33FFFFFF" />
+                    <SolidColorBrush x:Key="DriftPeekButtonBorderBrush" Color="#24FFFFFF" />
+                    <SolidColorBrush x:Key="DriftCommandBarBrush" Color="#2A2825" />
+                    <AcrylicBrush x:Key="DriftSwitcherBrush" TintColor="#2A2825" TintOpacity="0.75" FallbackColor="#2A2825" />
+                    <SolidColorBrush x:Key="DriftPrivateWindowBrush" Color="#4D2A1F4A" />
+                    <SolidColorBrush x:Key="DriftPrivateBadgeBrush" Color="#4D9A7AE8" />
+                    <SolidColorBrush x:Key="DriftPrivateBadgeTextBrush" Color="#E4DAFF" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Borderless button that only shows a background on hover/press. -->
+            <Style x:Key="SubtleButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+
+            <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+                <Setter Property="Width" Value="30" />
+                <Setter Property="Height" Value="30" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Foreground" Value="{ThemeResource DriftIconBrush}" />
+            </Style>
+
+            <!-- The command bar's field: just text and its placeholder on the card. A template of its own
+                 rather than the stock one with parts hidden: no fill, border, underline or clear button
+                 (Esc clears and closes; Arc's field has none). ContentElement and
+                 PlaceholderTextContentPresenter are the parts TextBox needs; the rest are optional. -->
+            <Style x:Key="CommandBoxStyle" TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Grid Background="Transparent">
+                                <ScrollViewer x:Name="ContentElement"
+                                              HorizontalScrollMode="{TemplateBinding ScrollViewer.HorizontalScrollMode}"
+                                              HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                              VerticalScrollMode="{TemplateBinding ScrollViewer.VerticalScrollMode}"
+                                              VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                              IsHorizontalRailEnabled="{TemplateBinding ScrollViewer.IsHorizontalRailEnabled}"
+                                              IsVerticalRailEnabled="{TemplateBinding ScrollViewer.IsVerticalRailEnabled}"
+                                              IsDeferredScrollingEnabled="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
+                                              Padding="{TemplateBinding Padding}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              IsTabStop="False"
+                                              ZoomMode="Disabled"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock x:Name="PlaceholderTextContentPresenter"
+                                           Foreground="{ThemeResource DriftSecondaryTextBrush}"
+                                           Padding="{TemplateBinding Padding}"
+                                           Text="{TemplateBinding PlaceholderText}"
+                                           TextAlignment="{TemplateBinding TextAlignment}"
+                                           TextWrapping="{TemplateBinding TextWrapping}"
+                                           IsHitTestVisible="False" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Settings window: a page title, and cards that group rows split by hairlines (like Dia's). -->
+            <Style x:Key="SettingsTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="20" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Margin" Value="0,0,0,12" />
+            </Style>
+            <Style x:Key="SettingsGroupStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+            <Style x:Key="SettingsRowStyle" TargetType="Grid">
+                <Setter Property="Padding" Value="14,10" />
+                <Setter Property="MinHeight" Value="52" />
+                <Setter Property="ColumnSpacing" Value="12" />
+            </Style>
+            <Style x:Key="SettingsDividerStyle" TargetType="Border">
+                <Setter Property="Height" Value="1" />
+                <Setter Property="Background" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            </Style>
+            <Style x:Key="SettingsDescriptionStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+
+            <Style x:Key="TabCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+                <Setter Property="Width" Value="24" />
+                <Setter Property="Height" Value="24" />
+            </Style>
+
+            <!-- The round buttons that float beside the Peek card: a neutral surface that follows
+                 light/dark mode, with the glyph in the system accent colour. -->
+            <Style x:Key="PeekButtonStyle" TargetType="Button">
+                <Setter Property="Width" Value="32" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="FocusVisualMargin" Value="-3" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid x:Name="Surface"
+                                  CornerRadius="16"
+                                  BorderThickness="1"
+                                  BorderBrush="{ThemeResource DriftPeekButtonBorderBrush}"
+                                  Background="{ThemeResource DriftPeekButtonBrush}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Surface.Background" Value="{ThemeResource DriftPeekButtonHoverBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Surface.Background" Value="{ThemeResource DriftPeekButtonPressedBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Glyph.Opacity" Value="0.4" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter x:Name="Glyph"
+                                                  Content="{TemplateBinding Content}"
+                                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Pinned tab tile. A plain template: the chip and the content are siblings,
+                 so the Peek badge in the item template can overhang the corner. -->
+            <Style x:Key="PinnedTileStyle" TargetType="GridViewItem">
+                <Setter Property="Margin" Value="4" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="GridViewItem">
+                            <Grid>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftHoverBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftHoverBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Selected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="PointerOverSelected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="PressedSelected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Border x:Name="Chip"
+                                        CornerRadius="8"
+                                        BorderThickness="1"
+                                        BorderBrush="Transparent"
+                                        Background="{ThemeResource DriftTileBrush}" />
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Regular tab row: transparent until hovered, near-white when active. -->
+            <Style x:Key="TabRowStyle" TargetType="ListViewItem">
+                <Setter Property="Margin" Value="0,1" />
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <Grid x:Name="Chip"
+                                  CornerRadius="8"
+                                  BorderThickness="1"
+                                  BorderBrush="Transparent"
+                                  Background="Transparent"
+                                  Padding="10,0,4,0">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftHoverBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftHoverBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Selected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="PointerOverSelected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="PressedSelected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="Center" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
