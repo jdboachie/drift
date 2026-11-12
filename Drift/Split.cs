@@ -6,14 +6,19 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Drift;
 
 /// <summary>Split view's divider: a strip with the left-right resize pointer.</summary>
-public sealed partial class SplitDivider : Grid
+/// <summary>
+/// Something dragged sideways to resize: the split view's divider, the sidebar's edge. A Grid with the
+/// left-right resize pointer over it (the cursor's only settable from inside the element).
+/// </summary>
+public sealed partial class ResizeGrip : Grid
 {
-    public SplitDivider() => ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+    public ResizeGrip() => ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
 }
 
 /// <summary>
@@ -148,6 +153,7 @@ public sealed partial class MainWindow
         }
         _shownSplit = split;
         LayoutPages();
+        PlaceSplitCards();
     }
 
     private void LayoutPages()
@@ -157,12 +163,14 @@ public sealed partial class MainWindow
             LeftPaneColumn.Width = new GridLength(1, GridUnitType.Star);
             SplitGapColumn.Width = RightPaneColumn.Width = new GridLength(0);
             SplitCard.Visibility = SplitDivider.Visibility = Visibility.Collapsed;
+            ShowPageHandles();
             return;
         }
         LeftPaneColumn.Width = new GridLength(split.Ratio, GridUnitType.Star);
         SplitGapColumn.Width = new GridLength(SplitGap);
         RightPaneColumn.Width = new GridLength(1 - split.Ratio, GridUnitType.Star);
         SplitCard.Visibility = SplitDivider.Visibility = Visibility.Visible;
+        ShowPageHandles();
     }
 
     /// <summary>A click into one of the split's pages makes it the one you're on (address bar, shortcuts).</summary>
@@ -187,14 +195,85 @@ public sealed partial class MainWindow
         });
     }
 
-    /// <summary>A half's close button shows while that half is hovered (it takes no room otherwise).</summary>
-    private void SplitHalf_PointerEntered(object sender, PointerRoutedEventArgs e) => ShowHalfClose(sender, true);
-    private void SplitHalf_PointerExited(object sender, PointerRoutedEventArgs e) => ShowHalfClose(sender, false);
-
-    private static void ShowHalfClose(object half, bool show)
+    /// <summary>A half, the first time it's shown: it shrinks a little while pressed, by itself.</summary>
+    private void SplitHalf_Loaded(object sender, RoutedEventArgs e)
     {
-        if (half is Grid grid && grid.Children.OfType<Button>().FirstOrDefault() is { } close)
-            close.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (sender is UIElement half && !_pressFeedback.Contains(half)) AddPressFeedback(half, 0.97f);
+    }
+
+    /// <summary>
+    /// Hovered, a half lights up as a row does (unless the card's on it), and its favicon gives its spot
+    /// to its ×: the title keeps all its room.
+    /// </summary>
+    private void SplitHalf_PointerEntered(object sender, PointerRoutedEventArgs e) => ShowHalfHover(sender, true);
+    private void SplitHalf_PointerExited(object sender, PointerRoutedEventArgs e) => ShowHalfHover(sender, false);
+
+    private void ShowHalfHover(object sender, bool over)
+    {
+        if (sender is not Grid half) return;
+        var carded = half.Tag is BrowserTab { Split: { } split } page && split == _shownSplit && FrontOf(split) == page;
+        half.Background = over && !carded
+            ? (Brush)Application.Current.Resources["DriftHoverBrush"]
+            : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        if (half.Children.OfType<Button>().FirstOrDefault() is { } close)
+        {
+            close.Opacity = over ? 1 : 0;
+            close.IsHitTestVisible = over;
+        }
+        if (half.Children.OfType<Grid>().FirstOrDefault() is { } icon) icon.Visibility = over ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    // ── The card on the half you're on ──
+
+    private void SplitCard_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is Border card) PlaceSplitCard(card, animate: false);
+    }
+
+    private void SplitRow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is Grid row && row.Children.OfType<Border>().FirstOrDefault() is { } card) PlaceSplitCard(card, animate: false);
+    }
+
+    /// <summary>Every split row's card, after the page you're on changed: across to it, or away.</summary>
+    private void PlaceSplitCards()
+    {
+        foreach (var row in Tabs.Where(t => t.IsSplitRow))
+            if (TabList.ContainerFromItem(row) is ListViewItem item && FindSplitCard(item) is { } card)
+                PlaceSplitCard(card, animate: true);
+    }
+
+    private static Border? FindSplitCard(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is Border { Tag: BrowserTab { IsSplitRow: true } } card) return card;
+            if (FindSplitCard(child) is { } found) return found;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The selected-tab card sits on the half you're on while the split is the tab you're on, and is
+    /// gone otherwise. Switching halves, it springs across from wherever it is (no bounce: a click throws
+    /// nothing); coming or going, it fades where it is. Between them, the hairline gives way to it.
+    /// </summary>
+    private void PlaceSplitCard(Border card, bool animate)
+    {
+        if (card.Tag is not BrowserTab { Split: { } split } || card.Parent is not Grid row) return;
+        var front = FrontOf(split);
+        if (row.Children.OfType<Grid>().FirstOrDefault(h => h.Tag == front) is not { ActualWidth: > 0 } half) return;
+        var shown = split == _shownSplit;
+        var at = new Vector3(half.ActualOffset.X, 0, 0);
+        card.Width = half.ActualWidth;
+        if (animate && shown && card.Opacity > 0) Spring.To(card, "Translation", at, duration: 0.3, bounce: 0);
+        else Spring.Jump(card, "Translation", at);
+        card.Opacity = shown ? 1 : 0;
+        if (row.Children.OfType<Border>().Skip(1).FirstOrDefault() is { } hairline) hairline.Opacity = shown ? 0 : 1;
+        // The half it's arrived on stops showing hover underneath it.
+        foreach (var each in row.Children.OfType<Grid>())
+            if (each == half && shown) each.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
     }
 
     /// <summary>
@@ -203,7 +282,13 @@ public sealed partial class MainWindow
     /// </summary>
     private void CloseSplitHalf_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not BrowserTab { Split: { } split } tab) return;
+        if ((sender as FrameworkElement)?.Tag is BrowserTab tab) CloseSplitPage(tab);
+    }
+
+    /// <summary>A page of a split closes (from its half's × or its handle's menu); the other stays on its own.</summary>
+    private void CloseSplitPage(BrowserTab tab)
+    {
+        if (tab.Split is not { } split) return;
         // Its Peek goes first, as on a tab's own row.
         if (ClosePeekOf(tab)) return;
         if (tab.IsPinned)
@@ -216,14 +301,14 @@ public sealed partial class MainWindow
     }
 
     /// <summary>The row's Close tabs: its regular tabs close; Essentials, pinned and folder tabs just leave it.</summary>
-    private void CloseSplit(TabSplit split)
+    private void CloseSplit(TabSplit split, bool remember = true)
     {
         var (left, right) = (split.Left, split.Right);
         SeparateTabs(split);
         // A page that stays (an Essential, pinned or folder tab) is the one you're on after.
         if (new[] { left, right }.FirstOrDefault(p => p.IsPinned) is { } staying && (_active == left || _active == right))
             Activate(staying);
-        foreach (var page in new[] { left, right }.Where(p => !p.IsPinned)) RemoveTab(page);
+        foreach (var page in new[] { left, right }.Where(p => !p.IsPinned)) RemoveTab(page, remember);
     }
 
     private void SplitWithCurrent_Click(object sender, RoutedEventArgs e)
@@ -281,16 +366,21 @@ public sealed partial class MainWindow
         ShowGrip();
     }
 
-    /// <summary>The grip: faint at rest, brighter under the pointer, accent-coloured and a little taller while held.</summary>
-    private void ShowGrip()
+    private void ShowGrip() => ShowGrip(SplitGrip, SplitGripAccent, _overDivider, _draggingDivider, atRest: 0.3);
+
+    /// <summary>
+    /// A resize grip (the split divider's, the sidebar edge's): at rest faint (the divider's) or out of
+    /// sight (the sidebar's), brighter under the pointer, accent-coloured and a little taller while held.
+    /// </summary>
+    private static void ShowGrip(UIElement grip, UIElement accent, bool over, bool held, double atRest)
     {
-        SplitGrip.Opacity = _draggingDivider ? 0 : _overDivider ? 0.6 : 0.3;
-        SplitGripAccent.Opacity = _draggingDivider ? 1 : 0;
-        var grow = _draggingDivider ? new Vector3(1, 1.25f, 1) : Vector3.One;
-        foreach (var grip in new UIElement[] { SplitGrip, SplitGripAccent })
+        grip.Opacity = held ? 0 : over ? 0.6 : atRest;
+        accent.Opacity = held ? 1 : 0;
+        var grow = held ? new Vector3(1, 1.25f, 1) : Vector3.One;
+        foreach (var part in new[] { grip, accent })
         {
-            grip.CenterPoint = new Vector3(2, 16, 0);
-            Spring.To(grip, "Scale", grow, 0.3, _draggingDivider ? 0.2 : 0.3);
+            part.CenterPoint = new Vector3(2, 16, 0);
+            Spring.To(part, "Scale", grow, 0.3, held ? 0.2 : 0.3);
         }
     }
 
@@ -308,7 +398,8 @@ public sealed partial class MainWindow
     {
         if (!_draggingDivider || _shownSplit is not { } split) return;
         var x = e.GetCurrentPoint(PageColumns).Position.X;
-        split.Ratio = SplitLayout.Ratio(x - SplitGap / 2, PageColumns.ActualWidth - SplitGap, MinPaneWidth);
+        // Past a page's minimum it gives a little, with resistance; it springs back on letting go.
+        split.Ratio = SplitLayout.Stretched(x - SplitGap / 2, PageColumns.ActualWidth - SplitGap, MinPaneWidth);
         LayoutPages();
         e.Handled = true;
     }
@@ -319,7 +410,9 @@ public sealed partial class MainWindow
         _draggingDivider = false;
         SplitDivider.ReleasePointerCapture(e.Pointer);
         ShowGrip();
+        SpringBackInside();
         SaveSessionSoon();
+        UpdateDragRegions();
         e.Handled = true;
     }
 
@@ -328,13 +421,23 @@ public sealed partial class MainWindow
         if (!_draggingDivider) return;
         _draggingDivider = false;
         ShowGrip();
+        SpringBackInside();
+    }
+
+    /// <summary>Let go stretched past a page's minimum: back to it, on the same spring as double-clicking.</summary>
+    private void SpringBackInside()
+    {
+        if (_shownSplit is not { } split) return;
+        var width = PageColumns.ActualWidth - SplitGap;
+        var inside = SplitLayout.Ratio(split.Ratio * width, width, MinPaneWidth);
+        if (System.Math.Abs(inside - split.Ratio) * width >= 0.5) SpringToRatio(split, inside);
     }
 
     /// <summary>Half and half again.</summary>
     private void SplitDivider_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         if (_shownSplit is not { } split) return;
-        SpringToEven(split);
+        SpringToRatio(split, 0.5);
         SaveSessionSoon();
     }
 
@@ -488,21 +591,24 @@ public sealed partial class MainWindow
 
     private TabSplit? _evenSplit;
     private SpringMotion? _evenSpring;
+    private double _evenTarget;
     private long _evenFrame;
 
-    private void SpringToEven(TabSplit split)
+    /// <summary>The divider springs to a ratio: the middle (double-click), or back inside a page's minimum.</summary>
+    private void SpringToRatio(TabSplit split, double ratio)
     {
         var width = PageColumns.ActualWidth - SplitGap;
         if (!_uiSettings.AnimationsEnabled || width <= 0)
         {
-            split.Ratio = 0.5;
+            split.Ratio = ratio;
             LayoutPages();
             return;
         }
         StopEvenSpring();
         _evenSplit = split;
+        _evenTarget = ratio;
         // In pixels of the left page's width, so it comes to rest within half a pixel.
-        _evenSpring = new SpringMotion(SplitSpringSeconds, SplitSpringBounce) { Position = split.Ratio * width, Target = width / 2 };
+        _evenSpring = new SpringMotion(SplitSpringSeconds, SplitSpringBounce) { Position = split.Ratio * width, Target = ratio * width };
         _evenFrame = System.Environment.TickCount64;
         Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += EvenFrame;
     }
@@ -520,9 +626,10 @@ public sealed partial class MainWindow
         var width = PageColumns.ActualWidth - SplitGap;
         if (width <= 0 || spring.AtRest)
         {
-            split.Ratio = 0.5;
+            split.Ratio = _evenTarget;
             LayoutPages();
             StopEvenSpring();
+            UpdateDragRegions();
             return;
         }
         split.Ratio = System.Math.Clamp(spring.Position / width, 0.05, 0.95);

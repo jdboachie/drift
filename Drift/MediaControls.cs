@@ -155,7 +155,12 @@ public sealed partial class MainWindow
             if (arriving)
             {
                 MediaCard.CenterPoint = new Vector3(100, CompactHeight / 2, 0);
-                Spring.To(MediaCard, "Scale", Vector3.One, 0.3, 0.2, from: new Vector3(0.94f, 0.94f, 1));
+                Spring.To(MediaCard, "Scale", Vector3.One, 0.3, 0, from: new Vector3(0.94f, 0.94f, 1));
+                if (!_uiSettings.AnimationsEnabled)
+                {
+                    MediaCard.Opacity = 0;
+                    Ui.Fade(MediaCard, 1);
+                }
             }
             if (_mediaExpanded) _ = RefreshMediaStateAsync();
         }

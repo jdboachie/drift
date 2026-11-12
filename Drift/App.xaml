@@ -19,6 +19,7 @@
                     <AcrylicBrush x:Key="DriftFloatingSidebarBrush" TintColor="#EEE8D6" TintOpacity="0.85" FallbackColor="#EEE8D6" />
                     <SolidColorBrush x:Key="DriftPageBrush" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="DriftPageBorderBrush" Color="#1A000000" />
+                    <SolidColorBrush x:Key="DriftFocusedPageBorderBrush" Color="#38000000" />
                     <SolidColorBrush x:Key="DriftPillBrush" Color="#14000000" />
                     <SolidColorBrush x:Key="DriftPillHoverBrush" Color="#1C000000" />
                     <SolidColorBrush x:Key="DriftTileBrush" Color="#0D000000" />
@@ -53,6 +54,7 @@
                     <AcrylicBrush x:Key="DriftFloatingSidebarBrush" TintColor="#23211D" TintOpacity="0.85" FallbackColor="#23211D" />
                     <SolidColorBrush x:Key="DriftPageBrush" Color="#1C1B19" />
                     <SolidColorBrush x:Key="DriftPageBorderBrush" Color="#1FFFFFFF" />
+                    <SolidColorBrush x:Key="DriftFocusedPageBorderBrush" Color="#47FFFFFF" />
                     <SolidColorBrush x:Key="DriftPillBrush" Color="#1AFFFFFF" />
                     <SolidColorBrush x:Key="DriftPillHoverBrush" Color="#24FFFFFF" />
                     <SolidColorBrush x:Key="DriftTileBrush" Color="#12FFFFFF" />
@@ -317,6 +319,45 @@
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
                                                   HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                                                   VerticalContentAlignment="Center" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- The handle on each page of a split (SplitHandles.cs): its tab and dots, no button chrome. -->
+            <Style x:Key="PageHandleStyle" TargetType="Button">
+                <Setter Property="Width" Value="52" />
+                <Setter Property="Height" Value="18" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="IsTabStop" Value="True" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid Background="Transparent" CornerRadius="9">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- A split's row (Split.cs): no card or padding of its own. Its two halves fill it edge to edge, each
+                 with its own hover, and the selected-tab card sits on the half you're on. -->
+            <Style x:Key="SplitRowStyle" TargetType="ListViewItem">
+                <Setter Property="Margin" Value="0,1" />
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <Grid CornerRadius="8" Background="Transparent">
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalContentAlignment="Stretch"
+                                                  VerticalContentAlignment="Stretch" />
                             </Grid>
                         </ControlTemplate>
                     </Setter.Value>

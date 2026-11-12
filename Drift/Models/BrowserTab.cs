@@ -34,10 +34,21 @@ public enum TabCrash
 }
 
 /// <summary>Two tabs side by side: Left's page on the left, Right's on the right.</summary>
-public sealed class TabSplit(BrowserTab left, BrowserTab right)
+public sealed class TabSplit(BrowserTab left, BrowserTab right) : INotifyPropertyChanged
 {
-    public BrowserTab Left { get; } = left;
-    public BrowserTab Right { get; } = right;
+    public BrowserTab Left { get; private set; } = left;
+    public BrowserTab Right { get; private set; } = right;
+
+    /// <summary>The pages change sides, each keeping its width (the left's share becomes the right's).</summary>
+    public void Swap()
+    {
+        (Left, Right) = (Right, Left);
+        Ratio = 1 - Ratio;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Left)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Right)));
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>Its row in the tab list (a BrowserTab with IsSplitRow, standing for both pages).</summary>
     public BrowserTab? Row { get; set; }
@@ -85,7 +96,6 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
             OnPropertyChanged(nameof(ContentOpacity));
             OnPropertyChanged(nameof(PinnedActionGlyph));
             OnPropertyChanged(nameof(PinnedActionName));
-            OnPropertyChanged(nameof(HalfOpacity));
         }
     }
 
@@ -204,7 +214,7 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
 
     private bool _isFront = true;
 
-    /// <summary>In a split, whether this is the page you're on: its half of the row is the brighter one.</summary>
+    /// <summary>In a split, whether this is the page you're on: the selected-tab card sits on its half of the row.</summary>
     public bool IsFront
     {
         get => _isFront;
@@ -212,11 +222,9 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
         {
             if (_isFront == value) return;
             _isFront = value;
-            OnPropertyChanged(nameof(HalfOpacity));
+            OnPropertyChanged();
         }
     }
-
-    public double HalfOpacity => (_isFront ? 1 : 0.55) * ContentOpacity;
 
     /// <summary>When LinkPress happened, from Environment.TickCount64.</summary>
     public long LinkPressTime { get; set; }
@@ -331,6 +339,23 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
 
     /// <summary>Globe glyph on the badge until (or unless) the Peek page has an icon.</summary>
     public Visibility PeekPlaceholderVisibility => _peekFavicon is null ? Visibility.Visible : Visibility.Collapsed;
+
+    private bool _isNew;
+
+    /// <summary>In a live folder: arrived since you last looked, marked with a dot until it's opened (LiveFolders.cs).</summary>
+    public bool IsNew
+    {
+        get => _isNew;
+        set
+        {
+            if (_isNew == value) return;
+            _isNew = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(NewVisibility));
+        }
+    }
+
+    public Visibility NewVisibility => _isNew ? Visibility.Visible : Visibility.Collapsed;
 
     private string? _meetingText;
 

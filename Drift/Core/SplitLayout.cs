@@ -81,4 +81,20 @@ public static class SplitLayout
         if (width < minPane * 2) return 0.5;
         return System.Math.Clamp(x, minPane, width - minPane) / width;
     }
+
+    /// <summary>How far past a page's minimum the divider can be pulled, at most, in pixels.</summary>
+    public const double Stretch = 24;
+
+    /// <summary>
+    /// While the divider's dragged: as Ratio, but pulled past a page's minimum it gives a little,
+    /// ever less the further it's pulled (approaching Stretch), instead of stopping dead. On letting
+    /// go it springs back to Ratio.
+    /// </summary>
+    public static double Stretched(double x, double width, double minPane)
+    {
+        if (width < minPane * 2) return 0.5;
+        var edge = System.Math.Clamp(x, minPane, width - minPane);
+        var past = System.Math.Abs(x - edge);
+        return (edge + System.Math.Sign(x - edge) * Stretch * (1 - 1 / (1 + past / Stretch))) / width;
+    }
 }

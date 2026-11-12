@@ -43,14 +43,28 @@ internal static class Spring
     /// Starting speed, as a fraction of the spring's natural speed towards its end (0 = from rest).
     /// A spring from rest starts slowly, like ease-in; a kick makes it leave at once, like ease-out.
     /// </param>
+    /// <param name="velocity">
+    /// Starting speed in pixels a second, with <paramref name="from"/>: a drag's at letting go, so
+    /// the motion carries straight on from the pointer with no seam. Takes the place of a kick.
+    /// </param>
     public static void To(UIElement element, string property, Vector3 value, double duration, double bounce,
-        TimeSpan delay = default, Vector3? from = null, double kick = 0)
+        TimeSpan delay = default, Vector3? from = null, double kick = 0, Vector3? velocity = null)
     {
-        if (!Settings.AnimationsEnabled)
+        // Off screen (collapsed, or out of the window), there's nothing to animate, and the compositor
+        // mustn't be asked to: a spring started on an element with no visual crashed it (an access
+        // violation in dwmcorei, sampling the start value of an element that wasn't there).
+        var running = Running.GetOrCreateValue(element);
+        var midFlight = running.ContainsKey(property);
+        // A spring with no start value has the compositor sample the element's, and on an element it
+        // isn't drawing that crashed it too (dwmcorei, CNaturalAnimation::SampleInitialValue..., after
+        // the sidebar's edge was let go: its grip's parts sit at opacity 0). So: never sample unless it's
+        // mid-flight, when only the compositor knows where it's got to; and then not if it can't be seen.
+        if (!Settings.AnimationsEnabled || !OnScreen(element) || (from is null && midFlight && !Seen(element)))
         {
             Jump(element, property, value);
             return;
         }
+        if (from is null && !midFlight) from = property == "Scale" ? element.Scale : element.Translation;
         if (from is not null) Jump(element, property, value);
 
         var spring = CompositionTarget.GetCompositorForCurrentThread().CreateSpringVector3Animation();
@@ -65,11 +79,11 @@ internal static class Spring
             spring.InitialValue = start;
             // Show the start value during any delay, rather than the end value.
             spring.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
-            if (kick > 0) spring.InitialVelocity = (value - start) * (float)(kick * 2 * Math.PI / duration);
+            if (velocity is { } speed) spring.InitialVelocity = speed;
+            else if (kick > 0) spring.InitialVelocity = (value - start) * (float)(kick * 2 * Math.PI / duration);
         }
         if (delay > TimeSpan.Zero) spring.DelayTime = delay;
 
-        var running = Running.GetOrCreateValue(element);
         // Where it's coming from: the given start, where a running spring was heading, or the value at rest.
         var origin = from
             ?? (running.TryGetValue(property, out var heading) ? heading.Target
@@ -99,6 +113,23 @@ internal static class Spring
         rest.Start();
     }
 
+    /// <summary>In the window and not collapsed, nor inside anything collapsed: something the compositor is drawing.</summary>
+    private static bool OnScreen(UIElement element)
+    {
+        if (element.XamlRoot is null) return false;
+        for (DependencyObject? e = element; e is not null; e = VisualTreeHelper.GetParent(e))
+            if (e is UIElement { Visibility: Visibility.Collapsed }) return false;
+        return true;
+    }
+
+    /// <summary>Drawn with something to see: neither it nor anything it's in is fully transparent.</summary>
+    private static bool Seen(UIElement element)
+    {
+        for (DependencyObject? e = element; e is not null; e = VisualTreeHelper.GetParent(e))
+            if (e is UIElement { Opacity: <= 0 }) return false;
+        return true;
+    }
+
     /// <summary>Straight to a value, replacing any spring on the property.</summary>
     public static void Jump(UIElement element, string property, Vector3 value)
     {
@@ -108,6 +139,12 @@ internal static class Spring
         if (Running.TryGetValue(element, out var running) && running.Remove(property, out var run))
         {
             run.RestTimer.Stop();
+            // Gone from the screen: just stopped, since nothing can be animated there (see To).
+            if (!OnScreen(element))
+            {
+                element.StopAnimation(run.Animation);
+                return;
+            }
             // Stopping a spring leaves the element showing wherever it had got to, and setting the
             // property to the value it already holds changes nothing, so a card would stay at
             // Scale 1.0003 with soft borders. A 1ms animation lands it exactly on the value instead.

@@ -38,6 +38,26 @@ public class PeekExpandEdgesTests
     {
         Assert.Equal(new Edges(0, 0, 0, 0), PeekExpand.Inset(card: new Edges(0, 8, 8, 8), page: new Edges(0, 8, 8, 8)));
     }
+
+    [Fact]
+    public void Into_a_split_the_card_spans_where_it_is_and_the_right_half()
+    {
+        // Card 96 in either side; the right half from 604 in to 8 from the right.
+        var card = new Edges(96, 8, 96, 8);
+        var half = new Edges(604, 8, 8, 8);
+        var union = PeekExpand.Union(card, half);
+        Assert.Equal(new Edges(96, 8, 8, 8), union);
+        // Inside it: the card's page where it was, and the half at the right.
+        Assert.Equal(new Edges(0, 0, 88, 0), PeekExpand.Inset(card, union));
+        Assert.Equal(new Edges(508, 0, 0, 0), PeekExpand.Inset(half, union));
+    }
+
+    [Fact]
+    public void Opening_as_a_tab_the_card_spans_the_page()
+    {
+        var page = new Edges(0, 8, 8, 8);
+        Assert.Equal(page, PeekExpand.Union(new Edges(96, 8, 96, 8), page));
+    }
 }
 
 public class PeekExpandSpringTests
@@ -71,6 +91,52 @@ public class PeekExpandSpringTests
         var spring = PeekExpand.Grow(travel: 96);
         spring.Step(seconds);
         Assert.True(spring.AtRest);
+    }
+
+    [Fact]
+    public void Into_a_split_it_moves_on_peeks_spring_with_less_bounce()
+    {
+        static double Peak(SpringMotion spring)
+        {
+            var peak = 0.0;
+            for (var t = 0; t < 1000; t++)
+            {
+                spring.Step(0.001);
+                peak = System.Math.Max(peak, spring.Position);
+            }
+            return peak;
+        }
+        var split = PeekExpand.Grow(1, PeekExpand.SplitSeconds, PeekExpand.SplitBounce, PeekExpand.SplitKick);
+        // Leaves at once, like Peek opening.
+        Assert.True(split.Velocity > 0);
+        var splitPeak = Peak(split);
+        // Past the end, but less than opening as a tab: it's the biggest thing that moves.
+        Assert.InRange(splitPeak, 1.0, Peak(PeekExpand.Grow(1)));
+        Assert.True(splitPeak < 1.03);
+        Assert.InRange(PeekExpand.SettleSeconds(508, PeekExpand.SplitSeconds, PeekExpand.SplitBounce, PeekExpand.SplitKick), 0.2, 0.6);
+    }
+
+    [Fact]
+    public void Into_a_split_it_leaves_gently_enough_to_be_seen_going()
+    {
+        // The biggest thing that moves: a tenth of the way or less in its first frame, not a jump.
+        var split = PeekExpand.Grow(1, PeekExpand.SplitSeconds, PeekExpand.SplitBounce, PeekExpand.SplitKick);
+        split.Step(1.0 / 60);
+        Assert.InRange(split.Position, 0.0, 0.1);
+        Assert.True(PeekExpand.Grow(1, PeekExpand.SplitSeconds, PeekExpand.SplitBounce, PeekExpand.SplitKick).Velocity
+            < PeekExpand.Grow(1).Velocity);
+    }
+
+    [Fact]
+    public void Into_a_split_the_page_fades_in_once_the_card_is_all_but_there_not_after_its_tail()
+    {
+        var arrive = PeekExpand.ArriveSeconds(travel: 508, within: 2);
+        var spring = PeekExpand.Grow(508, PeekExpand.SplitSeconds, PeekExpand.SplitBounce, PeekExpand.SplitKick);
+        spring.Step(arrive);
+        Assert.True(508 - spring.Position <= 2.5);
+        Assert.InRange(arrive, 0.08, 0.3);
+        Assert.True(arrive < PeekExpand.SettleSeconds(508, PeekExpand.SplitSeconds, PeekExpand.SplitBounce, PeekExpand.SplitKick));
+        Assert.Equal(0, PeekExpand.ArriveSeconds(travel: 1, within: 2));
     }
 
     [Fact]

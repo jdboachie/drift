@@ -29,6 +29,12 @@
                     <TextBlock Text="Tabs" />
                 </StackPanel>
             </ListViewItem>
+            <ListViewItem Tag="ai" AutomationProperties.Name="AI">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <FontIcon Glyph="&#xE945;" FontSize="16" />
+                    <TextBlock Text="AI" />
+                </StackPanel>
+            </ListViewItem>
             <ListViewItem Tag="shortcuts" AutomationProperties.Name="Shortcuts">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <FontIcon Glyph="&#xE765;" FontSize="16" />
@@ -123,6 +129,18 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Close Drift on a second click" VerticalAlignment="Center" />
+                                    <ToggleSwitch x:Name="CloseTwiceToggle" Grid.Column="1" VerticalAlignment="Center"
+                                                  MinWidth="0" OnContent="" OffContent=""
+                                                  AutomationProperties.Name="Close Drift on a second click"
+                                                  Toggled="CloseTwiceToggle_Toggled" />
+                                </Grid>
+                                <Border Style="{StaticResource SettingsDividerStyle}" />
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock Text="Picture-in-picture when you leave a tab" />
                                         <TextBlock Text="A video that's playing floats in its own window" TextWrapping="Wrap"
@@ -184,6 +202,79 @@
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- AI: Ask AI in the command bar (AskAiBar.cs), with the Claude Code or Codex you have. -->
+                    <StackPanel x:Name="AiPage" Spacing="8" Visibility="Collapsed">
+                        <TextBlock Text="AI" Style="{StaticResource SettingsTitleStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Ask AI with Tab" />
+                                        <TextBlock Text="In the command bar" Style="{StaticResource SettingsDescriptionStyle}" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="AskTabToggle" Grid.Column="1" VerticalAlignment="Center"
+                                                  MinWidth="0" OnContent="" OffContent=""
+                                                  AutomationProperties.Name="Ask AI with Tab"
+                                                  Toggled="AskTabToggle_Toggled" />
+                                </Grid>
+                                <Border Style="{StaticResource SettingsDividerStyle}" />
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Preferred provider" VerticalAlignment="Center" />
+                                    <ComboBox x:Name="AskFirstCombo" Grid.Column="1" Width="160" VerticalAlignment="Center"
+                                              AutomationProperties.Name="Preferred provider"
+                                              SelectionChanged="AskFirstCombo_SelectionChanged">
+                                        <ComboBoxItem Content="Claude" />
+                                        <ComboBoxItem Content="Codex" />
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Claude" />
+                                    <TextBlock x:Name="ClaudeStatus" Style="{StaticResource SettingsDescriptionStyle}" Text="Checking…" />
+                                </StackPanel>
+                                <Button x:Name="ClaudeAction" Grid.Column="1" VerticalAlignment="Center" Visibility="Collapsed"
+                                        Click="AiAction_Click" Tag="Claude" />
+                                <ComboBox x:Name="ClaudeModelCombo" Grid.Column="2" Width="160" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Claude model"
+                                          SelectionChanged="AiModelCombo_SelectionChanged" />
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Codex" />
+                                    <TextBlock x:Name="CodexStatus" Style="{StaticResource SettingsDescriptionStyle}" Text="Checking…" />
+                                </StackPanel>
+                                <Button x:Name="CodexAction" Grid.Column="1" VerticalAlignment="Center" Visibility="Collapsed"
+                                        Click="AiAction_Click" Tag="Codex" />
+                                <ComboBox x:Name="CodexModelCombo" Grid.Column="2" Width="160" VerticalAlignment="Center"
+                                          AutomationProperties.Name="Codex model"
+                                          SelectionChanged="AiModelCombo_SelectionChanged" />
+                            </Grid>
                         </Border>
                     </StackPanel>
 

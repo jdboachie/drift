@@ -134,6 +134,22 @@ Same split as Arc: an unmodified engine with your own UI on top.
   them), Copy all links, and Delete folder, which asks whether to close its tabs or keep them in
   the folder above (or as pinned tabs). Tabs in folders behave like pinned tabs: "−" unloads one.
   Folders and whether each is open are saved with the session.
+- **Live folders**, like Arc's: a "Pull Requests" folder, marked with GitHub's logo, that keeps
+  itself to your open GitHub pull requests (ones you made, are assigned, are asked to review, or
+  are mentioned in). It's made for you the first time you make a pull request, once, or from the
+  `⋯` menu's New pull requests folder. It asks github.com's search, signed in as your tabs are,
+  every five minutes and soon after you do something on GitHub. New ones arrive at the top with a
+  dot until opened (a closed folder shows them under its header); finished ones go, unless they're
+  in front. Its tabs close as pinned tabs do, and one you close or drag out stays out while it's
+  open on GitHub. Nothing can be put in it. Empty, it says "No open pull requests"; signed out,
+  "Sign in to GitHub". Its menu adds Refresh and Open on GitHub.
+- **Asks before what can't be undone**: closing Drift with downloads running, private windows open,
+  or tabs it won't keep; closing or unloading a page whose site says it has unsaved changes (its
+  own "Leave site?" can't come, so Drift asks the page and asks you); clearing browsing data;
+  removing an extension; resetting every shortcut. A deleted bookmark or folder, and Clear Tabs,
+  aren't asked about: Undo shows for a moment instead, as in Chrome. Otherwise closing Drift takes a
+  second click of × (or Alt+F4) soon after the first, as Arc's "warn before quitting" does; it can
+  be turned off in Settings › Tabs.
 - Everything is kept on this machine, in `%LOCALAPPDATA%\Drift`: the web profile (logins, cookies,
   site data, saved passwords) in `Profile`, plus `session.json`, `settings.json`, `history.json`,
   `downloads.json`, site icons, and `Extensions` (the downloaded ad blocker).
@@ -202,17 +218,19 @@ Do this on the Windows side, not inside WSL.
 3. From PowerShell in this folder:
 
    ```
-   dotnet run
+   dotnet run --project Drift
    ```
 
-   On an ARM64 machine: `dotnet run -p:Platform=ARM64`
+   On an ARM64 machine: `dotnet run --project Drift -p:Platform=ARM64`
 
-Visual Studio also works: open `Drift.csproj` with the "WinUI application development"
+Visual Studio also works: open `Drift/Drift.csproj` with the "WinUI application development"
 workload installed, set the platform to x64, and press F5.
 
 Try Peek: the Hacker News pinned tab opens first. Click any story.
 
 ## Where things live
+
+Under `Drift/`:
 
 | File | What it does |
 |---|---|
@@ -221,6 +239,8 @@ Try Peek: the Hacker News pinned tab opens first. Click any story.
 | `Models/BrowserTab.cs` | One tab: its WebView2, title, favicon, pinned state, Peek badge |
 | `Models/TabFolder.cs` | One folder: its name, what's in it, whether it's open |
 | `Folders.cs` | Folders: the folder list, opening and closing, renaming, menus, dragging, saving |
+| `Confirm.cs` | Asking before what can't be undone (closing with downloads running, unsaved changes, clearing data…), and Undo for what can (Core/Warnings.cs words the questions) |
+| `LiveFolders.cs` | Live folders: asking GitHub for your pull requests and keeping the folder to them (Core/GitHubPulls.cs reads the search, Core/LiveFolder.cs works out the changes) |
 | `FolderRowTemplateSelector.cs` | Picks a folder header or a tab row for each row of the folder list |
 | `App.xaml` | Colours (light and dark), button styles, tile and tab-row templates |
 | `PopupWindow.cs` | Pages' own popups (sign-in windows), kept linked to the page that opened them |
@@ -266,5 +286,5 @@ the site, and `NewWindowRequested` catches `target="_blank"` links.
 - WinUI's WebView2 gives apps no way to read or set a page's zoom. Drift reads it from the page's
   pixel ratio, and resetting it presses Ctrl+0 in the page (so a page that takes that key for
   itself gets it instead). Zoom is per page: it resets as you navigate. Hosting the engine
-  directly would give real zoom control; see `ROADMAP.md`.
-- No split view yet. See `ROADMAP.md`.
+  directly would give real zoom control; see `Drift/ROADMAP.md`.
+- No split view yet. See `Drift/ROADMAP.md`.

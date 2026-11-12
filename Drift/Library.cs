@@ -26,7 +26,8 @@ namespace Drift;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private const double LibraryWidth = SidebarWidth * 2;
+    // Twice the default sidebar, and always wider than the sidebar as it's been sized.
+    private double LibraryWidth => Math.Max(2 * SidebarResize.Default, SidebarWidth + 140);
 
     /// <summary>About 0.3s, overshooting about 10px either way: a little springier than Zen (2–3px), which felt flat.</summary>
     private const double LibrarySpringSeconds = 0.3;
@@ -41,14 +42,16 @@ public sealed partial class MainWindow
     /// <summary>No sideways scroll for this long: the fingers have lifted.</summary>
     private const int SwipeEndMs = 140;
 
-    private readonly LibrarySwipe _librarySwipe = new(SidebarWidth, LibraryWidth);
-    private readonly SpringMotion _librarySpring = new(LibrarySpringSeconds, LibraryBounce) { Position = SidebarWidth, Target = SidebarWidth };
+    // From the sidebar's width as it is now, which it can be dragged to.
+    private LibrarySwipe _librarySwipe => new(SidebarWidth, LibraryWidth);
+    private readonly SpringMotion _librarySpring = new(LibrarySpringSeconds, LibraryBounce) { Position = SidebarResize.Default, Target = SidebarResize.Default };
     private readonly Stopwatch _libraryClock = Stopwatch.StartNew();
-    private double _libraryWidth = SidebarWidth;
+    private double _libraryWidth = SidebarResize.Default;
     private bool _libraryOpen;
     private bool _libraryStepping;
     private long _lastLibraryFrame;
-    private string _libraryPage = "downloads";
+    // The section it opens on: the one last shown, at first the first (Bookmarks).
+    private string _libraryPage = "bookmarks";
 
     // A swipe in progress: where the fingers have taken the sidebar (before any give at the ends),
     // and the last moments of it, for its speed when they lift.
@@ -120,6 +123,8 @@ public sealed partial class MainWindow
     private void MoveLibrary(bool open, double velocity = 0)
     {
         _libraryOpen = open;
+        // Opening: the sidebar's edge goes at once (it's back once the library's shut).
+        PlaceResizeHandle();
         if (open) LibraryOpened();
         // Hidden: the floating sidebar's not to slide away (or out) while the library's coming.
         if (open && _sidebarHidden)
@@ -209,11 +214,14 @@ public sealed partial class MainWindow
         PeekLayer.Translation = shift;
         var (tabs, library) = Swipe.Fade(width);
         // Its right edge on the page's.
+        if (Library.Width != LibraryWidth) Library.Width = LibraryWidth;
         Library.Translation = new System.Numerics.Vector3((float)(width - LibraryWidth), 0, 0);
         Library.Opacity = library;
         Library.IsHitTestVisible = library >= 0.5;
         Sidebar.Opacity = tabs;
         Sidebar.IsHitTestVisible = tabs > 0.5;
+        // The edge is there only with the library shut.
+        PlaceResizeHandle();
         // (Floating, the sidebar's Translation is its slide in and out: Spring's.)
         if (!_sidebarHidden)
         {
@@ -301,7 +309,7 @@ public sealed partial class MainWindow
     /// </summary>
     private double ClosedWidth => _sidebarHidden ? FloatingInset : SidebarWidth;
 
-    private readonly LibrarySwipe _hiddenSwipe = new(FloatingInset, LibraryWidth);
+    private LibrarySwipe _hiddenSwipe => new(FloatingInset, LibraryWidth);
     private LibrarySwipe Swipe => _sidebarHidden ? _hiddenSwipe : _librarySwipe;
 
     private static bool IsFocusIn(UIElement container)
@@ -397,7 +405,8 @@ public sealed partial class MainWindow
         // From wherever a spring had got to.
         StopLibraryFrames();
         _swipeFrom = _libraryWidth;
-        if (!_libraryOpen) RefreshLibraryPage();
+        // The section shown in full (its page, its rail button), not just its list refreshed.
+        if (!_libraryOpen) ShowLibraryPage(_libraryPage);
         Library.IsHitTestVisible = false;
 
         // The fingers drive the width: LibrarySwipe.Follow, written out.
@@ -488,7 +497,8 @@ public sealed partial class MainWindow
             _swipeTo = _libraryWidth;
             _wheelFrom = _libraryWidth;
             _swipeTrail.Clear();
-            if (!_libraryOpen) RefreshLibraryPage();
+            // The section shown in full (its page, its rail button), not just its list refreshed.
+            if (!_libraryOpen) ShowLibraryPage(_libraryPage);
         }
         // Fingers moving right scroll left (a negative delta), and widen the sidebar.
         _swipeTo -= point.Properties.MouseWheelDelta * SwipePixelsPerDelta;
@@ -529,7 +539,9 @@ public sealed partial class MainWindow
         _libraryPage = page;
         LibraryDownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
         LibraryHistoryPage.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
-        LibrarySearch.PlaceholderText = page == "downloads" ? "Search downloads" : "Search history";
+        LibraryBookmarksPage.Visibility = page == "bookmarks" ? Visibility.Visible : Visibility.Collapsed;
+        LibrarySearch.PlaceholderText = page switch { "downloads" => "Search downloads", "bookmarks" => "Search bookmarks", _ => "Search history" };
+        ShowRailItem(LibraryBookmarksTab, LibraryBookmarksGlyph, page == "bookmarks");
         ShowRailItem(LibraryDownloadsTab, LibraryDownloadsGlyph, page == "downloads");
         ShowRailItem(LibraryHistoryTab, LibraryHistoryGlyph, page == "history");
         // Switching section is instant, as in Zen; a search doesn't carry over.
@@ -550,6 +562,7 @@ public sealed partial class MainWindow
     private void RefreshLibraryPage()
     {
         if (_libraryPage == "downloads") RefreshDownloads();
+        else if (_libraryPage == "bookmarks") ShowLibraryBookmarks();
         else ShowLibraryHistory();
     }
 

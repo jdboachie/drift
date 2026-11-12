@@ -9,11 +9,13 @@ public sealed partial class FolderRowTemplateSelector : DataTemplateSelector
 {
     public DataTemplate? FolderTemplate { get; set; }
     public DataTemplate? TabTemplate { get; set; }
+    public DataTemplate? NoteTemplate { get; set; }
 
     protected override DataTemplate? SelectTemplateCore(object item) => item switch
     {
         TabFolder => FolderTemplate,
         BrowserTab => TabTemplate,
+        LiveNote => NoteTemplate,
         _ => null,
     };
 

@@ -94,6 +94,38 @@ public sealed class DownloadItem : INotifyPropertyChanged
         _ => $"{bytes / (1024.0 * 1024 * 1024):0.00} GB",
     };
 
+    private Microsoft.UI.Xaml.Media.ImageSource? _icon;
+    private string? _iconFor;
+
+    /// <summary>
+    /// Windows' icon for the file (FileIcons), once it's come; the plain file glyph shows till then, or
+    /// if there's none. A program's own icon replaces its type's once it's saved.
+    /// </summary>
+    [JsonIgnore]
+    public Microsoft.UI.Xaml.Media.ImageSource? Icon
+    {
+        get
+        {
+            LoadIcon();
+            return _icon;
+        }
+    }
+
+    [JsonIgnore] public Visibility GlyphVisibility => _icon is null ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void LoadIcon()
+    {
+        var exists = !IsRunning && File.Exists(FilePath);
+        var key = FileIcons.Source(FilePath, exists).Key;
+        if (key == _iconFor) return;
+        _iconFor = key;
+        var icon = await FileIcons.ForAsync(FilePath, exists);
+        // Renamed or saved meanwhile: that one's on its way instead.
+        if (_iconFor != key || icon == _icon) return;
+        _icon = icon;
+        Refresh();
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>Everything shown is worked out from the fields, so one change refreshes it all.</summary>

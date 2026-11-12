@@ -94,6 +94,42 @@ public sealed class TabFolder : INotifyPropertyChanged
         }
     }
 
+    /// <summary>For a live folder, what keeps its tabs (LiveFolder); null for an ordinary one.</summary>
+    public LiveSource? Live
+    {
+        get => _live;
+        set
+        {
+            _live = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsLive));
+        }
+    }
+
+    private LiveSource? _live;
+
+    public bool IsLive => _live is not null;
+
+    private bool _needsSignIn;
+
+    /// <summary>A live folder whose source said you're signed out, last time it was asked.</summary>
+    public bool NeedsSignIn
+    {
+        get => _needsSignIn;
+        set
+        {
+            if (_needsSignIn == value) return;
+            _needsSignIn = value;
+            OnPropertyChanged();
+            _note?.Changed();
+        }
+    }
+
+    private LiveNote? _note;
+
+    /// <summary>A live folder's note row (LiveNote), the same one each time.</summary>
+    public LiveNote Note => _note ??= new LiveNote(this);
+
     public IEnumerable<TabFolder> Folders => Children.OfType<TabFolder>();
 
     /// <summary>Every tab in it and its nested folders, in sidebar order.</summary>

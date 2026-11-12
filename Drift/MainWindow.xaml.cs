@@ -20,6 +20,7 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Web.WebView2.Core;
 using Windows.Foundation;
@@ -41,7 +42,9 @@ public sealed partial class MainWindow : Window
         "https://mail.google.com",
     };
 
-    private const double SidebarWidth = 208;
+    // The docked sidebar's width: dragged by its edge (SidebarResizing.cs), kept in the session.
+    private double _sidebarWidth = SidebarResize.Default;
+    private double SidebarWidth => _sidebarWidth;
 
     // The floating sidebar card's gap from the window's edges, matching the page's.
     private const double FloatingInset = 8;
@@ -86,7 +89,8 @@ public sealed partial class MainWindow : Window
               const linkOf = (e) => e.composedPath().find((n) => n instanceof Element && n.matches('a[href], area[href]'));
               const postLink = (x, y) => post(token + ':link:' + x + ',' + y + ',' + window.innerWidth);
               window.addEventListener('pointerdown', (e) => {
-                if (e.isTrusted && e.button <= 1 && linkOf(e)) postLink(e.clientX, e.clientY);
+                if (!e.isTrusted || e.button > 1) return;
+                if (linkOf(e)) postLink(e.clientX, e.clientY);
               }, true);
               window.addEventListener('click', (e) => {
                 if (e.isTrusted && e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.button === 0) {
@@ -255,6 +259,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
 
         History.Load();
+        WatchClosing();
         Closed += (_, _) =>
         {
             IsOpen = false;
@@ -262,6 +267,7 @@ public sealed partial class MainWindow : Window
             StopCalendar();
             StopMail();
             StopOutlook();
+            StopLiveFolders();
             Settings.Changed -= Settings_Changed;
             Downloads.Changed -= ShowDownloads;
             if (_private)
@@ -272,7 +278,12 @@ public sealed partial class MainWindow : Window
                 return;
             }
             SaveSession(wait: true);
-            foreach (var window in PrivateWindows.ToList()) window.Close();
+            foreach (var window in PrivateWindows.ToList())
+            {
+                // Asked about already, with this one.
+                window._closeConfirmed = true;
+                window.Close();
+            }
             PopupWindow.CloseAll();
             PlayerWindow.CloseAll();
             SettingsWindow.CloseIfOpen();
@@ -295,6 +306,7 @@ public sealed partial class MainWindow : Window
         _sidebarWatch = DispatcherQueue.CreateTimer();
         _sidebarWatch.Interval = TimeSpan.FromMilliseconds(20);
         _sidebarWatch.Tick += SidebarWatch_Tick;
+        StartCaptionWatch();
 
         foreach (var button in new[] { MenuButton, SidebarToggleButton, BackButton, ForwardButton, ReloadButton })
             AddPressFeedback(button, 0.95f);
@@ -317,22 +329,54 @@ public sealed partial class MainWindow : Window
         TabList.ContainerContentChanging += ListItem_ContainerContentChanging;
         WatchForSlides();
         SetUpLibrary();
+        SetUpPageHandles();
     }
 
     private void EssentialList_SizeChanged(object sender, SizeChangedEventArgs e) => LayoutEssentials();
 
-    /// <summary>Essentials fill the sidebar's width, as many across as EssentialsGrid says.</summary>
+    /// <summary>
+    /// Essentials fill the sidebar's width, as many across as EssentialsGrid says for how many there
+    /// are and how wide it is: widening the sidebar fits more in a row. When the count across changes,
+    /// the tiles glide from where they were to their new places rather than jump.
+    /// </summary>
     private void LayoutEssentials()
     {
         if (EssentialList.ItemsPanelRoot is not ItemsWrapGrid grid) return;
         var width = EssentialList.ActualWidth - EssentialList.Padding.Left - EssentialList.Padding.Right;
         if (width <= 0) return;
         // Counting a tab that's being dragged in, so the grid shows the layout it would get.
-        var columns = EssentialsGrid.Columns(EssentialTabs.Count + _essentialsArriving);
+        var columns = EssentialsGrid.Columns(EssentialTabs.Count + _essentialsArriving, width);
         // Not rounded down: the last tile's right edge stays on the address bar's.
         var cell = width / columns;
-        if (grid.MaximumRowsOrColumns != columns) grid.MaximumRowsOrColumns = columns;
+        if (grid.MaximumRowsOrColumns != columns)
+        {
+            // (Not mid-drag: the tiles are showing where a drop would put them, springs of their own.)
+            if (_dragTab is null && _restored) GlideEssentialsAfterLayout();
+            grid.MaximumRowsOrColumns = columns;
+        }
         if (grid.ItemWidth != cell) grid.ItemWidth = cell;
+    }
+
+    /// <summary>Where each tile is now; once they're laid out again, each springs from there to its new place.</summary>
+    private void GlideEssentialsAfterLayout()
+    {
+        var before = new List<(UIElement Tile, Vector3 At)>();
+        for (var i = 0; i < EssentialList.Items.Count; i++)
+            if (EssentialList.ContainerFromIndex(i) is UIElement tile) before.Add((tile, tile.ActualOffset));
+        if (before.Count == 0) return;
+        // The groups below move as the rows change: they slide too.
+        NoteGroupSlideStart();
+        void Glide(object? sender, object e)
+        {
+            EssentialList.LayoutUpdated -= Glide;
+            foreach (var (tile, was) in before)
+            {
+                var from = was - tile.ActualOffset;
+                if (from.Length() < 1) continue;
+                Spring.To(tile, "Translation", Vector3.Zero, duration: 0.3, bounce: 0, from: new Vector3(from.X, from.Y, 0));
+            }
+        }
+        EssentialList.LayoutUpdated += Glide;
     }
 
     private async void Root_Loaded(object sender, RoutedEventArgs e)
@@ -352,6 +396,8 @@ public sealed partial class MainWindow : Window
             // show their saved title and icon and load when first shown, so many tabs start quickly.
             var session = Session.Load();
             if (session?.Closed is { } closed) _closedTabs.AddRange(closed);
+            if (session?.SidebarWidth is { } sidebarWidth) RestoreSidebarWidth(sidebarWidth);
+            _pullsFolderMade = session?.PullsFolderMade ?? false;
             var opening = new List<Task<BrowserTab>>();
             if (session is null)
             {
@@ -388,6 +434,7 @@ public sealed partial class MainWindow : Window
             StartCalendar();
             StartMail();
             StartOutlook();
+            StartLiveFolders();
             // Started to open a link: that's what's in front, not the start page.
             if (_launchUris.Count > 0)
             {
@@ -436,7 +483,7 @@ public sealed partial class MainWindow : Window
         _sessionTimer.Stop();
         if (_private) return;
         var keepAll = Settings.Current.OnClose == CloseBehavior.KeepTabs;
-        var data = new SessionData();
+        var data = new SessionData { SidebarWidth = _sidebarWidth, PullsFolderMade = _pullsFolderMade };
         var savedAt = new Dictionary<BrowserTab, int>();
         foreach (var tab in AllTabs.Where(t => keepAll || t.IsPinned))
         {
@@ -596,11 +643,21 @@ public sealed partial class MainWindow : Window
     /// Fades a new view in once its first page has content. Until then Chromium draws plain white,
     /// which flashes in dark mode; while the view is hidden, the themed page or card behind it shows.
     /// </summary>
-    private static void RevealWhenLoaded(WebView2 view)
+    /// <param name="cover">
+    /// Over the page in its background colour: shown at once on load, the page, and the cover fades instead.
+    /// A WebView2 fading in (in the Peek card) stopped everything else in the card drawing while it did.
+    /// </param>
+    private static void RevealWhenLoaded(WebView2 view, UIElement? cover = null)
     {
         var core = view.CoreWebView2;
         view.Opacity = 0;
-        view.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
+        if (cover is null) view.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
+        else
+        {
+            view.OpacityTransition = null;
+            cover.OpacityTransition = null;
+            cover.Opacity = 1;
+        }
 
         // The handlers stay on, doing nothing after the first: taking one off while WebView2 is
         // calling its handlers can leave it calling a freed one.
@@ -610,10 +667,23 @@ public sealed partial class MainWindow : Window
             if (revealed) return;
             revealed = true;
             view.Opacity = 1;
+            if (cover is null) return;
+            cover.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
+            cover.Opacity = 0;
         }
-        void OnContentLoaded(CoreWebView2 sender, CoreWebView2DOMContentLoadedEventArgs e) => Reveal();
+        // With a cover, once the page has drawn a frame: DOMContentLoaded comes before that, and the cover
+        // faded over a blank page that then appeared all at once.
+        async void RevealDrawn()
+        {
+            if (revealed) return;
+            if (cover is not null)
+                await Deadline.Within(EvaluateAsync(core, "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(1))))", gesture: false),
+                    TimeSpan.FromMilliseconds(400), fallback: null);
+            Reveal();
+        }
+        void OnContentLoaded(CoreWebView2 sender, CoreWebView2DOMContentLoadedEventArgs e) => RevealDrawn();
         // Covers loads that fail or are cancelled before any document arrives.
-        void OnNavigationCompleted(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e) => Reveal();
+        void OnNavigationCompleted(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e) => RevealDrawn();
         core.DOMContentLoaded += OnContentLoaded;
         core.NavigationCompleted += OnNavigationCompleted;
     }
@@ -626,7 +696,7 @@ public sealed partial class MainWindow : Window
 
         core.DocumentTitleChanged += (_, _) =>
         {
-            tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? DisplayUrl(core.Source) : core.DocumentTitle;
+            tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? DisplayUrl(core.Source) : LiveTitle(tab, core.DocumentTitle);
             if (!_private) History.SetTitle(core.Source, core.DocumentTitle);
             if (tab == _active) UpdateChrome();
         };
@@ -636,9 +706,11 @@ public sealed partial class MainWindow : Window
 
         core.SourceChanged += (_, _) =>
         {
+            var before = tab.LastUrl;
             tab.LastUrl = core.Source;
             if (tab == _active) UpdateChrome();
             SaveSessionSoon();
+            NoteLivePage(before, core.Source);
         };
         core.ProcessFailed += (_, e) => OnProcessFailed(tab, e);
         // The engine shows its own warning page; if you go on to the site anyway, the site info says so.
@@ -709,10 +781,12 @@ public sealed partial class MainWindow : Window
             if (stillPeek?.Invoke() == false) return;
             History.Record(core.Source, e.IsNewDocument ? null : core.DocumentTitle);
         };
-        core.NavigationCompleted += (_, _) =>
+        core.NavigationCompleted += (_, e) =>
         {
             if (stillPeek?.Invoke() == false) return;
             History.SetTitle(core.Source, core.DocumentTitle);
+            // A site that says how to search it, for the command bar (SiteSearchBar.cs).
+            if (e.IsSuccess) SiteSearchStore.Notice(core);
         };
     }
 
@@ -795,14 +869,18 @@ public sealed partial class MainWindow : Window
     /// Ctrl+W and a regular tab's ×. Essentials and pinned tabs aren't closed by it, only unloaded:
     /// they stay in the sidebar, back on their own pages.
     /// </summary>
-    private void CloseTab(BrowserTab tab)
+    private async void CloseTab(BrowserTab tab)
     {
-        switch (TabCloses.First(hasPeek: tab == _peekOwner && _peekView is not null, tab.IsPinned))
+        var close = TabCloses.First(hasPeek: tab == _peekOwner && _peekView is not null, tab.IsPinned);
+        if (close == TabClose.ClosePeek)
         {
-            case TabClose.ClosePeek: ClosePeek(animate: true); break;
-            case TabClose.Unload: UnloadTab(tab); break;
-            default: RemoveTab(tab); break;
+            ClosePeek(animate: true);
+            return;
         }
+        // Its page goes either way: not if it has unsaved changes you'd keep (Confirm.cs).
+        if (!await MayLeaveAsync([tab])) return;
+        if (close == TabClose.Unload) UnloadTab(tab);
+        else RemoveTab(tab);
     }
 
     /// <summary>
@@ -855,7 +933,7 @@ public sealed partial class MainWindow : Window
         if (home is not null)
         {
             var saved = History.All.FirstOrDefault(h => string.Equals(h.Url.TrimEnd('/'), home.ToString().TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
-            tab.Title = string.IsNullOrWhiteSpace(saved?.Title) ? home.Host : saved!.Title;
+            tab.Title = string.IsNullOrWhiteSpace(saved?.Title) ? home.Host : LiveTitle(tab, saved!.Title);
             ShowSavedIcon(tab, home);
         }
         if (_active is null) UpdateChrome();
@@ -869,7 +947,8 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Takes a tab out of the sidebar altogether, whichever group it's in.</summary>
-    private void RemoveTab(BrowserTab tab)
+    /// <param name="remember">For Reopen closed tab; not for a live folder's finished pull request (LiveFolders.cs).</param>
+    private void RemoveTab(BrowserTab tab, bool remember = true)
     {
         if (tab.Split is { } split)
         {
@@ -884,7 +963,7 @@ public sealed partial class MainWindow : Window
         {
             var index = tab.Folder?.Children.IndexOf(tab) ?? -1;
             if (index < 0) return;
-            RememberClosed(tab, index);
+            if (remember) RememberClosed(tab, index);
             // The next tab showing in the folders, else the one before.
             var showing = FolderRows.OfType<BrowserTab>().ToList();
             var row = showing.IndexOf(tab);
@@ -898,7 +977,7 @@ public sealed partial class MainWindow : Window
             var list = CollectionFor(tab.Place);
             var index = list.IndexOf(tab);
             if (index < 0) return;
-            RememberClosed(tab, index);
+            if (remember) RememberClosed(tab, index);
 
             _syncingSelection = true;
             list.RemoveAt(index);
@@ -924,11 +1003,11 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>A pinned row's hover button: "−" unloads the tab; on an unloaded tab, "×" removes it.</summary>
-    private void PinnedAction_Click(object sender, RoutedEventArgs e)
+    private async void PinnedAction_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not BrowserTab tab) return;
         if (tab.IsUnloaded) RemoveTab(tab);
-        else if (!ClosePeekOf(tab)) UnloadTab(tab);
+        else if (!ClosePeekOf(tab) && await MayLeaveAsync([tab])) UnloadTab(tab);
     }
 
     /// <summary>
@@ -974,14 +1053,20 @@ public sealed partial class MainWindow : Window
                 ClosePeek(animate: false);
                 break;
         }
+        // From the split page you're not on (a link there can open Peek before clicking into the
+        // page has made it the one you're on): it becomes the one you're on, as Peek is its.
+        if (owner != _active && _shownPages.Contains(owner)) Activate(owner);
         _peekPending = uri;
         _peekOwner = owner;
         owner.HasPeek = true;
 
         // A previous Peek may still be fading out; finish it now rather than fight its animation.
         FinishPeekExit();
-        AimPeekCard(owner, TakeLinkPress(owner));
-        ShowPeekLayer(animate: true);
+        var press = TakeLinkPress(owner);
+        AimPeekCard(owner, press);
+        // From a link: a moment later, the card grows out of it.
+        if (press is not null && _uiSettings.AnimationsEnabled) ShowPeekLayerSoon(owner);
+        else ShowPeekLayer(animate: true);
 
         // Hidden until its page has content (RevealWhenLoaded): the card grows in its themed colour.
         var view = new WebView2 { Opacity = 0 };
@@ -1007,7 +1092,7 @@ public sealed partial class MainWindow : Window
         }
 
         RoundCorners(view, 7);
-        RevealWhenLoaded(view);
+        RevealWhenLoaded(view, PeekCover);
         var core = view.CoreWebView2;
         core.FaviconChanged += async (_, _) =>
         {
@@ -1051,6 +1136,25 @@ public sealed partial class MainWindow : Window
         if (IsPeekShown) view.Focus(FocusState.Programmatic);
     }
 
+    // On opening from a link, how long before the card grows out of it.
+    private const int PeekLinkLeadMs = 90;
+
+    /// <summary>The card, a moment later, unless Peek has gone or been shown meanwhile.</summary>
+    private void ShowPeekLayerSoon(BrowserTab owner)
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.IsRepeating = false;
+        timer.Interval = TimeSpan.FromMilliseconds(PeekLinkLeadMs);
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_peekOwner == owner && _active == owner && _closingPeekView is null
+                && PeekLayer.Visibility != Visibility.Visible)
+                ShowPeekLayer(animate: true);
+        };
+        timer.Start();
+    }
+
     /// <summary>The owner's last link press, if it was recent enough to be what opened this Peek.</summary>
     private static Point? TakeLinkPress(BrowserTab owner)
     {
@@ -1073,7 +1177,8 @@ public sealed partial class MainWindow : Window
         var cardLeft = page.X - PageArea.Margin.Left + PeekCardFrame.Margin.Left;
         var cardTop = page.Y - PageArea.Margin.Top + PeekCardFrame.Margin.Top;
 
-        if (press is { } point && owner == _active)
+        // From either page of a split: the link's point is in its own page.
+        if (press is { } point && _shownPages.Contains(owner))
         {
             var inRoot = owner.View.TransformToVisual(Root).TransformPoint(point);
             PeekCardFrame.CenterPoint = new Vector3((float)(inRoot.X - cardLeft), (float)(inRoot.Y - cardTop), 0);
@@ -1092,7 +1197,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// The card springs out of the link with a little bounce and settles in about half a second;
-    /// the buttons beside it pop in on a bouncier spring once it's mostly there.
+    /// the buttons beside it come in once it's mostly there.
     /// </summary>
     // Peek motion, tuned by eye. The storyboards in MainWindow.xaml are timed to match.
     private const float PeekGrowFrom = 0.15f;     // card's scale on its first frame, about the link
@@ -1102,7 +1207,10 @@ public sealed partial class MainWindow : Window
     private const float PeekShrinkTo = 0.3f;      // where it heads back to on close
     private const double PeekShrinkSeconds = 0.22;
     private const double PeekShrinkBounce = 0.25; // dips just past its end before it fades
-    private const int PeekControlsDelayMs = 120;  // buttons pop in once the card is mostly there
+    private const int PeekControlsDelayMs = 120;  // the buttons come out as the card settles (with its fade, PeekEnterAnimation)
+    private const double PeekControlsSeconds = 0.25;
+    private const double PeekControlsBounce = 0.15; // the card's family, lighter: they're smaller and follow it
+    private static readonly Vector3 PeekControlsTucked = new(-16, 0, 0); // toward the card, its edge 12px away
 
     private void SpringPeekIn()
     {
@@ -1113,20 +1221,25 @@ public sealed partial class MainWindow : Window
         Spring.To(PeekCardFrame, "Translation", Vector3.Zero, duration: PeekGrowSeconds, bounce: PeekGrowBounce,
             from: new Vector3(0, _cardFromY, 0), kick: PeekGrowKick);
 
-        // About the middle of the two stacked buttons.
-        PeekControls.CenterPoint = new Vector3(
-            (float)PeekCloseButton.Width / 2, (float)(PeekCloseButton.Height + PeekControls.Spacing / 2), 0);
-        Spring.To(PeekControls, "Scale", Vector3.One, duration: 0.3, bounce: 0.35,
-            delay: TimeSpan.FromMilliseconds(PeekControlsDelayMs), from: new Vector3(0.7f, 0.7f, 1));
+        // The buttons, all at once (Peek opens many times a day: no stagger), out from the card's edge
+        // as it lands, so they read as coming from it. About their middle when pulled away (PeekGrab).
+        PeekControls.CenterPoint = new Vector3((float)PeekCloseButton.Width / 2, (float)PeekControls.ActualHeight / 2, 0);
+        Spring.Jump(PeekControls, "Scale", Vector3.One);
+        Spring.To(PeekControls, "Translation", Vector3.Zero, duration: PeekControlsSeconds, bounce: PeekControlsBounce,
+            delay: TimeSpan.FromMilliseconds(PeekControlsDelayMs), from: PeekControlsTucked);
     }
 
-    /// <summary>Back toward the link on a spring, with a little bounce as it gets there.</summary>
+    /// <summary>Back toward the link on a spring, with a little bounce as it gets there; the buttons back toward the card.</summary>
     private void SpringPeekOut()
     {
         Spring.To(PeekCardFrame, "Scale", new Vector3(_cardToScale, _cardToScale, 1), duration: PeekShrinkSeconds, bounce: PeekShrinkBounce);
         Spring.To(PeekCardFrame, "Translation", new Vector3(0, _cardToY, 0), duration: PeekShrinkSeconds, bounce: PeekShrinkBounce);
-        Spring.To(PeekControls, "Scale", new Vector3(0.7f, 0.7f, 1), duration: 0.2, bounce: 0);
+        TuckPeekControls();
     }
+
+    /// <summary>The buttons go the way they came, at once and quicker (they fade with PeekExitAnimation, or FadePeekControls).</summary>
+    private void TuckPeekControls() =>
+        Spring.To(PeekControls, "Translation", PeekControlsTucked, duration: 0.2, bounce: 0);
 
     /// <summary>The card and buttons at rest, with no spring running.</summary>
     private void SettlePeekMotion()
@@ -1134,6 +1247,7 @@ public sealed partial class MainWindow : Window
         Spring.Jump(PeekCardFrame, "Scale", Vector3.One);
         Spring.Jump(PeekCardFrame, "Translation", Vector3.Zero);
         Spring.Jump(PeekControls, "Scale", Vector3.One);
+        Spring.Jump(PeekControls, "Translation", Vector3.Zero);
     }
 
     /// <param name="animate">
@@ -1147,6 +1261,8 @@ public sealed partial class MainWindow : Window
 
         var view = _peekView;
         var wasShown = IsPeekShown;
+        var flung = _peekFlungAt;
+        _peekFlungAt = null;
         _peekView = null;
         _peekPending = null;
         if (_peekOwner is not null) _peekOwner.HasPeek = false;
@@ -1159,7 +1275,9 @@ public sealed partial class MainWindow : Window
             if (_uiSettings.AnimationsEnabled)
             {
                 PeekExitAnimation.Begin();
-                SpringPeekOut();
+                // Pulled down by its grabber: on down, rather than back to the link.
+                if (flung is { } speed) SpringPeekAway(speed);
+                else SpringPeekOut();
             }
             else PeekFadeOutAnimation.Begin();
         }
@@ -1218,6 +1336,7 @@ public sealed partial class MainWindow : Window
     {
         PeekLayer.Visibility = Visibility.Visible;
         PeekPageFrame.Visibility = Visibility.Visible;
+        PeekToSplitButton.Visibility = CanSplitWithPeek(_peekOwner) ? Visibility.Visible : Visibility.Collapsed;
         // The frame draws the border while the page is shrunk; the page's own would be soft.
         // This local value hides the style's border until HidePeekLayer clears it.
         MainCard.BorderBrush = SplitCard.BorderBrush = null;
@@ -1241,12 +1360,14 @@ public sealed partial class MainWindow : Window
             PeekFadeInAnimation.Begin();
             SettlePeekMotion();
         }
+        UpdateDragRegions();
     }
 
     /// <summary>Instantly back to the closed state: page full size, layer hidden.</summary>
     private void HidePeekLayer()
     {
         PeekLayer.Visibility = Visibility.Collapsed;
+        if (!_peekExpanding) UnstagePicture();
         PeekPageFrame.Visibility = Visibility.Collapsed;
         // Back to the style's border, which follows light/dark mode as it changes.
         MainCard.ClearValue(Border.BorderBrushProperty);
@@ -1257,6 +1378,11 @@ public sealed partial class MainWindow : Window
         PeekExitAnimation.Stop();
         PeekFadeInAnimation.Stop();
         PeekFadeOutAnimation.Stop();
+        _peekPageBack?.Stop();
+        _peekPageBack = null;
+        _peekControlsOut?.Stop();
+        _peekControlsOut = null;
+        UpdateDragRegions();
     }
 
     /// <summary>
@@ -1264,12 +1390,17 @@ public sealed partial class MainWindow : Window
     /// moves into its new tab and lays itself out at full width out of sight; the card's edges spring
     /// out to the page's, on the page's own background colour; then the picture fades into the page.
     /// Nothing reloads; scroll, video, a half-filled form all carry on.
+    /// Open as split: the same, but the page goes beside the one it came from, in the right half. The
+    /// card's edges spring to that half, the picture carried along by its left edge, while the page
+    /// behind comes back from under Peek into the left half: one move, both at once.
     /// </summary>
-    private async void PromotePeekToTab()
+    private async void PromotePeekToTab(bool split = false)
     {
         if (_peekView is not { CoreWebView2: { } core } view || _peekExpanding) return;
-        _peekExpanding = true;
         var owner = _peekOwner;
+        if (split && !CanSplitWithPeek(owner)) return;
+        _peekExpanding = true;
+        PeekTrace("promote " + (split ? "split" : "tab"));
         var favicon = owner?.PeekFavicon;
         // No longer Peek's: its handlers stand down, and ClosePeek and the rest leave it be.
         _peekView = null;
@@ -1278,37 +1409,65 @@ public sealed partial class MainWindow : Window
         _peekOwner = null;
 
         var floating = PeekCardFrame.Margin;
-        var page = PageArea.Margin;
-        var inset = PeekExpand.Inset(
-            new Edges(floating.Left, floating.Top, floating.Right, floating.Bottom),
-            new Edges(page.Left, page.Top, page.Right, page.Bottom));
         var cardVisual = ElementCompositionPreview.GetElementVisual(PeekCard);
         var revealed = view.Opacity > 0;
         var picture = revealed
-            ? PeekFreeze.IsFresh(_freezeTakenAt, Environment.TickCount64) && _freezePicture is { } early ? early : SnapshotAsync(core)
-            : Task.FromResult<byte[]?>(null);
+            ? PeekFreeze.IsFresh(_freezeTakenAt, Environment.TickCount64) && _freezePicture is { } early ? early : PrepareFreezeAsync(SnapshotAsync(core))
+            : Task.FromResult<FrozenPage?>(null);
         _freezePicture = null;
         _freezeTakenAt = null;
         BrowserTab? tab = null;
         try
         {
             SettlePeekMotion();
+            // The buttons go at once, the way they came, as the card starts to move.
+            PeekControls.IsHitTestVisible = false;
+            TuckPeekControls();
+            FadePeekControls();
             // 1. The picture over the page, exactly where it is: nothing on screen changes.
             var held = revealed && await Deadline.Within(FreezeAsync(picture), TimeSpan.FromMilliseconds(400), fallback: false);
+            PeekTrace("frozen " + held);
 
             // 2. The page into its tab, out of sight: see-through, so it draws but doesn't show, and the
-            //    tab in front stays in front until the end. It lays itself out at full width meanwhile.
+            //    tab in front stays in front until the end. It lays itself out at its new width meanwhile.
             view.OpacityTransition = null;
             view.Opacity = 0;
             tab = AdoptAsTab(view, core, favicon, activate: false);
-            WebHost.UpdateLayout();
+            PeekTrace("adopt only");
+            Edges to;
+            if (split)
+            {
+                // The page it came from stays the one you're on until the end, now in the left half.
+                SplitTabs(owner!, tab);
+                PeekTrace("split tabs");
+                PageColumns.UpdateLayout();
+                PeekTrace("split laid out");
+                to = RightHalfEdges();
+            }
+            else
+            {
+                WebHost.UpdateLayout();
+                var page = PageArea.Margin;
+                to = new Edges(page.Left, page.Top, page.Right, page.Bottom);
+            }
+            PeekTrace("adopted");
             var laidOut = Deadline.Within(LaidOutAsync(core, PeekExpand.CssWidth(view.ActualWidth, _peekZoom)),
                 TimeSpan.FromMilliseconds(700), fallback: null);
-            // 3. The card's edges spring out to the page's; the picture stays put inside it.
-            var grown = _uiSettings.AnimationsEnabled ? GrowCard(cardVisual, inset, held) : Task.CompletedTask;
+            _ = laidOut.ContinueWith(_ => PeekTrace("laid out"), TaskScheduler.FromCurrentSynchronizationContext());
+            // 3. Opening as a tab, the card's edges spring out to the page's, the picture held still inside.
+            //    Into a split, the card itself moves to the right half, the picture pinned to its top-left;
+            //    the page fades in as soon as it's laid out and the card's all but there.
+            var from = new Edges(floating.Left, floating.Top, floating.Right, floating.Bottom);
+            if (split && !_uiSettings.AnimationsEnabled) ReturnPageFromPeek();
+            var grown = !_uiSettings.AnimationsEnabled ? Task.CompletedTask
+                : split ? MoveCardToSplit(from, to, PageReadyAsync(owner!), ReturnPageFromPeek)
+                : GrowCard(cardVisual, from, to, held);
+            PeekTrace("moving");
             await Task.WhenAll(grown, laidOut);
+            PeekTrace("into the page");
 
             // 4. The tab in front, drawn, under the card; then the card (and the picture) fades into it.
+            PeekControls.Visibility = Visibility.Collapsed;
             Activate(tab);
             view.Opacity = 1;
             view.Focus(FocusState.Programmatic);
@@ -1341,6 +1500,7 @@ public sealed partial class MainWindow : Window
         finally
         {
             _peekExpanding = false;
+            StopCardMove();
             HidePeekLayer();
             PeekLayer.OpacityTransition = null;
             PeekLayer.Opacity = 1;
@@ -1348,50 +1508,286 @@ public sealed partial class MainWindow : Window
             cardVisual.StopAnimation("Scale");
             cardVisual.Scale = Vector3.One;
             PeekCardFrame.Margin = floating;
-            PeekStill.Visibility = Visibility.Collapsed;
-            PeekStillBrush.ImageSource = null;
+            UnstagePicture();
             PeekCardTint.Background = null;
+            PeekControls.IsHitTestVisible = true;
             PeekControls.Visibility = Visibility.Visible;
             PeekCardShadow.Visibility = Visibility.Visible;
+            PeekCardShadow.Opacity = 1;
             if (!revealed) view.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
         }
     }
 
     private bool _peekExpanding;
 
-    // The picture taken while the pointer's on "Open as tab" (PeekFreeze), and when.
-    private Task<byte[]?>? _freezePicture;
+    // DRIFT_TRACE=1: when each step of opening a Peek as a tab or split happens, in peek-trace.log, to line
+    // up with a screen recording.
+    private static readonly bool Tracing = Environment.GetEnvironmentVariable("DRIFT_TRACE") == "1";
+
+    private static void PeekTrace(string step)
+    {
+        if (!Tracing) return;
+        try
+        {
+            var folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Drift");
+            System.IO.File.AppendAllText(System.IO.Path.Combine(folder, "peek-trace.log"), $"{DateTime.Now:HH:mm:ss.fff} {step}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Nowhere to write it.
+        }
+    }
+
+    /// <summary>Its page can go beside the one it came from: that one isn't in a split already.</summary>
+    private static bool CanSplitWithPeek(BrowserTab? owner) => owner is { Split: null, IsSplitRow: false };
+
+    /// <summary>The split's right-hand page, as margins in the page column (where Peek's card is placed).</summary>
+    private Edges RightHalfEdges()
+    {
+        var page = PageArea.Margin;
+        var at = SplitCard.ActualOffset;
+        return new Edges(
+            page.Left + at.X,
+            page.Top + at.Y,
+            page.Right + Math.Max(0, PageColumns.ActualWidth - at.X - SplitCard.ActualWidth),
+            page.Bottom + Math.Max(0, PageColumns.ActualHeight - at.Y - SplitCard.ActualHeight));
+    }
+
+    // The page behind coming back from under Peek (ReturnPageFromPeek), and the buttons leaving (FadePeekControls).
+    private Storyboard? _peekPageBack;
+    private Storyboard? _peekControlsOut;
+
+    /// <summary>
+    /// The page behind, from where Peek left it (shrunk a little, dimmed) back to itself, into a split:
+    /// on the card's own spring (PeekExpand.Split*), from the same moment, so the two move as one. Its
+    /// dimming lifts on the strong ease-out over the same time.
+    /// </summary>
+    private void ReturnPageFromPeek()
+    {
+        // Where the opening left it: scaled from its corner and shifted, which is a scale about this point.
+        double scaleX = PageAreaTransform.ScaleX, scaleY = PageAreaTransform.ScaleY;
+        double shiftX = PageAreaTransform.TranslateX, shiftY = PageAreaTransform.TranslateY, opacity = PageArea.Opacity;
+        static float About(double shift, double scale) => scale < 1 ? (float)(shift / (1 - scale)) : 0;
+        // The opening's storyboard lets go of it, and in the same frame the spring takes it from there.
+        PeekEnterAnimation.Stop();
+        PeekFadeInAnimation.Stop();
+        PeekPageFrame.Visibility = Visibility.Collapsed;
+        MainCard.ClearValue(Border.BorderBrushProperty);
+        SplitCard.ClearValue(Border.BorderBrushProperty);
+        if (!_uiSettings.AnimationsEnabled) return;
+
+        // On what's inside it, which fills it exactly: PageArea has a RenderTransform (the opening's), and
+        // XAML won't take Scale on an element that has one (it crashed, E_INVALIDARG).
+        PageColumns.CenterPoint = new Vector3(About(shiftX, scaleX), About(shiftY, scaleY), 0);
+        Spring.To(PageColumns, "Scale", Vector3.One, PeekExpand.SplitSeconds, PeekExpand.SplitBounce,
+            from: new Vector3((float)scaleX, (float)scaleY, 1), kick: PeekExpand.SplitKick);
+        var board = new Storyboard();
+        Animate(board, PageArea, "Opacity", opacity, 1, PeekExpand.SplitSeconds, 0.23, 1, 0.32, 1);
+        _peekPageBack = board;
+        board.Begin();
+    }
+
+    // Undoes MoveCardToSplit's setup: while it's set, the card's on its way into a split.
+    private Action? _cardMoveCleanup;
+
+    /// <summary>
+    /// Into a split: the card moves from where it floats to the right half, its position and size on one
+    /// spring, as an object: its outline goes with it, and the picture keeps its size, pinned to its
+    /// top-left, so the page reads as the same page in a narrower window. The shadow fades at once as it
+    /// comes down into the page's plane. Run by the compositor: the UI thread is busy laying out the split
+    /// and the pages meanwhile, and a move stepped there came out as one or two long jumps. Done once it's
+    /// all but there; the rest of the spring carries on under the fade into the page.
+    /// </summary>
+    private async Task MoveCardToSplit(Edges from, Edges to, Task ready, Action together)
+    {
+        StopCardMove();
+        var union = PeekExpand.Union(from, to);
+        var start = PeekExpand.Inset(from, union);
+        var end = PeekExpand.Inset(to, union);
+        var pixels = PageArea.XamlRoot?.RasterizationScale ?? 1;
+        var travel = new[] { end.Left - start.Left, end.Top - start.Top, end.Right - start.Right, end.Bottom - start.Bottom }.Max(Math.Abs);
+
+        // The card takes the room of where it is and where it's going, cut back to where it is.
+        var edge = PeekCard.BorderBrush;
+        PeekCard.BorderBrush = null;
+        PeekCardShadow.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(100) };
+        PeekCardShadow.Opacity = 0;
+        PeekStill.Margin = new Thickness(start.Left, start.Top, start.Right, start.Bottom);
+        PeekCardFrame.Margin = new Thickness(union.Left, union.Top, union.Right, union.Bottom);
+        PeekCardFrame.UpdateLayout();
+        float width = (float)PeekCard.ActualWidth, height = (float)PeekCard.ActualHeight;
+
+        var cardVisual = ElementCompositionPreview.GetElementVisual(PeekCard);
+        var stillVisual = ElementCompositionPreview.GetElementVisual(PeekStill);
+        var compositor = cardVisual.Compositor;
+        var progress = compositor.CreatePropertySet();
+        progress.InsertScalar("T", 0);
+        ExpressionAnimation Bind(string expression)
+        {
+            var animation = compositor.CreateExpressionAnimation(expression);
+            animation.SetReferenceParameter("p", progress);
+            animation.SetScalarParameter("l0", (float)start.Left);
+            animation.SetScalarParameter("t0", (float)start.Top);
+            animation.SetScalarParameter("r0", (float)start.Right);
+            animation.SetScalarParameter("b0", (float)start.Bottom);
+            animation.SetScalarParameter("l1", (float)end.Left);
+            animation.SetScalarParameter("t1", (float)end.Top);
+            animation.SetScalarParameter("r1", (float)end.Right);
+            animation.SetScalarParameter("b1", (float)end.Bottom);
+            animation.SetScalarParameter("w", width);
+            animation.SetScalarParameter("h", height);
+            return animation;
+        }
+        // Each edge from where it was to where it's going (a little past on the overshoot, as far as the card goes).
+        const string left = "Clamp(l0 + (l1 - l0) * p.T, 0, w)";
+        const string top = "Clamp(t0 + (t1 - t0) * p.T, 0, h)";
+        const string right = "Clamp(w - r0 - (r1 - r0) * p.T, 0, w)";
+        const string bottom = "Clamp(h - b0 - (b1 - b0) * p.T, 0, h)";
+        const string round = "8 - 2 * Clamp(p.T, 0, 1)";
+
+        var shape = compositor.CreateRoundedRectangleGeometry();
+        shape.StartAnimation("Offset", Bind($"Vector2({left}, {top})"));
+        shape.StartAnimation("Size", Bind($"Vector2({right} - {left}, {bottom} - {top})"));
+        shape.StartAnimation("CornerRadius", Bind($"Vector2({round}, {round})"));
+        cardVisual.Clip = compositor.CreateGeometricClip(shape);
+
+        // The picture rides with the card's top-left corner.
+        ElementCompositionPreview.SetIsTranslationEnabled(PeekStill, true);
+        stillVisual.StartAnimation("Translation", Bind($"Vector3({left} - l0, {top} - t0, 0)"));
+
+        // The card's edge, drawn on the moving card (its own would only be where the room's edges are).
+        var outline = compositor.CreateRoundedRectangleGeometry();
+        outline.StartAnimation("Offset", Bind($"Vector2({left} + 0.5, {top} + 0.5)"));
+        outline.StartAnimation("Size", Bind($"Vector2({right} - {left} - 1, {bottom} - {top} - 1)"));
+        outline.StartAnimation("CornerRadius", Bind($"Vector2({round} - 0.5, {round} - 0.5)"));
+        var stroke = compositor.CreateSpriteShape(outline);
+        stroke.StrokeThickness = 1;
+        stroke.StrokeBrush = compositor.CreateColorBrush((edge as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.Transparent);
+        var outlineVisual = compositor.CreateShapeVisual();
+        outlineVisual.Size = new Vector2(width, height);
+        outlineVisual.Shapes.Add(stroke);
+        ElementCompositionPreview.SetElementChildVisual(PeekCard, outlineVisual);
+
+        _cardMoveCleanup = () =>
+        {
+            progress.StopAnimation("T");
+            cardVisual.Clip = null;
+            ElementCompositionPreview.SetElementChildVisual(PeekCard, null);
+            stillVisual.StopAnimation("Translation");
+            stillVisual.Properties.InsertVector3("Translation", Vector3.Zero);
+            PeekStill.Margin = new Thickness(0);
+            PeekCard.BorderBrush = edge;
+            PeekCardShadow.OpacityTransition = null;
+            PeekCardShadow.Opacity = 1;
+        };
+
+        // Nothing moves until the page behind is drawn at its new width and the card's set up on screen
+        // as it was: started any sooner, the first part of the move went by unseen and the card jumped.
+        // Then the card and the page behind leave on the same frame.
+        await ready;
+        await NextFrameAsync();
+        if (_cardMoveCleanup is null)
+        {
+            together();
+            return;
+        }
+        PeekTrace("move starts");
+        together();
+        var spring = compositor.CreateSpringScalarAnimation();
+        spring.InitialValue = 0;
+        spring.FinalValue = 1;
+        spring.InitialVelocity = (float)(PeekExpand.SplitKick * 2 * Math.PI / PeekExpand.SplitSeconds);
+        spring.DampingRatio = (float)(1 - PeekExpand.SplitBounce);
+        // The compositor's Period is 1/ω (see Spring).
+        spring.Period = TimeSpan.FromSeconds(PeekExpand.SplitSeconds / (2 * Math.PI));
+        progress.StartAnimation("T", spring);
+        await Task.Delay(TimeSpan.FromSeconds(PeekExpand.ArriveSeconds(travel * pixels, 2)));
+    }
+
+    /// <summary>Once a tab's page has drawn itself at its view's width (or a moment's passed).</summary>
+    private static Task PageReadyAsync(BrowserTab tab) => tab.View.CoreWebView2 is { } core
+        ? Deadline.Within(LaidOutAsync(core, PeekExpand.CssWidth(tab.View.ActualWidth, tab.Zoom)),
+            TimeSpan.FromMilliseconds(150), fallback: null)
+        : Task.CompletedTask;
+
+    private void StopCardMove()
+    {
+        var cleanup = _cardMoveCleanup;
+        _cardMoveCleanup = null;
+        cleanup?.Invoke();
+    }
+
+    /// <summary>The buttons fade out, quickly (opening as a tab or split).</summary>
+    private void FadePeekControls()
+    {
+        var opacity = PeekControls.Opacity;
+        var board = new Storyboard();
+        Animate(board, PeekControls, "Opacity", opacity, 0, 0.1, 0.23, 1, 0.32, 1);
+        _peekControlsOut = board;
+        board.Begin();
+    }
+
+    /// <summary>One property from a value to another, on a cubic-bezier curve.</summary>
+    private static void Animate(Storyboard board, DependencyObject target, string property, double from, double to,
+        double seconds, double x1, double y1, double x2, double y2)
+    {
+        var animation = new DoubleAnimationUsingKeyFrames();
+        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.Zero), Value = from });
+        animation.KeyFrames.Add(new SplineDoubleKeyFrame
+        {
+            KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromSeconds(seconds)),
+            Value = to,
+            KeySpline = new KeySpline { ControlPoint1 = new Point(x1, y1), ControlPoint2 = new Point(x2, y2) },
+        });
+        Storyboard.SetTarget(animation, target);
+        Storyboard.SetTargetProperty(animation, property);
+        board.Children.Add(animation);
+    }
+
+    // The picture taken and decoded while the pointer's on "Open as tab" or "Open as split" (PeekFreeze),
+    // and when: a click shows it at once.
+    private Task<FrozenPage?>? _freezePicture;
     private long? _freezeTakenAt;
 
     private void PeekToTab_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         if (_peekExpanding || _peekView is not { CoreWebView2: { } core } view || view.Opacity <= 0) return;
         if (PeekFreeze.IsFresh(_freezeTakenAt, Environment.TickCount64)) return;
-        _freezePicture = SnapshotAsync(core);
+        PeekTrace("hover: taking picture");
+        _freezePicture = PrepareFreezeAsync(SnapshotAsync(core));
+        var picture = _freezePicture;
+        _ = picture.ContinueWith(done =>
+        {
+            PeekTrace("hover: picture ready");
+            // Staged while the pointer's still on its way to clicking, so the click shows it at once.
+            if (_freezePicture == picture && !_peekExpanding && _peekView == view && done.Result is { } frozen) StagePicture(frozen);
+        }, TaskScheduler.FromCurrentSynchronizationContext());
         _freezeTakenAt = Environment.TickCount64;
     }
 
     /// <summary>
-    /// The card takes the page's size at once and is cut back to where it was; the cut springs out to the
-    /// page's edges and its corners to the page's. The picture (or, without one, the page's colour) keeps
-    /// its place inside.
+    /// The card takes the size of where it is and where it's going together, and is cut back to where it
+    /// was; the cut springs to where it's going, and its corners to the page's. The picture (or, without
+    /// one, the page's colour) keeps its place inside.
     /// </summary>
-    private Task GrowCard(Visual cardVisual, Edges inset, bool held)
+    private Task GrowCard(Visual cardVisual, Edges from, Edges to, bool held)
     {
         var done = new TaskCompletionSource();
-        PeekControls.Visibility = Visibility.Collapsed;
         // It'd be the page's size at once, around a card that's still growing.
         PeekCardShadow.Visibility = Visibility.Collapsed;
-        PeekCardFrame.Margin = PageArea.Margin;
-        if (held) PeekStill.Margin = new Thickness(inset.Left, inset.Top, inset.Right, inset.Bottom);
+        var union = PeekExpand.Union(from, to);
+        var start = PeekExpand.Inset(from, union);
+        var end = PeekExpand.Inset(to, union);
+        PeekCardFrame.Margin = new Thickness(union.Left, union.Top, union.Right, union.Bottom);
+        if (held) PeekStill.Margin = new Thickness(start.Left, start.Top, start.Right, start.Bottom);
         PeekCardFrame.UpdateLayout();
-        float width = (float)PageArea.ActualWidth, height = (float)PageArea.ActualHeight;
+        float width = (float)PeekCard.ActualWidth, height = (float)PeekCard.ActualHeight;
 
         var compositor = cardVisual.Compositor;
         var shape = compositor.CreateRoundedRectangleGeometry();
         shape.CornerRadius = new Vector2(8);
-        shape.Offset = new Vector2((float)inset.Left, (float)inset.Top);
-        shape.Size = new Vector2(width - (float)(inset.Left + inset.Right), height - (float)(inset.Top + inset.Bottom));
+        shape.Offset = new Vector2((float)start.Left, (float)start.Top);
+        shape.Size = new Vector2(width - (float)(start.Left + start.Right), height - (float)(start.Top + start.Bottom));
         cardVisual.Clip = compositor.CreateGeometricClip(shape);
 
         var progress = compositor.CreatePropertySet();
@@ -1400,43 +1796,58 @@ public sealed partial class MainWindow : Window
         {
             var animation = compositor.CreateExpressionAnimation(expression);
             animation.SetReferenceParameter("p", progress);
-            animation.SetScalarParameter("l", (float)inset.Left);
-            animation.SetScalarParameter("t", (float)inset.Top);
-            animation.SetScalarParameter("r", (float)inset.Right);
-            animation.SetScalarParameter("b", (float)inset.Bottom);
+            animation.SetScalarParameter("l0", (float)start.Left);
+            animation.SetScalarParameter("t0", (float)start.Top);
+            animation.SetScalarParameter("r0", (float)start.Right);
+            animation.SetScalarParameter("b0", (float)start.Bottom);
+            animation.SetScalarParameter("l1", (float)end.Left);
+            animation.SetScalarParameter("t1", (float)end.Top);
+            animation.SetScalarParameter("r1", (float)end.Right);
+            animation.SetScalarParameter("b1", (float)end.Bottom);
             animation.SetScalarParameter("w", width);
             animation.SetScalarParameter("h", height);
             return animation;
         }
-        shape.StartAnimation("Offset", Bind("Vector2(l * (1 - p.T), t * (1 - p.T))"));
-        shape.StartAnimation("Size", Bind("Vector2(w - (l + r) * (1 - p.T), h - (t + b) * (1 - p.T))"));
+        // Each edge from where it was to where it's going (past it on the overshoot, as far as the card goes).
+        const string left = "Clamp(l0 + (l1 - l0) * p.T, 0, w)";
+        const string top = "Clamp(t0 + (t1 - t0) * p.T, 0, h)";
+        const string right = "Clamp(w - r0 - (r1 - r0) * p.T, 0, w)";
+        const string bottom = "Clamp(h - b0 - (b1 - b0) * p.T, 0, h)";
+        shape.StartAnimation("Offset", Bind($"Vector2({left}, {top})"));
+        shape.StartAnimation("Size", Bind($"Vector2({right} - {left}, {bottom} - {top})"));
         // From the card's rounding to the page's.
         shape.StartAnimation("CornerRadius", Bind("Vector2(8 - 2 * Min(p.T, 1), 8 - 2 * Min(p.T, 1))"));
 
-        // Past the page's edges (T over 1) the clip has nothing more to show, so the card swells a touch
-        // instead, each edge out by its own inset × the overshoot (PeekExpand.Bulge), and back.
-        var bulge = PeekExpand.Bulge(inset, width, height);
-        cardVisual.CenterPoint = new Vector3((float)bulge.CenterX, (float)bulge.CenterY, 0);
-        var swell = Bind("Vector3(1 + Max(p.T - 1, 0) * x, 1 + Max(p.T - 1, 0) * y, 1)");
-        swell.SetScalarParameter("x", (float)bulge.PerX);
-        swell.SetScalarParameter("y", (float)bulge.PerY);
-        cardVisual.StartAnimation("Scale", swell);
+        // Growing to fill the card (opening as a tab), past its edges (T over 1) the clip has nothing more
+        // to show, so the card swells a touch instead, each edge out by its own inset × the overshoot
+        // (PeekExpand.Bulge), and back.
+        if (end == new Edges(0, 0, 0, 0))
+        {
+            var bulge = PeekExpand.Bulge(start, width, height);
+            cardVisual.CenterPoint = new Vector3((float)bulge.CenterX, (float)bulge.CenterY, 0);
+            var swell = Bind("Vector3(1 + Max(p.T - 1, 0) * x, 1 + Max(p.T - 1, 0) * y, 1)");
+            swell.SetScalarParameter("x", (float)bulge.PerX);
+            swell.SetScalarParameter("y", (float)bulge.PerY);
+            cardVisual.StartAnimation("Scale", swell);
+        }
 
         // The same spring as Peek opening: it leaves at once, overshoots a little and settles.
+        var (seconds, bounce, kick) = (PeekExpand.Seconds, PeekExpand.Bounce, PeekExpand.Kick);
         var grow = compositor.CreateSpringScalarAnimation();
         grow.InitialValue = 0;
         grow.FinalValue = 1;
-        grow.InitialVelocity = (float)(PeekExpand.Kick * 2 * Math.PI / PeekExpand.Seconds);
-        grow.DampingRatio = (float)(1 - PeekExpand.Bounce);
+        grow.InitialVelocity = (float)(kick * 2 * Math.PI / seconds);
+        grow.DampingRatio = (float)(1 - bounce);
         // The compositor's Period is 1/ω (see Spring).
-        grow.Period = TimeSpan.FromSeconds(PeekExpand.Seconds / (2 * Math.PI));
+        grow.Period = TimeSpan.FromSeconds(seconds / (2 * Math.PI));
         progress.StartAnimation("T", grow);
 
         // Done once less than half a pixel of motion is left (a spring's tail crawls on for a while):
-        // then exactly at the page's edges.
+        // then exactly where it's going.
         var pixels = PageArea.XamlRoot?.RasterizationScale ?? 1;
-        var travel = Math.Max(Math.Max(inset.Left, inset.Right), Math.Max(inset.Top, inset.Bottom)) * pixels;
-        _ = Task.Delay(TimeSpan.FromSeconds(PeekExpand.SettleSeconds(travel))).ContinueWith(_ =>
+        var travel = new[] { end.Left - start.Left, end.Top - start.Top, end.Right - start.Right, end.Bottom - start.Bottom }
+            .Max(Math.Abs) * pixels;
+        _ = Task.Delay(TimeSpan.FromSeconds(PeekExpand.SettleSeconds(travel, seconds, bounce, kick))).ContinueWith(_ =>
         {
             progress.StopAnimation("T");
             progress.InsertScalar("T", 1);
@@ -1473,36 +1884,86 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>A picture of the page, decoded, ready to draw; and its background colour.</summary>
+    private sealed record FrozenPage(SoftwareBitmapSource Source, Windows.UI.Color? Background);
+
     /// <summary>
-    /// The picture over the Peek's page, decoded and on screen before this returns true, with the card
-    /// behind it in the page's background colour. False if there's no picture.
+    /// The picture over the Peek's page and on screen before this returns true, with the card behind it in
+    /// the page's background colour. False if there's no picture.
     /// </summary>
-    private async Task<bool> FreezeAsync(Task<byte[]?> picture)
+    private async Task<bool> FreezeAsync(Task<FrozenPage?> picture)
     {
-        if (await picture is not { } png) return false;
-        using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
-        using (var writer = new Windows.Storage.Streams.DataWriter(stream))
-        {
-            writer.WriteBytes(png);
-            await writer.StoreAsync();
-            writer.DetachStream();
-        }
-        stream.Seek(0);
-        var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
-        if (await BackgroundOfAsync(decoder) is { } color) PeekCardTint.Background = new SolidColorBrush(color);
-        // Decoded here, all of it, before it's shown: an ImageBrush given a BitmapImage decodes it only
-        // once it's drawn, and the card showed empty for a moment while it did.
-        var bitmap = await decoder.GetSoftwareBitmapAsync(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
-            Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied);
-        var source = new SoftwareBitmapSource();
-        await source.SetBitmapAsync(bitmap);
+        PeekTrace("freeze: waiting for picture");
+        if (await picture is not { } frozen) return false;
+        PeekTrace("freeze: picture");
+        if (frozen.Background is { } color) PeekCardTint.Background = new SolidColorBrush(color);
         PeekStill.Margin = new Thickness(0);
-        PeekStillBrush.ImageSource = source;
-        PeekStill.Visibility = Visibility.Visible;
+        if (!StagePicture(frozen))
+        {
+            // Not staged on the way to the button: it gets its frames behind the page now.
+            for (var frame = 0; frame < StageFrames; frame++) await NextFrameAsync();
+        }
+        Canvas.SetZIndex(PeekStill, 0);
         // Set isn't drawn: two frames on, it's on screen.
         await NextFrameAsync();
         await NextFrameAsync();
         return true;
+    }
+
+    // A picture's first few frames on screen draw nothing (it's still going to the GPU): about four, so it
+    // gets these behind the page before it's shown in front of it, or the card shows empty meanwhile.
+    private const int StageFrames = 6;
+
+    /// <summary>
+    /// The picture behind the Peek's page, where it can get drawn unseen, ready to be brought in front.
+    /// True if it was already there.
+    /// </summary>
+    private bool StagePicture(FrozenPage frozen)
+    {
+        var staged = PeekStillBrush.ImageSource == frozen.Source && PeekStill.Visibility == Visibility.Visible;
+        if (staged) return true;
+        Canvas.SetZIndex(PeekStill, -1);
+        PeekStillBrush.ImageSource = frozen.Source;
+        PeekStill.Visibility = Visibility.Visible;
+        return false;
+    }
+
+    /// <summary>Drops a picture staged behind the Peek's page, or shown.</summary>
+    private void UnstagePicture()
+    {
+        PeekStill.Visibility = Visibility.Collapsed;
+        PeekStillBrush.ImageSource = null;
+        Canvas.SetZIndex(PeekStill, 0);
+    }
+
+    /// <summary>The picture decoded, all of it, or null if there isn't one or it won't decode.</summary>
+    private static async Task<FrozenPage?> PrepareFreezeAsync(Task<byte[]?> picture)
+    {
+        if (await picture is not { } png) return null;
+        try
+        {
+            using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            using (var writer = new Windows.Storage.Streams.DataWriter(stream))
+            {
+                writer.WriteBytes(png);
+                await writer.StoreAsync();
+                writer.DetachStream();
+            }
+            stream.Seek(0);
+            var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
+            var background = await BackgroundOfAsync(decoder);
+            // Decoded here, all of it, before it's shown: an ImageBrush given a BitmapImage decodes it only
+            // once it's drawn, and the card showed empty for a moment while it did.
+            var bitmap = await decoder.GetSoftwareBitmapAsync(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8,
+                Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied);
+            var source = new SoftwareBitmapSource();
+            await source.SetBitmapAsync(bitmap);
+            return new FrozenPage(source, background);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>The colour along a picture's edges (PageColor): the page's background.</summary>
@@ -1653,6 +2114,8 @@ public sealed partial class MainWindow : Window
     /// <summary>What each shortcut does (Settings.Actions), from the app or a page.</summary>
     private void RunAction(string id)
     {
+        // In an answer, Ctrl+Shift+C copies the answer rather than the page's link.
+        if (id == "copyurl" && CopyAskAnswer()) return;
         switch (id)
         {
             case "newtab":
@@ -1678,6 +2141,12 @@ public sealed partial class MainWindow : Window
                 break;
             case "copyurl":
                 if (CopyCurrentLink()) ShowCopiedToast();
+                break;
+            case "bookmark":
+                BookmarkCurrent();
+                break;
+            case "bookmarks":
+                ToggleLibrary("bookmarks");
                 break;
             case "private":
                 OpenPrivateWindow();
@@ -1812,10 +2281,22 @@ public sealed partial class MainWindow : Window
 
     private void RememberClosed(BrowserTab tab, int index)
     {
+        if (ClosedEntry(tab, index) is { } entry) RememberClosed(entry);
+    }
+
+    private void RememberClosed(SessionTab entry)
+    {
+        _closedTabs.Add(entry);
+        if (_closedTabs.Count > MaxClosedTabs) _closedTabs.RemoveAt(0);
+    }
+
+    /// <summary>A closed tab as Reopen closed tab brings it back; null if it had no page.</summary>
+    private static SessionTab? ClosedEntry(BrowserTab tab, int index)
+    {
         var url = tab.Url;
         if (string.IsNullOrEmpty(url) || url == "about:blank") url = tab.HomeUri?.ToString();
-        if (string.IsNullOrEmpty(url)) return;
-        _closedTabs.Add(new SessionTab
+        if (string.IsNullOrEmpty(url)) return null;
+        return new SessionTab
         {
             Url = url,
             Title = tab.Title,
@@ -1824,8 +2305,7 @@ public sealed partial class MainWindow : Window
             Home = tab.HomeUri?.ToString(),
             Index = index,
             Folder = tab.Folder?.Id,
-        });
-        if (_closedTabs.Count > MaxClosedTabs) _closedTabs.RemoveAt(0);
+        };
     }
 
     /// <summary>Ctrl+Shift+T: the last tab closed comes back, in its group and place, on the page it was on.</summary>
@@ -2486,18 +2966,22 @@ public sealed partial class MainWindow : Window
     private void Downloads_Click(object sender, RoutedEventArgs e) => OpenLibrary("downloads");
     private void History_Click(object sender, RoutedEventArgs e) => OpenLibrary("history");
 
-    private void CloseTab_Click(object sender, RoutedEventArgs e)
+    private async void CloseTab_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not BrowserTab tab) return;
         // A split's row is both pages (Split.cs).
-        if (tab is { IsSplitRow: true, Split: { } split }) CloseSplit(split);
+        if (tab is { IsSplitRow: true, Split: { } split })
+        {
+            if (await MayLeaveAsync(RegularTabsOf(tab).Where(p => !p.IsPinned))) CloseSplit(split);
+        }
         else CloseTab(tab);
     }
 
     /// <summary>The menu's Close tab: the tab, its Peek with it.</summary>
-    private void CloseTabNow_Click(object sender, RoutedEventArgs e)
+    private async void CloseTabNow_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not BrowserTab tab) return;
+        if (!await MayLeaveAsync(tab.IsSplitRow ? RegularTabsOf(tab).Where(p => !p.IsPinned) : [tab])) return;
         if (tab is { IsSplitRow: true, Split: { } split }) CloseSplit(split);
         else RemoveTab(tab);
     }
@@ -2661,6 +3145,53 @@ public sealed partial class MainWindow : Window
     }
 
     private void Tabs_Drop(object sender, DragEventArgs e)
+    {
+        var glide = DropGlideFrom(sender, e);
+        DropTab(sender, e);
+        // Dropped: once the lists have laid out, it glides from where its picture was let go (PlaySlides).
+        _dropGlide = e.Handled ? glide : null;
+    }
+
+    /// <summary>A dropped tab, and where the picture under the pointer was when it was let go.</summary>
+    private (BrowserTab Tab, Point GhostAt)? _dropGlide;
+
+    /// <summary>
+    /// Where the dragged tab's picture is, from the pointer and where the picture's held
+    /// (RenderGhostsAsync): a row by its icon, a tile just below its top. None without a picture of
+    /// our own, or into a folder.
+    /// </summary>
+    private (BrowserTab, Point)? DropGlideFrom(object target, DragEventArgs e)
+    {
+        if (_dragTab is not { } tab || target == FolderList) return null;
+        var at = e.GetPosition(Root);
+        if (target == EssentialList)
+            return _tileGhost is null ? null : (tab, new Point(at.X - TileGhost.Width / 2 - 4, at.Y - 4 - 4));
+        return _rowGhost is null ? null : (tab, new Point(at.X - 19, at.Y - RowGhost.ActualHeight / 2));
+    }
+
+    /// <summary>
+    /// The dropped tab's row (or tile), in its new place, starts where its picture was let go and
+    /// glides home, rather than the picture vanishing and the row being there.
+    /// </summary>
+    private void GlideDropped()
+    {
+        if (_dropGlide is not var (tab, ghost)) return;
+        _dropGlide = null;
+        var list = tab.Place switch
+        {
+            TabPlace.Essential => EssentialList,
+            TabPlace.Pinned => PinnedList,
+            TabPlace.Regular => (ListViewBase)TabList,
+            _ => null,
+        };
+        if (list?.ContainerFromItem(tab) is not FrameworkElement row) return;
+        var home = row.TransformToVisual(Root).TransformPoint(new Point(0, 0));
+        var from = new Vector3((float)(ghost.X - home.X), (float)(ghost.Y - home.Y), 0);
+        if (from.Length() < 1) return;
+        Spring.To(row, "Translation", Vector3.Zero, duration: 0.3, bounce: 0, from: from);
+    }
+
+    private void DropTab(object sender, DragEventArgs e)
     {
         HideDropIndicator();
         // The dropped row lands where it was let go; the rest slide on from where they're shown
@@ -2828,6 +3359,7 @@ public sealed partial class MainWindow : Window
     private void PeekPageFrame_Tapped(object sender, TappedRoutedEventArgs e) => ClosePeek(animate: true);
     private void PeekClose_Click(object sender, RoutedEventArgs e) => ClosePeek(animate: true);
     private void PeekToTab_Click(object sender, RoutedEventArgs e) => PromotePeekToTab();
+    private void PeekToSplit_Click(object sender, RoutedEventArgs e) => PromotePeekToTab(split: true);
 
     // The close button on a tab row only shows while the row is hovered.
     private void TabRow_PointerEntered(object sender, PointerRoutedEventArgs e)
@@ -2903,22 +3435,29 @@ public sealed partial class MainWindow : Window
         Spring.Jump(Sidebar, "Translation", Vector3.Zero);
         Sidebar.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
         SidebarHotZone.Visibility = hidden ? Visibility.Visible : Visibility.Collapsed;
+        PlaceResizeHandle();
 
         UpdateDragRegions();
     }
 
     // How far the floating sidebar slides: from just past the window's edge, shadow included.
-    private const float SidebarSlide = (float)(FloatingInset + SidebarWidth + 4 + 16);
+    private float SidebarSlide => (float)(FloatingInset + SidebarWidth + 4 + 16);
 
     /// <summary>
-    /// The floating sidebar slides in like a drawer on a spring with a slight bounce, in about 250ms,
+    /// The floating sidebar slides in like a drawer on a spring without bounce (a hover throws nothing), in about 250ms,
     /// pushed off rather than from rest so it's moving the moment it's asked for (like an ease-out).
     /// </summary>
     private void RevealFloatingSidebar()
     {
         Sidebar.Visibility = Visibility.Visible;
-        Spring.To(Sidebar, "Translation", Vector3.Zero, duration: 0.25, bounce: 0.15,
+        Spring.To(Sidebar, "Translation", Vector3.Zero, duration: 0.25, bounce: 0,
             from: new Vector3(-SidebarSlide, 0, 0), kick: 0.5);
+        // With Windows' animation effects off, the spring jumps: it fades in where it is instead.
+        if (!_uiSettings.AnimationsEnabled)
+        {
+            Sidebar.Opacity = 0;
+            Ui.Fade(Sidebar, 1);
+        }
         _sidebarWatch.Start();
     }
 
@@ -2928,12 +3467,17 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void DismissFloatingSidebar()
     {
+        _sidebarDismissing = true;
         if (!_uiSettings.AnimationsEnabled)
         {
-            Sidebar.Visibility = Visibility.Collapsed;
+            Ui.Fade(Sidebar, 0, () =>
+            {
+                if (_sidebarDismissing) Sidebar.Visibility = Visibility.Collapsed;
+                _sidebarDismissing = false;
+                Sidebar.Opacity = 1;
+            });
             return;
         }
-        _sidebarDismissing = true;
         Spring.To(Sidebar, "Translation", new Vector3(-SidebarSlide, 0, 0), duration: 0.2, bounce: 0);
         // A spring has no completed event to wait for; by now it's off the edge, shadow and all.
         _sidebarDismissTimer.Start();
@@ -2944,7 +3488,8 @@ public sealed partial class MainWindow : Window
     {
         _sidebarDismissing = false;
         _sidebarDismissTimer.Stop();
-        Spring.To(Sidebar, "Translation", Vector3.Zero, duration: 0.25, bounce: 0.15);
+        if (!_uiSettings.AnimationsEnabled) Ui.Fade(Sidebar, 1);
+        else Spring.To(Sidebar, "Translation", Vector3.Zero, duration: 0.25, bounce: 0);
     }
 
     private void SidebarDismissTimer_Tick(DispatcherQueueTimer sender, object args)
@@ -3107,7 +3652,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Pressable things shrink slightly while pressed, so the UI visibly hears the click, and
-    /// spring back with a small rebound on release. Springs on the element's own Scale: no layout
+    /// settle back on release, without a rebound: nothing was thrown, and it happens many times a day. Springs on the element's own Scale: no layout
     /// work, and a quick press-release retargets smoothly mid-motion.
     /// </summary>
     private void AddPressFeedback(UIElement element, float pressedScale)
@@ -3117,14 +3662,16 @@ public sealed partial class MainWindow : Window
         void Press(object sender, PointerRoutedEventArgs e)
         {
             if (!_uiSettings.AnimationsEnabled) return;
+            // A split's row: the half pressed shrinks instead (SplitHalf_Loaded).
+            if (element is ListViewItem { Content: BrowserTab { IsSplitRow: true } }) return;
             element.CenterPoint = new Vector3(element.ActualSize / 2, 0);
-            // Down fast and without bounce; the liveliness is in the release.
+            // Down fast, so the press shows at once.
             Spring.To(element, "Scale", new Vector3(pressedScale, pressedScale, 1), duration: 0.15, bounce: 0);
         }
         void Release(object sender, PointerRoutedEventArgs e)
         {
             if (element.Scale == Vector3.One) return;
-            Spring.To(element, "Scale", Vector3.One, duration: 0.3, bounce: 0.4);
+            Spring.To(element, "Scale", Vector3.One, duration: 0.25, bounce: 0);
         }
 
         // Buttons and list items mark pointer events handled, so listen to handled ones too.
@@ -3138,6 +3685,12 @@ public sealed partial class MainWindow : Window
     private void ListItem_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
         if (sender == FolderList && !args.InRecycleQueue) IndentFolderRow(args.ItemContainer, args.Item);
+        // A split's row has no card or padding of its own (SplitRowStyle); a recycled container may have held either kind.
+        if (sender == TabList && !args.InRecycleQueue && args.ItemContainer is ListViewItem row)
+        {
+            var style = (Style)Application.Current.Resources[args.Item is BrowserTab { IsSplitRow: true } ? "SplitRowStyle" : "TabRowStyle"];
+            if (row.Style != style) row.Style = style;
+        }
         // Containers are recycled; wire each one once.
         if (args.InRecycleQueue || _pressFeedback.Contains(args.ItemContainer)) return;
         AddPressFeedback(args.ItemContainer, sender == EssentialList ? 0.96f : 0.98f);
@@ -3150,17 +3703,16 @@ public sealed partial class MainWindow : Window
         ReopenMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("reopen");
         ReopenMenuItem.IsEnabled = _closedTabs.Count > 0;
         NewFolderMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("folder");
+        // One's enough: they'd hold the same pull requests (LiveFolders.cs).
+        NewPullsFolderMenuItem.Visibility = Ui.Shown(!_private && !LiveFolders.Any());
         PrivateMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("private");
         DownloadsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("downloads");
         HistoryMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("history");
         SidebarMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("sidebar");
         SettingsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("settings");
-        var maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
-        MaximizeMenuItem.Text = maximized ? "Restore" : "Maximize";
-        MaximizeMenuIcon.Glyph = maximized ? "" : "";
     }
 
-    // As the system minimizes, so the menu this was clicked in is closed first (GhostPopups).
+    // As the system minimizes (GhostPopups), so any menu open is closed first.
     private void Minimize_Click(object sender, RoutedEventArgs e) => _ghostPopups.Minimize();
 
     private void Maximize_Click(object sender, RoutedEventArgs e)
@@ -3170,7 +3722,7 @@ public sealed partial class MainWindow : Window
         else presenter.Maximize();
     }
 
-    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => RequestClose("Click again to close");
 
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open(this);
 
@@ -3208,6 +3760,14 @@ public sealed partial class MainWindow : Window
         // Floating sidebar: its top row isn't always there, and the left edge is the hot zone.
         // (Not with the library over it.)
         if (!_sidebarHidden && !Library.IsHitTestVisible) rects.Add(BoundsOf(TitleDragSpacer));
+        // The window buttons, while they're down, are buttons; Peek's grabber, while it's open, a grabber;
+        // a split page's handle, where it reaches up into the gap above the page, a handle.
+        foreach (var hole in new[] { CaptionBarArea, PeekGrabberArea }.Concat(PageHandleAreas().Select(a => (Area?)a)))
+            if (hole is { } cut)
+                rects = rects
+                    .SelectMany(r => Areas.Carve(new Area(r.X, r.Y, r.Width, r.Height), cut))
+                    .Select(a => new Rect(a.X, a.Y, a.Width, a.Height))
+                    .ToList();
         // The command bar's layer covers the window, and a click anywhere outside it closes it.
         if (_commandBarOpen) rects.Clear();
 

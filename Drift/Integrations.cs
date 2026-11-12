@@ -34,6 +34,7 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, HiddenSite> _hiddenSites = new(StringComparer.OrdinalIgnoreCase);
     private DispatcherQueueTimer? _hoverShowTimer;
     private DispatcherQueueTimer? _hoverHideTimer;
+    private DispatcherQueueTimer? _hoverGoneTimer;
     private FrameworkElement? _hoverAnchor;
     private BrowserTab? _hoverTab;
     private Border? _hoverCard;
@@ -171,7 +172,7 @@ public sealed partial class MainWindow
 
     private void HideHoverCardSoon()
     {
-        _hoverHideTimer ??= OneShot(TimeSpan.FromMilliseconds(250), HideHoverCard);
+        _hoverHideTimer ??= OneShot(TimeSpan.FromMilliseconds(250), () => HideHoverCard(animate: true));
         _hoverHideTimer.Start();
     }
 
@@ -192,19 +193,36 @@ public sealed partial class MainWindow
         else if (card == MailCard) ShowingMailCard();
         PlaceHoverCard(card);
         card.Scale = new System.Numerics.Vector3(0.96f, 0.96f, 1);
+        card.IsHitTestVisible = true;
         card.Visibility = Visibility.Visible;
         card.Opacity = 1;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => card.Scale = System.Numerics.Vector3.One);
     }
 
-    private void HideHoverCard()
+    /// <param name="animate">
+    /// Shrinks back into the tab's corner as it fades, the way it grew out of it (the card's own
+    /// scale and opacity transitions), then goes. Otherwise (another card replacing it) at once.
+    /// </param>
+    private void HideHoverCard(bool animate = false)
     {
         _hoverShowTimer?.Stop();
         _hoverHideTimer?.Stop();
         if (_hoverCard is not { } card) return;
         _hoverCard = null;
         card.Opacity = 0;
-        card.Visibility = Visibility.Collapsed;
+        if (!animate)
+        {
+            card.Visibility = Visibility.Collapsed;
+            return;
+        }
+        card.IsHitTestVisible = false;
+        card.Scale = new System.Numerics.Vector3(0.96f, 0.96f, 1);
+        _hoverGoneTimer ??= OneShot(TimeSpan.FromMilliseconds(160), () =>
+        {
+            foreach (var gone in new[] { CalendarCard, MailCard })
+                if (gone != _hoverCard) gone.Visibility = Visibility.Collapsed;
+        });
+        _hoverGoneTimer.Start();
     }
 
     /// <summary>

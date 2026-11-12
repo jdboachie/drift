@@ -47,6 +47,27 @@ public class SplitLayoutTests
     }
 
     [Fact]
+    public void Dragged_past_the_minimum_it_gives_a_little_with_resistance()
+    {
+        // Within the limits, it's where the pointer is.
+        Assert.Equal(0.4, SplitLayout.Stretched(400, 1000, minPane: 200), 3);
+        // 100px past the left limit: it goes past, but by much less, and never by Stretch or more.
+        var past = SplitLayout.Stretched(100, 1000, minPane: 200) * 1000;
+        Assert.InRange(past, 200 - SplitLayout.Stretch, 195);
+        Assert.True(SplitLayout.Stretched(-5000, 1000, minPane: 200) * 1000 > 200 - SplitLayout.Stretch);
+        // Further out, further past: it never stops dead.
+        Assert.True(SplitLayout.Stretched(50, 1000, minPane: 200) < SplitLayout.Stretched(100, 1000, minPane: 200));
+        // The same on the right.
+        Assert.InRange(SplitLayout.Stretched(900, 1000, minPane: 200) * 1000, 805, 800 + SplitLayout.Stretch);
+    }
+
+    [Fact]
+    public void Too_narrow_to_stretch_the_pages_share_evenly()
+    {
+        Assert.Equal(0.5, SplitLayout.Stretched(100, 300, minPane: 200), 3);
+    }
+
+    [Fact]
     public void Too_narrow_for_both_minimums_the_pages_share_evenly()
     {
         Assert.Equal(0.5, SplitLayout.Ratio(100, 300, minPane: 200), 3);

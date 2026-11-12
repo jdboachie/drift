@@ -20,21 +20,41 @@ public static class PeekExpand
     public const double Kick = 0.6;
     public const double FadeSeconds = 0.14;
 
+    // Opening as a split, the card and the page it came from move on Peek's own spring, so it's plainly
+    // the same feature: it leaves at once and settles quickly. With less bounce, since these are the
+    // largest things that move (a big surface with the same bounce looks wobbly), and a gentler push off:
+    // Peek's whole push took the card most of the way in two frames, and it read as a jump.
+    public const double SplitSeconds = Seconds;
+    public const double SplitBounce = 0.1;
+    public const double SplitKick = 0.15;
+
     /// <summary>The edges' spring, at the start, heading <paramref name="travel"/> out (0 to travel).</summary>
-    public static SpringMotion Grow(double travel) => new(Seconds, Bounce)
+    public static SpringMotion Grow(double travel, double seconds = Seconds, double bounce = Bounce, double kick = Kick) => new(seconds, bounce)
     {
         Position = 0,
         Target = travel,
-        Velocity = travel * Kick * 2 * Math.PI / Seconds,
+        Velocity = travel * kick * 2 * Math.PI / seconds,
     };
 
     /// <summary>How long until an edge travelling this many pixels is at rest (SpringMotion.AtRest).</summary>
-    public static double SettleSeconds(double travel)
+    public static double SettleSeconds(double travel, double seconds = Seconds, double bounce = Bounce, double kick = Kick)
     {
-        var spring = Grow(travel);
-        var seconds = 0.0;
-        for (; seconds < 1 && !spring.AtRest; seconds += 0.005) spring.Step(0.005);
-        return seconds;
+        var spring = Grow(travel, seconds, bounce, kick);
+        var time = 0.0;
+        for (; time < 2 && !spring.AtRest; time += 0.005) spring.Step(0.005);
+        return time;
+    }
+
+    /// <summary>
+    /// How long until an edge travelling <paramref name="travel"/> pixels on the split's spring is all but
+    /// there: within <paramref name="within"/> pixels of its end, or past it on the overshoot.
+    /// </summary>
+    public static double ArriveSeconds(double travel, double within)
+    {
+        var spring = Grow(travel, SplitSeconds, SplitBounce, SplitKick);
+        var time = 0.0;
+        for (; time < 2 && travel - spring.Position > within; time += 0.001) spring.Step(0.001);
+        return time;
     }
 
     /// <summary>
@@ -59,6 +79,10 @@ public static class PeekExpand
         Math.Max(0, card.Top - page.Top),
         Math.Max(0, card.Right - page.Right),
         Math.Max(0, card.Bottom - page.Bottom));
+
+    /// <summary>The smallest box (as margins in the same cell) holding both: the card while it moves from one to the other.</summary>
+    public static Edges Union(Edges a, Edges b) => new(
+        Math.Min(a.Left, b.Left), Math.Min(a.Top, b.Top), Math.Min(a.Right, b.Right), Math.Min(a.Bottom, b.Bottom));
 
     /// <summary>The page's width as the page sees it (innerWidth), laid out in a view this wide at this zoom.</summary>
     public static int CssWidth(double viewWidth, double zoom) => (int)Math.Floor(viewWidth / (zoom > 0 ? zoom : 1));

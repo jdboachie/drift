@@ -59,13 +59,17 @@ public sealed partial class MainWindow
     private static void IndentFolderRow(DependencyObject? container, object row)
     {
         if (container is not ListViewItem item) return;
-        var depth = row switch { BrowserTab tab => tab.Depth, TabFolder folder => folder.Depth, _ => 0 };
+        var depth = row switch { BrowserTab tab => tab.Depth, TabFolder folder => folder.Depth, LiveNote note => note.Depth, _ => 0 };
         item.Margin = new Thickness(depth * BrowserTab.IndentStep, 1, 0, 1);
+        // A live folder's "No open pull requests" is only words: no hover, no click.
+        item.IsHitTestVisible = row is not LiveNote { OpensSignIn: false };
     }
 
     /// <summary>A tab came to the front: in a closed folder, it stays under the folder's header.</summary>
     private void NoteFolderTabShown(BrowserTab tab)
     {
+        // Seen: no longer new in its live folder (LiveFolders.cs).
+        tab.IsNew = false;
         if (tab.Place == TabPlace.Folder) _folderTree.Shown(tab);
         RefreshFolderRows();
     }
@@ -105,7 +109,11 @@ public sealed partial class MainWindow
         LeaveSplit(tab);
         var syncing = _syncingSelection;
         _syncingSelection = true;
-        if (tab.Place == TabPlace.Folder) _folderTree.Remove(tab);
+        if (tab.Place == TabPlace.Folder)
+        {
+            DismissLive(tab);
+            _folderTree.Remove(tab);
+        }
         else CollectionFor(tab.Place).Remove(tab);
         _syncingSelection = syncing;
     }
@@ -115,7 +123,9 @@ public sealed partial class MainWindow
     {
         // A tab that wasn't kept before belongs, from now on, to the page it's on.
         if (!tab.IsPinned) tab.HomeUri = Uri.TryCreate(tab.Url, UriKind.Absolute, out var here) ? here : null;
+        if (folder.IsLive) return;
         if (tab.Place != TabPlace.Folder) DetachTab(tab);
+        else if (tab.Folder != folder) DismissLive(tab);
         tab.Place = TabPlace.Folder;
         _folderTree.Add(tab, folder, index);
         if (tab == _active) _folderTree.Shown(tab);
@@ -242,6 +252,13 @@ public sealed partial class MainWindow
                 // After this event: the toggle changes the list's items.
                 if (!folder.IsRenaming) DispatcherQueue.TryEnqueue(() => ToggleFolder(folder));
                 break;
+            case LiveNote note:
+                // Not selectable either. Signed out, it takes you to GitHub's sign-in.
+                _syncingSelection = true;
+                FolderList.SelectedItem = _active is { Place: TabPlace.Folder, Split: null } && FolderRows.Contains(_active) ? _active : null;
+                _syncingSelection = false;
+                if (note.OpensSignIn) DispatcherQueue.TryEnqueue(() => OpenInNewTab(GitHubPulls.SignIn));
+                break;
             case BrowserTab tab when tab != _active:
                 Activate(tab);
                 break;
@@ -273,9 +290,10 @@ public sealed partial class MainWindow
     private void FolderCollapseAll_Click(object sender, RoutedEventArgs e) => SetAllExpanded(false);
 
     /// <summary>Unloads every tab in it: their pages close, their rows stay.</summary>
-    private void FolderCloseAll_Click(object sender, RoutedEventArgs e)
+    private async void FolderCloseAll_Click(object sender, RoutedEventArgs e)
     {
         if (FolderOf(sender) is not { } folder) return;
+        if (!await MayLeaveAsync(folder.AllTabs.Cast<BrowserTab>())) return;
         foreach (var tab in folder.AllTabs.Cast<BrowserTab>().ToList()) UnloadTab(tab);
         RefreshFolderRows();
     }
@@ -319,6 +337,7 @@ public sealed partial class MainWindow
             switch (await dialog.ShowAsync())
             {
                 case ContentDialogResult.Primary:
+                    if (count > 0 && !await MayLeaveAsync(folder.AllTabs.Cast<BrowserTab>())) break;
                     DeleteFolder(folder, closeTabs: count > 0);
                     break;
                 case ContentDialogResult.Secondary:
@@ -339,6 +358,7 @@ public sealed partial class MainWindow
     {
         if (sender is not MenuFlyout menu) return;
         ShowSplitMenuItems(menu);
+        ShowBookmarkMenuItem(menu);
         foreach (var sub in menu.Items.OfType<MenuFlyoutSubItem>().Where(s => s.Tag is BrowserTab))
         {
             var tab = (BrowserTab)sub.Tag;
@@ -347,7 +367,7 @@ public sealed partial class MainWindow
             add.Click += (_, _) => NewFolder(null, tab);
             sub.Items.Add(add);
             if (_folderTree.Folders.Count > 0) sub.Items.Add(new MenuFlyoutSeparator());
-            foreach (var folder in _folderTree.AllFolders)
+            foreach (var folder in _folderTree.AllFolders.Where(f => !f.IsLive))
             {
                 var item = new MenuFlyoutItem
                 {

@@ -20,7 +20,8 @@
                  the page's shrink to whole pixels (PageShrink/PageShift, set in code) on the iOS drawer curve,
                  cubic-bezier(0.32, 0.72, 0, 1), over 300ms, and the fades, on the strong ease-out,
                  cubic-bezier(0.23, 1, 0.32, 1). The card starts small at the link and fades up over 100ms; the
-                 page dims a little behind it so the card reads first; the buttons fade in as the card settles.
+                 page dims a little behind it so the card reads first; the buttons fade in as the card settles,
+                 sliding out from its edge (SpringPeekIn), all three together.
                  Timings match the Peek constants in MainWindow.xaml.cs. -->
             <Storyboard x:Name="PeekEnterAnimation">
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PageAreaTransform" Storyboard.TargetProperty="ScaleX">
@@ -60,6 +61,10 @@
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PeekLayer" Storyboard.TargetProperty="Opacity">
                     <DiscreteDoubleKeyFrame KeyTime="0:0:0.110" Value="1" />
                     <SplineDoubleKeyFrame KeyTime="0:0:0.240" Value="0" KeySpline="0.23,1 0.32,1" />
+                </DoubleAnimationUsingKeyFrames>
+                <!-- The buttons go at once, back toward the card (SpringPeekOut), not with it. -->
+                <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PeekControls" Storyboard.TargetProperty="Opacity">
+                    <SplineDoubleKeyFrame KeyTime="0:0:0.100" Value="0" KeySpline="0.23,1 0.32,1" />
                 </DoubleAnimationUsingKeyFrames>
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PageAreaTransform" Storyboard.TargetProperty="ScaleX">
                     <SplineDoubleKeyFrame KeyTime="0:0:0.210" Value="1" KeySpline="0.23,1 0.32,1" />
@@ -190,7 +195,7 @@
             </Grid>
             </Border>
                 <!-- Between the two pages: drag to share the width differently. -->
-                <local:SplitDivider x:Name="SplitDivider"
+                <local:ResizeGrip x:Name="SplitDivider"
                                     Grid.Column="1"
                                     Background="Transparent"
                                     Visibility="Collapsed"
@@ -228,7 +233,7 @@
                             <ScalarTransition Duration="0:0:0.12" />
                         </Border.OpacityTransition>
                     </Border>
-                </local:SplitDivider>
+                </local:ResizeGrip>
                 <!-- The right-hand page of a split. Right-hand pages' views live here while they're split. -->
                 <Border x:Name="SplitCard"
                         Grid.Column="2"
@@ -243,6 +248,96 @@
                     </Border.Style>
                     <Grid x:Name="SplitHost" />
                 </Border>
+                <!-- The page you're on: its border a step stronger, over the card's own. -->
+                <Border x:Name="LeftPageRing"
+                        Grid.Column="0"
+                        CornerRadius="6"
+                        BorderThickness="1"
+                        BorderBrush="{ThemeResource DriftFocusedPageBorderBrush}"
+                        IsHitTestVisible="False"
+                        Opacity="0">
+                    <Border.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </Border.OpacityTransition>
+                </Border>
+                <!-- On the left page's top edge, a little tab, on the page you're on only: click for what you can do with
+                     that page; drag it to swap sides (SplitHandles.cs). Half of it is in the gap above the page, half over the page. -->
+                <Button x:Name="LeftPageHandle"
+                        Grid.Column="0"
+                        Style="{StaticResource PageHandleStyle}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Margin="0,-9,0,0"
+                        Visibility="Collapsed"
+                        AutomationProperties.Name="Left page"
+                        Click="PageHandle_Click">
+                    <Button.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </Button.OpacityTransition>
+                    <Grid>
+                        <Border x:Name="LeftPageTab"
+                                Width="40"
+                                Height="14"
+                                CornerRadius="7"
+                                BorderThickness="1"
+                                Background="{ThemeResource DriftPageBrush}"
+                                BorderBrush="{ThemeResource DriftFocusedPageBorderBrush}" />
+                        <StackPanel x:Name="LeftPageDots" Orientation="Horizontal" Spacing="3"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                            <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                            <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                            <StackPanel.OpacityTransition>
+                                <ScalarTransition Duration="0:0:0.15" />
+                            </StackPanel.OpacityTransition>
+                        </StackPanel>
+                    </Grid>
+                </Button>
+                <!-- The page you're on: its border a step stronger, over the card's own. -->
+                <Border x:Name="RightPageRing"
+                        Grid.Column="2"
+                        CornerRadius="6"
+                        BorderThickness="1"
+                        BorderBrush="{ThemeResource DriftFocusedPageBorderBrush}"
+                        IsHitTestVisible="False"
+                        Opacity="0">
+                    <Border.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </Border.OpacityTransition>
+                </Border>
+                <!-- On the right page's top edge, a little tab, on the page you're on only: click for what you can do with
+                     that page; drag it to swap sides (SplitHandles.cs). Half of it is in the gap above the page, half over the page. -->
+                <Button x:Name="RightPageHandle"
+                        Grid.Column="2"
+                        Style="{StaticResource PageHandleStyle}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Margin="0,-9,0,0"
+                        Visibility="Collapsed"
+                        AutomationProperties.Name="Right page"
+                        Click="PageHandle_Click">
+                    <Button.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </Button.OpacityTransition>
+                    <Grid>
+                        <Border x:Name="RightPageTab"
+                                Width="40"
+                                Height="14"
+                                CornerRadius="7"
+                                BorderThickness="1"
+                                Background="{ThemeResource DriftPageBrush}"
+                                BorderBrush="{ThemeResource DriftFocusedPageBorderBrush}" />
+                        <StackPanel x:Name="RightPageDots" Orientation="Horizontal" Spacing="3"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                            <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                            <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                            <StackPanel.OpacityTransition>
+                                <ScalarTransition Duration="0:0:0.15" />
+                            </StackPanel.OpacityTransition>
+                        </StackPanel>
+                    </Grid>
+                </Button>
                 <!-- While a tab is dragged over a half of the page: that half, outlined, where it'll land (Split.cs). -->
                 <Border x:Name="SplitDropSlot"
                         Grid.ColumnSpan="3"
@@ -313,6 +408,13 @@
                              it grows, and a picture of the page standing in for it, held still. -->
                         <Border x:Name="PeekCardTint" CornerRadius="7" />
                         <Grid x:Name="PeekWebHost" />
+                        <!-- Over the page until it has content, then fades (RevealWhenLoaded): fading the page
+                             itself stopped the whole card drawing for the length of the fade. -->
+                        <Border x:Name="PeekCover"
+                                CornerRadius="7"
+                                Background="{ThemeResource DriftPageBrush}"
+                                Opacity="0"
+                                IsHitTestVisible="False" />
                         <Border x:Name="PeekStill" CornerRadius="7" Visibility="Collapsed" IsHitTestVisible="False">
                             <Border.Background>
                                 <ImageBrush x:Name="PeekStillBrush" Stretch="Fill" />
@@ -320,6 +422,39 @@
                         </Border>
                     </Grid>
                 </Border>
+                <!-- The grabber, as on a sheet: pull the card down by it to close it (PeekGrab.cs). Out of
+                     sight above the card until the pointer rests at the window's top over it; then the card
+                     comes down a little and it's in the gap, clear of the window's drag edge. What it
+                     answers to fills the gap and reaches a little way onto the card. -->
+                <Grid x:Name="PeekGrabber"
+                      Width="160"
+                      Height="24"
+                      Margin="0,-14,0,0"
+                      IsHitTestVisible="False"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Top"
+                      Background="Transparent"
+                      AutomationProperties.Name="Drag down to close"
+                      PointerEntered="PeekGrabber_PointerEntered"
+                      PointerExited="PeekGrabber_PointerExited"
+                      PointerPressed="PeekGrabber_PointerPressed"
+                      PointerMoved="PeekGrabber_PointerMoved"
+                      PointerReleased="PeekGrabber_PointerReleased"
+                      PointerCanceled="PeekGrabber_PointerCanceled"
+                      PointerCaptureLost="PeekGrabber_PointerCanceled">
+                    <Border x:Name="PeekGrabberBar"
+                            Width="44"
+                            Height="5"
+                            Margin="0,4,0,0"
+                            CornerRadius="2.5"
+                            VerticalAlignment="Top"
+                            Background="{ThemeResource DriftIconBrush}"
+                            Opacity="0">
+                        <Border.OpacityTransition>
+                            <ScalarTransition Duration="0:0:0.12" />
+                        </Border.OpacityTransition>
+                    </Border>
+                </Grid>
             </Grid>
 
             <StackPanel x:Name="PeekControls"
@@ -337,6 +472,13 @@
                         PointerEntered="PeekToTab_PointerEntered"
                         AutomationProperties.Name="Open as tab" ToolTipService.ToolTip="Open as tab">
                     <FontIcon Glyph="&#xE740;" FontSize="12" />
+                </Button>
+                <!-- Beside the page it came from (PromotePeekToTab). Not when that page is already in a split. -->
+                <Button x:Name="PeekToSplitButton" Style="{StaticResource PeekButtonStyle}"
+                        Click="PeekToSplit_Click"
+                        PointerEntered="PeekToTab_PointerEntered"
+                        AutomationProperties.Name="Open as split" ToolTipService.ToolTip="Open as split">
+                    <FontIcon Glyph="&#xE90D;" FontSize="12" />
                 </Button>
             </StackPanel>
         </Grid>
@@ -417,6 +559,11 @@
                                     <FontIcon Glyph="&#xE8F4;" />
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="NewPullsFolderMenuItem" Text="New pull requests folder" Click="NewPullsFolder_Click">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE8B7;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
                             <MenuFlyoutItem x:Name="ReopenMenuItem" Text="Reopen closed tab" Click="Reopen_Click">
                                 <MenuFlyoutItem.Icon>
                                     <FontIcon Glyph="&#xE7A7;" />
@@ -446,22 +593,6 @@
                             <MenuFlyoutItem x:Name="SettingsMenuItem" Text="Settings" Click="Settings_Click">
                                 <MenuFlyoutItem.Icon>
                                     <FontIcon Glyph="&#xE713;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                            <MenuFlyoutSeparator />
-                            <MenuFlyoutItem Text="Minimize" Click="Minimize_Click">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE921;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                            <MenuFlyoutItem x:Name="MaximizeMenuItem" Text="Maximize" Click="Maximize_Click">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon x:Name="MaximizeMenuIcon" Glyph="&#xE922;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
-                            <MenuFlyoutItem Text="Close window" KeyboardAcceleratorTextOverride="Alt+F4" Click="CloseWindow_Click">
-                                <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE711;" />
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                         </MenuFlyout>
@@ -797,11 +928,15 @@
             <!-- Folders, pinned tabs, New Tab and the tabs scroll together under the Essentials, as in Arc,
                  so a long pinned list never hides the tabs. The tab list takes whatever height is left
                  below the tabs (SidebarScroll_SizeChanged), so a tab can still be dropped there. -->
+            <!-- Always scrollable (Enabled, not Auto), even with too few tabs to scroll: a touchpad swipe over
+                 the sidebar reaches the library's swipe (Library.cs) only by chaining sideways out of a list
+                 that scrolls. With nothing to scroll, the swipe open never reached it, and stalled. -->
             <ScrollViewer x:Name="SidebarScroll"
                           Grid.Row="3"
                           Grid.RowSpan="5"
                           HorizontalScrollMode="Disabled"
                           HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollMode="Enabled"
                           VerticalScrollBarVisibility="Auto"
                           SizeChanged="SidebarScroll_SizeChanged">
                 <Grid x:Name="SidebarScrollContent">
@@ -841,7 +976,21 @@
                                               DoubleTapped="FolderHeader_DoubleTapped">
                                             <Grid.ContextFlyout>
                                                 <MenuFlyout Opened="SidebarMenu_Opened" Closed="SidebarMenu_Closed">
-                                                    <MenuFlyoutItem Text="New tab" Tag="{x:Bind}" Click="FolderNewTab_Click">
+                                                    <!-- A live folder (LiveFolders.cs): its tabs come from GitHub, not from you. -->
+                                                    <MenuFlyoutItem Text="Refresh" Tag="{x:Bind}" Click="LiveFolderRefresh_Click"
+                                                                    Visibility="{x:Bind local:Ui.Shown(IsLive), Mode=OneWay}">
+                                                        <MenuFlyoutItem.Icon>
+                                                            <FontIcon Glyph="&#xE72C;" />
+                                                        </MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="Open on GitHub" Tag="{x:Bind}" Click="LiveFolderOpenSource_Click"
+                                                                    Visibility="{x:Bind local:Ui.Shown(IsLive), Mode=OneWay}">
+                                                        <MenuFlyoutItem.Icon>
+                                                            <FontIcon Glyph="&#xE8A7;" />
+                                                        </MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="New tab" Tag="{x:Bind}" Click="FolderNewTab_Click"
+                                                                    Visibility="{x:Bind local:Ui.Hidden(IsLive), Mode=OneWay}">
                                                         <MenuFlyoutItem.Icon>
                                                             <FontIcon Glyph="&#xE710;" />
                                                         </MenuFlyoutItem.Icon>
@@ -852,7 +1001,8 @@
                                                             <FontIcon Glyph="&#xE8AC;" />
                                                         </MenuFlyoutItem.Icon>
                                                     </MenuFlyoutItem>
-                                                    <MenuFlyoutItem Text="New subfolder" Tag="{x:Bind}" Click="FolderNewSubfolder_Click">
+                                                    <MenuFlyoutItem Text="New subfolder" Tag="{x:Bind}" Click="FolderNewSubfolder_Click"
+                                                                    Visibility="{x:Bind local:Ui.Hidden(IsLive), Mode=OneWay}">
                                                         <MenuFlyoutItem.Icon>
                                                             <FontIcon Glyph="&#xE8F4;" />
                                                         </MenuFlyoutItem.Icon>
@@ -892,7 +1042,34 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="14"
-                                                      Foreground="{ThemeResource DriftIconBrush}" />
+                                                      Foreground="{ThemeResource DriftIconBrush}"
+                                                      Visibility="{x:Bind local:Ui.Hidden(IsLive), Mode=OneWay}" />
+                                            <!-- A live folder (LiveFolders.cs): still a folder, with where its tabs come from as a badge on its
+                                                 corner, GitHub's mark (Octicons, MIT). The folder is drawn twice, each clipped, so its corner
+                                                 under the badge is cut away: the sidebar's see-through, so nothing behind the badge could hide it. -->
+                                            <Grid Width="16" Height="16" VerticalAlignment="Center"
+                                                  Visibility="{x:Bind local:Ui.Shown(IsLive), Mode=OneWay}">
+                                                <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="14" Width="16" Height="16"
+                                                          Foreground="{ThemeResource DriftIconBrush}">
+                                                    <FontIcon.Clip>
+                                                        <RectangleGeometry Rect="0,0,7.5,16" />
+                                                    </FontIcon.Clip>
+                                                </FontIcon>
+                                                <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="14" Width="16" Height="16"
+                                                          Foreground="{ThemeResource DriftIconBrush}">
+                                                    <FontIcon.Clip>
+                                                        <RectangleGeometry Rect="7.5,0,8.5,7" />
+                                                    </FontIcon.Clip>
+                                                </FontIcon>
+                                                <!-- Off the corner a little, as a badge sits. -->
+                                                <Viewbox Width="9" Height="9" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                                                    <Viewbox.RenderTransform>
+                                                        <TranslateTransform X="1.5" Y="1" />
+                                                    </Viewbox.RenderTransform>
+                                                <Path Fill="{ThemeResource DriftIconBrush}"
+                                                      Data="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
+                                                </Viewbox>
+                                            </Grid>
                                             <TextBlock Grid.Column="1"
                                                        Text="{x:Bind Name, Mode=OneWay}"
                                                        Visibility="{x:Bind local:Ui.Hidden(IsRenaming), Mode=OneWay}"
@@ -993,6 +1170,12 @@
                                                         FontSize="12" Padding="10,1,10,2" MinHeight="0" MinWidth="0" CornerRadius="10"
                                                         VerticalAlignment="Center"
                                                         Visibility="{x:Bind JoinVisibility, Mode=OneWay}" />
+                                                <!-- New in a live folder (LiveFolders.cs), until it's opened. -->
+                                                <Ellipse Grid.Column="2" Width="6" Height="6" Margin="0,0,6,0"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                         Visibility="{x:Bind NewVisibility, Mode=OneWay}"
+                                                         AutomationProperties.Name="New" />
                                             </Grid>
                                             <Button Grid.Column="2"
                                                     Opacity="0"
@@ -1022,6 +1205,17 @@
                                         </Grid>
                                     </DataTemplate>
                                 </local:FolderRowTemplateSelector.TabTemplate>
+                                <!-- A live folder's note (LiveFolders.cs): signed out, or nothing in it. In line with the tabs' titles. -->
+                                <local:FolderRowTemplateSelector.NoteTemplate>
+                                    <DataTemplate x:DataType="models:LiveNote">
+                                        <TextBlock Text="{x:Bind Text, Mode=OneWay}"
+                                                   Margin="26,0,0,0"
+                                                   FontSize="13"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                                    </DataTemplate>
+                                </local:FolderRowTemplateSelector.NoteTemplate>
                             </local:FolderRowTemplateSelector>
                         </ListView.ItemTemplateSelector>
                     </ListView>
@@ -1314,71 +1508,88 @@
                                                 VerticalAlignment="Center"
                                                 Visibility="{x:Bind JoinVisibility, Mode=OneWay}" />
                                     </Grid>
-                                    <!-- Split view (Split.cs): its own row, both pages in it as two pills like Arc's, the one
-                                         you're on brighter. Click a pill to go to that page; each has its own ×. -->
-                                    <Grid Grid.ColumnSpan="3" Margin="-6,4,0,4" ColumnSpacing="4" Visibility="{x:Bind SplitVisibility, Mode=OneWay}">
+                                    <!-- Split view (Split.cs): one row for both pages, side by side as they are on screen, each half
+                                         filling its side of the row. While the split is the tab you're on, the selected-tab card
+                                         sits on the half you're on, and springs across when you switch (PlaceSplitCard). On hover
+                                         a half's favicon becomes its ×, as Safari's tabs do, so the title keeps its room. -->
+                                    <Grid Grid.ColumnSpan="3" Visibility="{x:Bind SplitVisibility, Mode=OneWay}" SizeChanged="SplitRow_SizeChanged">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="3" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" CornerRadius="6" Background="{ThemeResource DriftTileBrush}" Padding="8,0,2,0">
-                                            <Grid Tag="{x:Bind Split.Left, Mode=OneWay}" Tapped="SplitHalf_Tapped" Background="Transparent" ColumnSpacing="8"
-                                                  PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="16" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}"
-                                                          Opacity="{x:Bind Split.Left.HalfOpacity, Mode=OneWay}"
+                                        <Border Grid.ColumnSpan="3" HorizontalAlignment="Left" Tag="{x:Bind}"
+                                                CornerRadius="8" BorderThickness="1" IsHitTestVisible="False" Opacity="0"
+                                                Background="{ThemeResource DriftSelectedBrush}"
+                                                BorderBrush="{ThemeResource DriftActiveBorderBrush}"
+                                                Loaded="SplitCard_Loaded">
+                                            <Border.OpacityTransition>
+                                                <ScalarTransition Duration="0:0:0.15" />
+                                            </Border.OpacityTransition>
+                                        </Border>
+                                        <!-- Between the halves, as the gap between the pages is. -->
+                                        <Border Grid.Column="1" Width="1" Height="16" HorizontalAlignment="Center"
+                                                Background="{ThemeResource DriftDividerBrush}">
+                                            <Border.OpacityTransition>
+                                                <ScalarTransition Duration="0:0:0.15" />
+                                            </Border.OpacityTransition>
+                                        </Border>
+                                        <Grid Grid.Column="0" Tag="{x:Bind Split.Left, Mode=OneWay}" Background="Transparent" CornerRadius="8"
+                                              Padding="11,0,8,0" ColumnSpacing="8"
+                                              AutomationProperties.Name="{x:Bind Split.Left.Title, Mode=OneWay}"
+                                              Loaded="SplitHalf_Loaded" Tapped="SplitHalf_Tapped"
+                                              PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid Opacity="{x:Bind Split.Left.ContentOpacity, Mode=OneWay}">
+                                                <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" Opacity="0.6"
                                                           Visibility="{x:Bind Split.Left.PlaceholderVisibility, Mode=OneWay}" />
-                                                <Image Source="{x:Bind Split.Left.Favicon, Mode=OneWay}" Width="16" Height="16"
-                                                       Opacity="{x:Bind Split.Left.HalfOpacity, Mode=OneWay}" />
-                                                <TextBlock Grid.Column="1" Text="{x:Bind Split.Left.Title, Mode=OneWay}" FontSize="13"
-                                                           Opacity="{x:Bind Split.Left.HalfOpacity, Mode=OneWay}"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                <!-- Takes just this page out of the split; shown while the half is hovered. -->
-                                                <Button Grid.Column="2"
-                                                        Width="20" Height="20"
-                                                        Visibility="Collapsed"
-                                                        Tag="{x:Bind Split.Left, Mode=OneWay}"
-                                                        Click="CloseSplitHalf_Click"
-                                                        Style="{StaticResource TabCloseButtonStyle}"
-                                                        AutomationProperties.Name="Close tab"
-                                                        ToolTipService.ToolTip="Close tab">
-                                                    <FontIcon Glyph="&#xE711;" FontSize="9" />
-                                                </Button>
+                                                <Image Source="{x:Bind Split.Left.Favicon, Mode=OneWay}" Width="16" Height="16" />
                                             </Grid>
-                                        </Border>
-                                        <Border Grid.Column="1" CornerRadius="6" Background="{ThemeResource DriftTileBrush}" Padding="8,0,2,0">
-                                            <Grid Tag="{x:Bind Split.Right, Mode=OneWay}" Tapped="SplitHalf_Tapped" Background="Transparent" ColumnSpacing="8"
-                                                  PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="16" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}"
-                                                          Opacity="{x:Bind Split.Right.HalfOpacity, Mode=OneWay}"
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Split.Left.Title, Mode=OneWay}" FontSize="13"
+                                                       Opacity="{x:Bind Split.Left.ContentOpacity, Mode=OneWay}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <!-- Takes just this page out of the split. -->
+                                            <Button Width="20" Height="20" Margin="-2,0"
+                                                    Opacity="0" IsHitTestVisible="False"
+                                                    Tag="{x:Bind Split.Left, Mode=OneWay}"
+                                                    Click="CloseSplitHalf_Click"
+                                                    Style="{StaticResource TabCloseButtonStyle}"
+                                                    AutomationProperties.Name="Close tab"
+                                                    ToolTipService.ToolTip="Close tab">
+                                                <FontIcon Glyph="&#xE711;" FontSize="9" />
+                                            </Button>
+                                        </Grid>
+                                        <Grid Grid.Column="2" Tag="{x:Bind Split.Right, Mode=OneWay}" Background="Transparent" CornerRadius="8"
+                                              Padding="11,0,8,0" ColumnSpacing="8"
+                                              AutomationProperties.Name="{x:Bind Split.Right.Title, Mode=OneWay}"
+                                              Loaded="SplitHalf_Loaded" Tapped="SplitHalf_Tapped"
+                                              PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid Opacity="{x:Bind Split.Right.ContentOpacity, Mode=OneWay}">
+                                                <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" Opacity="0.6"
                                                           Visibility="{x:Bind Split.Right.PlaceholderVisibility, Mode=OneWay}" />
-                                                <Image Source="{x:Bind Split.Right.Favicon, Mode=OneWay}" Width="16" Height="16"
-                                                       Opacity="{x:Bind Split.Right.HalfOpacity, Mode=OneWay}" />
-                                                <TextBlock Grid.Column="1" Text="{x:Bind Split.Right.Title, Mode=OneWay}" FontSize="13"
-                                                           Opacity="{x:Bind Split.Right.HalfOpacity, Mode=OneWay}"
-                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                <!-- Takes just this page out of the split; shown while the half is hovered. -->
-                                                <Button Grid.Column="2"
-                                                        Width="20" Height="20"
-                                                        Visibility="Collapsed"
-                                                        Tag="{x:Bind Split.Right, Mode=OneWay}"
-                                                        Click="CloseSplitHalf_Click"
-                                                        Style="{StaticResource TabCloseButtonStyle}"
-                                                        AutomationProperties.Name="Close tab"
-                                                        ToolTipService.ToolTip="Close tab">
-                                                    <FontIcon Glyph="&#xE711;" FontSize="9" />
-                                                </Button>
+                                                <Image Source="{x:Bind Split.Right.Favicon, Mode=OneWay}" Width="16" Height="16" />
                                             </Grid>
-                                        </Border>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Split.Right.Title, Mode=OneWay}" FontSize="13"
+                                                       Opacity="{x:Bind Split.Right.ContentOpacity, Mode=OneWay}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <!-- Takes just this page out of the split. -->
+                                            <Button Width="20" Height="20" Margin="-2,0"
+                                                    Opacity="0" IsHitTestVisible="False"
+                                                    Tag="{x:Bind Split.Right, Mode=OneWay}"
+                                                    Click="CloseSplitHalf_Click"
+                                                    Style="{StaticResource TabCloseButtonStyle}"
+                                                    AutomationProperties.Name="Close tab"
+                                                    ToolTipService.ToolTip="Close tab">
+                                                <FontIcon Glyph="&#xE711;" FontSize="9" />
+                                            </Button>
+                                        </Grid>
                                     </Grid>
                                     <!-- Shown on hover, like Arc. (A split's row has one per half instead.) -->
                                     <Button Grid.Column="2"
@@ -1550,7 +1761,7 @@
 
             <!-- Downloads: while one runs, or one has finished since you last looked, a row at the bottom
                  with its name and progress. It opens the library's list; so do Ctrl+J and the menu. -->
-            <!-- The library (downloads and history), like Zen's button in the same place. -->
+            <!-- The library (bookmarks, downloads and history), like Zen's button in the same place. -->
             <Button x:Name="LibraryButton"
                     Grid.Row="9"
                     Margin="0,4,0,0"
@@ -1561,7 +1772,7 @@
                     Style="{StaticResource IconButtonStyle}"
                     Click="LibraryButton_Click"
                     AutomationProperties.Name="Library"
-                    ToolTipService.ToolTip="Downloads and history">
+                    ToolTipService.ToolTip="Library">
                 <FontIcon Glyph="&#xE8F1;" FontSize="14" />
             </Button>
             <Button x:Name="DownloadsButton"
@@ -1613,6 +1824,53 @@
             </Canvas>
         </Grid>
 
+        <!-- The sidebar's edge, in the gap between the sidebar and the page: drag it to resize the sidebar,
+             past its narrowest to hide it; double-click it for the default width (SidebarResizing.cs).
+             The same grip as split view's divider, but only on hover or while held. Placed in code
+             (PlaceResizeHandle): it follows the width, and goes while the library's in the sidebar's place. -->
+        <local:ResizeGrip x:Name="SidebarResizeHandle"
+                          Grid.ColumnSpan="2"
+                          Width="10"
+                          Margin="199,8,0,8"
+                          HorizontalAlignment="Left"
+                          Background="Transparent"
+                          AutomationProperties.Name="Resize sidebar"
+                          PointerEntered="ResizeHandle_PointerEntered"
+                          PointerExited="ResizeHandle_PointerExited"
+                          PointerPressed="ResizeHandle_PointerPressed"
+                          PointerMoved="ResizeHandle_PointerMoved"
+                          PointerReleased="ResizeHandle_PointerReleased"
+                          PointerCanceled="ResizeHandle_PointerCanceled"
+                          PointerCaptureLost="ResizeHandle_PointerCanceled"
+                          DoubleTapped="ResizeHandle_DoubleTapped">
+            <Border x:Name="SidebarGrip"
+                    Width="4"
+                    Height="32"
+                    CornerRadius="2"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsHitTestVisible="False"
+                    Background="{ThemeResource DriftIconBrush}"
+                    Opacity="0">
+                <Border.OpacityTransition>
+                    <ScalarTransition Duration="0:0:0.15" />
+                </Border.OpacityTransition>
+            </Border>
+            <Border x:Name="SidebarGripAccent"
+                    Width="4"
+                    Height="32"
+                    CornerRadius="2"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsHitTestVisible="False"
+                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                    Opacity="0">
+                <Border.OpacityTransition>
+                    <ScalarTransition Duration="0:0:0.12" />
+                </Border.OpacityTransition>
+            </Border>
+        </local:ResizeGrip>
+
         <!-- The library, as Zen has it: downloads and history in the sidebar's place, twice its width.
              It's always its full width, moved left by however much narrower the sidebar is, so as the
              sidebar widens (a swipe, or the library button) it slides in from the left attached to the
@@ -1636,6 +1894,14 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <StackPanel VerticalAlignment="Center" Spacing="6">
+                    <Button x:Name="LibraryBookmarksTab" Tag="bookmarks" Click="LibraryTab_Click"
+                            Style="{StaticResource SubtleButtonStyle}" Width="64" Height="58" Padding="0" CornerRadius="8"
+                            HorizontalAlignment="Center" AutomationProperties.Name="Bookmarks">
+                        <StackPanel Spacing="4">
+                            <FontIcon x:Name="LibraryBookmarksGlyph" Glyph="&#xE734;" FontSize="18" />
+                            <TextBlock Text="Bookmarks" FontSize="11" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="LibraryDownloadsTab" Tag="downloads" Click="LibraryTab_Click"
                             Style="{StaticResource SubtleButtonStyle}" Width="64" Height="58" Padding="0" CornerRadius="8"
                             HorizontalAlignment="Center" AutomationProperties.Name="Downloads">
@@ -1699,13 +1965,18 @@
                                 <Grid ColumnSpacing="12" Padding="0,8" Background="Transparent"
                                       AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="20" />
+                                        <ColumnDefinition Width="24" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <FontIcon Glyph="&#xE8A5;" FontSize="18" VerticalAlignment="Top" Margin="0,2,0,0"
-                                              Opacity="{x:Bind ContentOpacity, Mode=OneWay}"
-                                              Foreground="{ThemeResource DriftIconBrush}" />
+                                    <!-- Windows' icon for the file, as Explorer has it (FileIcons); the plain glyph till it comes. -->
+                                    <Grid Width="24" Height="24" VerticalAlignment="Top" Margin="0,4,0,0"
+                                          Opacity="{x:Bind ContentOpacity, Mode=OneWay}">
+                                        <FontIcon Glyph="&#xE8A5;" FontSize="18"
+                                                  Visibility="{x:Bind GlyphVisibility, Mode=OneWay}"
+                                                  Foreground="{ThemeResource DriftIconBrush}" />
+                                        <Image Source="{x:Bind Icon, Mode=OneWay}" Stretch="Uniform" />
+                                    </Grid>
                                     <StackPanel Grid.Column="1" Spacing="2" Opacity="{x:Bind ContentOpacity, Mode=OneWay}">
                                         <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="{x:Bind Status, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
@@ -1736,6 +2007,27 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
+                </Grid>
+                <!-- Bookmarks (Bookmarks.cs): folders that open and close, the pages in them. -->
+                <Grid x:Name="LibraryBookmarksPage" Grid.Row="1" RowSpacing="4" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button HorizontalAlignment="Right" Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
+                            Click="BookmarksNewFolder_Click" AutomationProperties.Name="New folder">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8F4;" FontSize="12" />
+                            <TextBlock Text="New folder" FontSize="13" />
+                        </StackPanel>
+                    </Button>
+                    <ScrollViewer Grid.Row="1" Margin="-4,0,0,0">
+                        <StackPanel Padding="0,0,8,8">
+                            <StackPanel x:Name="BookmarkList" />
+                            <TextBlock x:Name="LibraryBookmarksEmpty" FontSize="13" Margin="4" Visibility="Collapsed" TextWrapping="Wrap"
+                                       Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
                 <ScrollViewer x:Name="LibraryHistoryPage" Grid.Row="1" Visibility="Collapsed" Margin="-4,0,0,0">
                     <StackPanel Padding="0,0,8,8">
@@ -1798,6 +2090,63 @@
             </Border>
         </Canvas>
 
+        <!-- The window buttons, as in Zen: out of sight until the pointer rests at the top of the page area,
+             then down from the top-right corner where Windows keeps them (CaptionBar.cs). -->
+        <Border x:Name="CaptionBar"
+                Grid.ColumnSpan="2"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                CornerRadius="0,0,0,8"
+                BorderThickness="1,0,0,1"
+                BorderBrush="{ThemeResource DriftPageBorderBrush}"
+                Background="{ThemeResource DriftSwitcherBrush}"
+                Visibility="Collapsed"
+                Translation="0,-56,32">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+            <Border.Resources>
+                <Style x:Key="CaptionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                    <Setter Property="Width" Value="46" />
+                    <Setter Property="Height" Value="32" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="CornerRadius" Value="0" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="Foreground" Value="{ThemeResource DriftIconBrush}" />
+                    <Setter Property="IsTabStop" Value="False" />
+                </Style>
+            </Border.Resources>
+            <StackPanel Orientation="Horizontal">
+                <Button Style="{StaticResource CaptionButtonStyle}" CornerRadius="0,0,0,7" Click="Minimize_Click"
+                        AutomationProperties.Name="Minimize">
+                    <Button.Resources>
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{ThemeResource SubtleFillColorTertiary}" />
+                    </Button.Resources>
+                    <FontIcon Glyph="&#xE921;" FontSize="10" />
+                </Button>
+                <Button Style="{StaticResource CaptionButtonStyle}" Click="Maximize_Click"
+                        AutomationProperties.Name="Maximize">
+                    <Button.Resources>
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{ThemeResource SubtleFillColorSecondary}" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{ThemeResource SubtleFillColorTertiary}" />
+                    </Button.Resources>
+                    <FontIcon x:Name="CaptionMaximizeGlyph" Glyph="&#xE922;" FontSize="10" />
+                </Button>
+                <Button Style="{StaticResource CaptionButtonStyle}" Click="CloseWindow_Click"
+                        AutomationProperties.Name="Close">
+                    <Button.Resources>
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#C42B1C" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#C83C31" />
+                        <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#E6FFFFFF" />
+                    </Button.Resources>
+                    <FontIcon Glyph="&#xE8BB;" FontSize="10" />
+                </Button>
+            </StackPanel>
+        </Border>
+
         <!-- Command bar, like Arc's: Ctrl+T (new tab), Ctrl+L or the address pill (this tab's URL).
              A card centred over the whole window, above the page as it is: a search field, then
              suggestions (open tabs, history, searches). The layer around it catches clicks, which
@@ -1815,7 +2164,7 @@
                     CornerRadius="12"
                     BorderThickness="1"
                     BorderBrush="{ThemeResource DriftPageBorderBrush}"
-                    Background="{ThemeResource DriftCommandBarBrush}"
+                    Background="{ThemeResource DriftSwitcherBrush}"
                     Translation="0,0,48">
                 <Border.Shadow>
                     <ThemeShadow />
@@ -1825,25 +2174,55 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="16" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon x:Name="CommandGlyph" Glyph="&#xE721;" FontSize="15"
                                   Foreground="{ThemeResource DriftIconBrush}" />
                         <Image x:Name="CommandFavicon" Width="16" Height="16" Visibility="Collapsed" />
-                        <TextBox x:Name="CommandBox"
-                                 Grid.Column="1"
-                                 Style="{StaticResource CommandBoxStyle}"
-                                 VerticalAlignment="Center"
-                                 Padding="0,6,0,6"
-                                 FontSize="16"
-                                 PlaceholderText="Search or Enter URL..."
-                                 AutomationProperties.Name="Search or enter URL"
-                                 IsSpellCheckEnabled="False"
-                                 IsTextPredictionEnabled="False"
-                                 TextChanged="CommandBox_TextChanged"
-                                 PreviewKeyDown="CommandBox_PreviewKeyDown" />
+                        <!-- Searching a site (SiteSearchBar.cs): its name in a chip before what you type. -->
+                        <Grid Grid.Column="1" VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="SiteChip" CornerRadius="6" Padding="8,3,8,4" Margin="0,0,8,0"
+                                    VerticalAlignment="Center" Visibility="Collapsed"
+                                    Background="{ThemeResource DriftPillBrush}">
+                                <TextBlock x:Name="SiteChipText" FontSize="14" />
+                            </Border>
+                            <TextBox x:Name="CommandBox"
+                                     Grid.Column="1"
+                                     Style="{StaticResource CommandBoxStyle}"
+                                     VerticalAlignment="Center"
+                                     Padding="0,6,0,6"
+                                     FontSize="16"
+                                     PlaceholderText="Search or Enter URL..."
+                                     AutomationProperties.Name="Search or enter URL"
+                                     IsSpellCheckEnabled="False"
+                                     IsTextPredictionEnabled="False"
+                                     TextChanged="CommandBox_TextChanged"
+                                     PreviewKeyDown="CommandBox_PreviewKeyDown" />
+                        </Grid>
+                        <!-- Ask AI (AskAiBar.cs): the key for it while there's something typed; in an
+                             answer, the model answering. -->
+                        <StackPanel x:Name="AskHint" Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                    VerticalAlignment="Center" Visibility="Collapsed">
+                            <TextBlock Text="Ask AI" FontSize="13" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                            <Border CornerRadius="4" Padding="6,1,6,2" Background="{ThemeResource DriftPillBrush}">
+                                <TextBlock Text="Tab" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock x:Name="AskModelLabel" Grid.Column="2" FontSize="13" VerticalAlignment="Center"
+                                   Foreground="{ThemeResource DriftSecondaryTextBrush}" Visibility="Collapsed" />
                     </Grid>
                     <Border x:Name="CommandDivider" Height="1" Background="{ThemeResource DriftDividerBrush}" Visibility="Collapsed" />
                     <StackPanel x:Name="CommandResults" Padding="6" Visibility="Collapsed" />
+                    <ScrollViewer x:Name="AskScroller" Visibility="Collapsed"
+                                  HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled"
+                                  ViewChanged="AskScroller_ViewChanged">
+                        <StackPanel x:Name="AskTranscript" Padding="18,14,18,16" Spacing="8" />
+                    </ScrollViewer>
                 </StackPanel>
             </Border>
         </Grid>
@@ -1988,6 +2367,34 @@
             </Grid>
         </Border>
 
+        <!-- Ctrl+D: says the page is bookmarked, at the foot of the page, with Edit (Bookmarks.cs). -->
+        <Border x:Name="BookmarkToast"
+                Grid.Column="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,8,28"
+                Padding="14,4,6,4"
+                CornerRadius="10"
+                BorderThickness="1"
+                BorderBrush="{ThemeResource DriftPageBorderBrush}"
+                Background="{ThemeResource DriftSwitcherBrush}"
+                Visibility="Collapsed"
+                Opacity="0"
+                Translation="0,0,32">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+            <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Border.OpacityTransition>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE735;" FontSize="13" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock x:Name="BookmarkToastText" Text="Bookmarked" FontSize="13" VerticalAlignment="Center" />
+                <Button x:Name="BookmarkToastEdit" Content="Edit" Style="{StaticResource SubtleButtonStyle}" Padding="8,3"
+                        FontSize="13" Click="BookmarkToastEdit_Click" />
+            </StackPanel>
+        </Border>
+
         <!-- Ctrl+Shift+C: says the link was copied, at the foot of the page, for a moment. -->
         <Border x:Name="CopiedToast"
                 Grid.Column="1"
@@ -1998,7 +2405,7 @@
                 CornerRadius="10"
                 BorderThickness="1"
                 BorderBrush="{ThemeResource DriftPageBorderBrush}"
-                Background="{ThemeResource DriftCommandBarBrush}"
+                Background="{ThemeResource DriftSwitcherBrush}"
                 IsHitTestVisible="False"
                 Visibility="Collapsed"
                 Opacity="0"
@@ -2012,6 +2419,59 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <FontIcon Glyph="&#xE73E;" FontSize="13" Foreground="{ThemeResource DriftIconBrush}" />
                 <TextBlock Text="Copied link" FontSize="13" />
+            </StackPanel>
+        </Border>
+
+        <!-- After a first press of the window's close button, or Alt+F4: a second closes (Confirm.cs). -->
+        <Border x:Name="CloseAgainHint"
+                Grid.ColumnSpan="2"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,40,8,0"
+                Padding="12,6"
+                CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="{ThemeResource DriftPageBorderBrush}"
+                Background="{ThemeResource DriftSwitcherBrush}"
+                IsHitTestVisible="False"
+                Visibility="Collapsed"
+                Opacity="0"
+                Translation="0,0,32">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+            <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Border.OpacityTransition>
+            <TextBlock x:Name="CloseAgainText" FontSize="13" />
+        </Border>
+
+        <!-- After a bookmark's deleted or the tab list's cleared: Undo, for a moment (Confirm.cs). -->
+        <Border x:Name="UndoToast"
+                Grid.Column="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,8,28"
+                Padding="14,4,6,4"
+                CornerRadius="10"
+                BorderThickness="1"
+                BorderBrush="{ThemeResource DriftPageBorderBrush}"
+                Background="{ThemeResource DriftSwitcherBrush}"
+                IsHitTestVisible="False"
+                Visibility="Collapsed"
+                Opacity="0"
+                Translation="0,0,32"
+                PointerEntered="UndoToast_PointerEntered"
+                PointerExited="UndoToast_PointerExited">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+            <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Border.OpacityTransition>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock x:Name="UndoToastText" FontSize="13" VerticalAlignment="Center" MaxWidth="320" TextTrimming="CharacterEllipsis" />
+                <Button Content="Undo" Style="{StaticResource SubtleButtonStyle}" Padding="8,3" FontSize="13" Click="Undo_Click" />
             </StackPanel>
         </Border>
 

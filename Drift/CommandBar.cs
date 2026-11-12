@@ -30,7 +30,7 @@ namespace Drift;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private enum CommandKind { Clipboard, Tab, History, Url, Search, Action }
+    private enum CommandKind { Clipboard, Tab, History, Url, Search, Action, SiteSearch, Bookmark }
 
     private sealed class CommandItem
     {
@@ -46,14 +46,17 @@ public sealed partial class MainWindow
         public bool Stale { get; init; }
         /// <summary>A command (CommandActions.cs), for Kind Action.</summary>
         public CommandAction? Action { get; init; }
+        /// <summary>The site to search, for Kind SiteSearch (SiteSearchBar.cs).</summary>
+        public SiteSearch? SiteSearch { get; init; }
         public string Key => $"{Kind}|{Uri}|{Tab?.GetHashCode()}|{Title}|{Action?.FullName}";
     }
 
     /// <summary>What one row is drawn with, so the highlight can recolour it.</summary>
-    /// <param name="Hint">"Switch to Tab →", shown on the highlighted row only.</param>
+    /// <param name="Hint">"Switch to Tab", shown on the highlighted row only, before its Enter key.</param>
     /// <param name="Chip">"Visit from clipboard", or the folder a command is for, always shown.</param>
     /// <param name="Keys">A command's shortcut, at the end.</param>
-    private sealed record CommandRow(Grid Row, TextBlock Text, Run? Detail, FontIcon? Glyph, StackPanel? Hint, Border? Chip, TextBlock? Keys);
+    /// <param name="Enter">"Enter", at the very end of the highlighted row: what Enter will pick.</param>
+    private sealed record CommandRow(Grid Row, TextBlock Text, Run? Detail, FontIcon? Glyph, StackPanel? Hint, Border? Chip, TextBlock? Keys, Border Enter);
 
     private const int CommandRowsMax = 8;
     private const double CommandRowHeight = 40;
@@ -105,6 +108,8 @@ public sealed partial class MainWindow
         }
 
         if (!wasOpen) _clipboardItem = null;
+        LeaveAskMode(restoreQuestion: false);
+        LeaveSiteSearch();
         _commandFolder = null;
         _commandSplitWith = null;
         CommandBox.PlaceholderText = "Search or Enter URL...";
@@ -123,8 +128,10 @@ public sealed partial class MainWindow
         CommandBox.Focus(FocusState.Keyboard);
         CommandBox.SelectAll();
         if (!wasOpen) ReadClipboard();
+        if (!wasOpen) WarmAskAi();
 
-        if (!wasOpen && animate && _uiSettings.AnimationsEnabled)
+        // With Windows' animation effects off, the spring jumps and only the fade is left.
+        if (!wasOpen && animate)
         {
             // About the middle of the field, so what you're about to type into barely moves.
             CommandCard.UpdateLayout();
@@ -139,6 +146,8 @@ public sealed partial class MainWindow
     {
         if (!_commandBarOpen) return;
         _commandBarOpen = false;
+        LeaveAskMode(restoreQuestion: false);
+        LeaveSiteSearch();
         _suggestCancel?.Cancel();
         _suggestions.Clear();
         _lastSuggestQuery = null;
@@ -174,6 +183,19 @@ public sealed partial class MainWindow
             return;
         }
         _programmaticText = null;
+        // Asking a follow-up: nothing to suggest or complete.
+        if (_askMode)
+        {
+            _typed = text;
+            return;
+        }
+        // Searching a site: what's typed is the search, nothing to complete.
+        if (_siteSearch is not null)
+        {
+            _typed = text;
+            UpdateCommandResults();
+            return;
+        }
 
         // Typing at the end (not deleting, not editing the middle) is what gets completed inline,
         // like Chrome: backspacing over a completion removes it rather than bringing it back.
@@ -183,6 +205,19 @@ public sealed partial class MainWindow
         _typed = text;
         _completion = null;
         _highlightMoved = false;
+
+        // "@youtube " (with the space): straight into searching YouTube, with whatever follows.
+        if (text.StartsWith('@'))
+        {
+            if (SiteSearches.ParseAt(text, SiteSearchStore.All, SiteVisits()) is var (atSite, atQuery))
+            {
+                EnterSiteSearch(atSite, atQuery);
+                return;
+            }
+            // Picking a site by name: nothing to complete.
+            UpdateCommandResults();
+            return;
+        }
 
         if (grew && FindCompletion(text) is { } found)
         {
@@ -197,6 +232,20 @@ public sealed partial class MainWindow
 
     private void CommandBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (_askMode && AskKeyDown(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+        if (_siteSearch is not null && (e.Key == VirtualKey.Escape
+            || (e.Key == VirtualKey.Back && CommandBox.Text.Length == 0)))
+        {
+            // Out of the site's search, back to the usual one.
+            e.Handled = true;
+            LeaveSiteSearch();
+            UpdateCommandResults();
+            return;
+        }
         switch (e.Key)
         {
             case VirtualKey.Down:
@@ -216,9 +265,18 @@ public sealed partial class MainWindow
                 CloseCommandBar();
                 break;
             case VirtualKey.Tab:
-                // Takes the completion, like Right; never moves focus to whatever is under the bar.
+                // Sends what's typed to AI (AskAiBar.cs); with that off, takes the completion, like
+                // Right. Never moves focus to whatever is under the bar.
                 e.Handled = true;
-                if (CommandBox.SelectionLength > 0) CommandBox.Select(CommandBox.Text.Length, 0);
+                if (_siteSearch is not null) { }
+                // Picking a site after "@": Tab takes the highlighted one, as Enter does.
+                else if (CommandQuery.StartsWith('@'))
+                {
+                    if (_highlight >= 0 && _highlight < _commandItems.Count && _commandItems[_highlight].SiteSearch is { } picked)
+                        EnterSiteSearch(picked);
+                }
+                else if (Settings.Current.AskAiWithTab) AskAi();
+                else if (CommandBox.SelectionLength > 0) CommandBox.Select(CommandBox.Text.Length, 0);
                 break;
         }
     }
@@ -245,11 +303,23 @@ public sealed partial class MainWindow
         var query = CommandQuery;
         List<CommandItem> items;
         int highlight;
-        if (CommandPristine)
+        if (_siteSearch is not null)
+        {
+            // Enter searches the site; there's nothing else to pick.
+            items = new();
+            highlight = -1;
+        }
+        else if (CommandPristine)
         {
             // Ctrl+L on a page: just its address, ready to copy or retype.
             items = new();
             highlight = -1;
+        }
+        else if (query.StartsWith('@'))
+        {
+            // "@": the sites you can search, narrowed by what follows.
+            items = AtSiteItems(query[1..]);
+            highlight = items.Count > 0 ? 0 : -1;
         }
         else if (query.Length == 0)
         {
@@ -265,6 +335,7 @@ public sealed partial class MainWindow
             if (!_suggestions.ContainsKey(query) && !query.Contains("://")) FetchSuggestions(query);
         }
         ShowCommandItems(items, highlight);
+        UpdateAskHint();
     }
 
     /// <summary>Empty: a link you've copied, the tabs you were last on, then the pages you visit most.</summary>
@@ -329,9 +400,19 @@ public sealed partial class MainWindow
             // An open tab is the likeliest thing you're looking for.
             if (score >= 0) matches.Add((TabItem(tab), score + 8));
         }
+        // Bookmarks you're typing the name of come first of all (Bookmarks.cs); an open one is its tab.
+        var bookmarked = new HashSet<string>();
+        foreach (var bookmark in BookmarkStore.Tree.All().Where(n => !n.IsFolder))
+        {
+            var score = MatchScore(tokens, bookmark.Title, bookmark.Url!);
+            if (score < 0) continue;
+            bookmarked.Add(Normalize(bookmark.Url!));
+            if (open.Contains(Normalize(bookmark.Url!))) continue;
+            matches.Add((BookmarkItem(bookmark), score + 20));
+        }
         foreach (var entry in History.All)
         {
-            if (open.Contains(Normalize(entry.Url))) continue;
+            if (open.Contains(Normalize(entry.Url)) || bookmarked.Contains(Normalize(entry.Url))) continue;
             var score = MatchScore(tokens, entry.Title, entry.Url);
             if (score >= 0) matches.Add((HistoryItem(entry), score + History.Frecency(entry)));
         }
@@ -342,6 +423,8 @@ public sealed partial class MainWindow
         if (_completion is not null) items.Add(_completion);
         else if (TryParseAddress(query, out var typedUri))
             items.Add(new CommandItem { Kind = CommandKind.Url, Title = query, Uri = typedUri, Site = typedUri.Authority });
+        // "Search YouTube", when what's typed names a site you can search: right after where Enter goes.
+        if (SiteSearchItem(query) is { } siteSearch) items.Add(siteSearch);
         // Commands whose names you're typing come before the search ("pin to read"); others after it.
         var actions = MatchingActions(query);
         items.AddRange(actions.Where(a => a.Strong).Select(a => ActionItem(a.Action)));
@@ -453,6 +536,19 @@ public sealed partial class MainWindow
             Title = tab.Title,
             Detail = string.IsNullOrEmpty(url) || url == "about:blank" ? null : url,
             Tab = tab,
+        };
+    }
+
+    private static CommandItem BookmarkItem(BookmarkNode bookmark)
+    {
+        Uri.TryCreate(bookmark.Url, UriKind.Absolute, out var uri);
+        return new CommandItem
+        {
+            Kind = CommandKind.Bookmark,
+            Title = bookmark.Title,
+            Detail = bookmark.Url,
+            Uri = uri,
+            Site = uri?.Authority,
         };
     }
 
@@ -597,7 +693,7 @@ public sealed partial class MainWindow
         // globe until it loads.
         FontIcon? glyph = new FontIcon
         {
-            Glyph = item.Action?.Glyph ?? item.Kind switch { CommandKind.Search => "\uE721", CommandKind.Clipboard => "\uE77F", _ => "\uE774" },
+            Glyph = item.Action?.Glyph ?? item.Kind switch { CommandKind.Search or CommandKind.SiteSearch => "\uE721", CommandKind.Clipboard => "\uE77F", _ => "\uE774" },
             FontSize = 14,
         };
         row.Children.Add(glyph);
@@ -606,6 +702,7 @@ public sealed partial class MainWindow
             var image = new Image { Width = 16, Height = 16 };
             row.Children.Add(image);
             if (item.Tab?.Favicon is { } tabIcon) ShowIcon(image, glyph, tabIcon);
+            else if (item.SiteSearch is { } searched) LoadSiteSearchIcon(image, glyph, searched);
             else if (item.Site is { } site) LoadRowIcon(image, glyph, site);
         }
 
@@ -662,6 +759,19 @@ public sealed partial class MainWindow
             row.Children.Add(text);
         }
 
+        if (item.Kind == CommandKind.Bookmark)
+        {
+            // A star at the end: it's one of your bookmarks.
+            keys = new TextBlock
+            {
+                Text = "",
+                FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(keys, 2);
+            row.Children.Add(keys);
+        }
         if (item.Kind == CommandKind.Clipboard)
         {
             chip = new Border
@@ -677,8 +787,8 @@ public sealed partial class MainWindow
         else if (item.Kind == CommandKind.Tab)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Visibility = Visibility.Collapsed };
+            // Then the Enter key, which is what switches.
             panel.Children.Add(new TextBlock { Text = "Switch to Tab", FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
-            panel.Children.Add(new FontIcon { Glyph = "\uE72A", FontSize = 11 });
             Grid.SetColumn(panel, 2);
             row.Children.Add(panel);
             hint = panel;
@@ -701,8 +811,27 @@ public sealed partial class MainWindow
         };
         NameRow(row, item);
 
+        // The end of the row: whatever's there already, then the Enter key, shown while highlighted.
+        var end = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var part in row.Children.OfType<FrameworkElement>().Where(c => Grid.GetColumn(c) == 2).ToList())
+        {
+            row.Children.Remove(part);
+            end.Children.Add(part);
+        }
+        var enter = new Border
+        {
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 1, 6, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Child = new TextBlock { Text = "Enter", FontSize = 12 },
+        };
+        end.Children.Add(enter);
+        Grid.SetColumn(end, 2);
+        row.Children.Add(end);
+
         if (item.Stale) row.Opacity = 0.5;
-        _commandRows.Add(new CommandRow(row, text, detail, glyph, hint, chip, keys));
+        _commandRows.Add(new CommandRow(row, text, detail, glyph, hint, chip, keys, enter));
         return row;
     }
 
@@ -711,6 +840,7 @@ public sealed partial class MainWindow
             item.Kind == CommandKind.Tab ? $"Switch to tab: {item.Title}"
             : item.Kind == CommandKind.Clipboard ? $"Visit from clipboard: {item.Title}"
             : item.Kind == CommandKind.Search ? $"Search: {item.Title}"
+            : item.Kind == CommandKind.SiteSearch ? item.Title
             : item.Action is { } action ? action.FullName
             : item.Title);
 
@@ -718,6 +848,11 @@ public sealed partial class MainWindow
     {
         image.Source = icon;
         glyph.Visibility = Visibility.Collapsed;
+    }
+
+    private static async void LoadSiteSearchIcon(Image image, FontIcon glyph, SiteSearch site)
+    {
+        if (await SiteSearchIconAsync(site) is { } icon) ShowIcon(image, glyph, icon);
     }
 
     private static async void LoadRowIcon(Image image, FontIcon glyph, string site)
@@ -746,7 +881,7 @@ public sealed partial class MainWindow
 
         for (var i = 0; i < _commandRows.Count; i++)
         {
-            var (row, text, detail, glyph, hint, chip, keys) = _commandRows[i];
+            var (row, text, detail, glyph, hint, chip, keys, enter) = _commandRows[i];
             var on = i == _highlight;
             row.Background = on ? accent : clear;
             text.Foreground = on ? onAccent : primary;
@@ -767,6 +902,9 @@ public sealed partial class MainWindow
                 ((TextBlock)chip.Child).Foreground = on ? onAccent : chipText;
             }
             if (keys is not null) keys.Foreground = on ? onAccentDim : secondary;
+            enter.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            enter.Background = chipOnAccent;
+            ((TextBlock)enter.Child).Foreground = onAccent;
         }
     }
 
@@ -775,6 +913,8 @@ public sealed partial class MainWindow
     /// <summary>The field shows the completed site's icon, like Arc; otherwise the magnifier.</summary>
     private async void UpdateCommandIcon()
     {
+        // Searching a site: its icon stays.
+        if (_siteSearch is not null) return;
         ImageSource? icon = null;
         var item = _completion;
         if (item is not null)
@@ -816,6 +956,11 @@ public sealed partial class MainWindow
             action.Run();
             return;
         }
+        if (item?.Kind == CommandKind.SiteSearch && item.SiteSearch is { } site)
+        {
+            EnterSiteSearch(site);
+            return;
+        }
         if (item?.Kind == CommandKind.Tab && item.Tab is { } tab)
         {
             CloseCommandBar(focusPage: false);
@@ -826,7 +971,8 @@ public sealed partial class MainWindow
         }
 
         var input = CommandBox.Text.Trim();
-        var uri = item?.Uri ?? (input.Length > 0 ? ToUri(input) : null);
+        var uri = _siteSearch is { } searching ? searching.UrlFor(input)
+            : item?.Uri ?? (input.Length > 0 ? ToUri(input) : null);
         var newTab = _commandNewTab || _active is null;
         // Still there? It may have been deleted while the bar was open.
         var folder = _commandFolder is { } f && _folderTree.AllFolders.Contains(f) ? f : null;

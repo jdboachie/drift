@@ -56,6 +56,21 @@ public sealed partial class MainWindow
                 yield return new("Reset Tab", "", () => Navigate(tab, home), Keywords: ["pinned", "home", "original"]);
                 yield return new("Replace Pin with Current Page", "", () => ReplacePin(tab), Keywords: ["home", "update"]);
             }
+            // Bookmarks (Bookmarks.cs).
+            if (page && CanBookmark(core!.Source))
+            {
+                if (BookmarkStore.Tree.Find(core.Source) is { } saved)
+                {
+                    yield return new("Edit Bookmark", "", () => ShowBookmarkEditor(saved, BookmarkToast, Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Top), Keywords: ["rename", "folder", "star"]);
+                    yield return new("Remove Bookmark", "", () => RemoveBookmark(saved), Keywords: ["unbookmark", "delete", "star"]);
+                }
+                else
+                {
+                    yield return new("Bookmark Page", "", () => BookmarkTab(tab, null), ShortcutId: "bookmark", Keywords: ["save", "star", "favorite", "favourite"]);
+                    foreach (var (folder, path) in BookmarkStore.Tree.Folders().ToList())
+                        yield return new("Bookmark to", "", () => BookmarkTab(tab, folder), Target: path, Keywords: ["save", "folder"]);
+                }
+            }
             yield return new("Reveal Tab in Sidebar", "", () => RevealInSidebar(tab), Keywords: ["show", "find", "locate"]);
         }
         if (_closedTabs.Count > 0) yield return new("Reopen Closed Tab", "", ReopenClosedTab, ShortcutId: "reopen", Keywords: ["last", "undo"]);
@@ -97,10 +112,11 @@ public sealed partial class MainWindow
         yield return new("New Private Window", "", OpenPrivateWindow, ShortcutId: "private", Keywords: ["incognito"]);
         yield return new("Downloads", "", () => ToggleLibrary("downloads"), ShortcutId: "downloads", Keywords: ["library"]);
         yield return new("History", "", () => ToggleLibrary("history"), ShortcutId: "history", Keywords: ["library", "view"]);
+        yield return new("Bookmarks", "", () => ToggleLibrary("bookmarks"), ShortcutId: "bookmarks", Keywords: ["library", "saved"]);
         var fullScreen = AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen;
         yield return new(fullScreen ? "Exit Full Screen" : "Enter Full Screen", fullScreen ? "" : "", ToggleFullScreen, Keywords: ["fullscreen"]);
         yield return new("Minimize Window", "", Minimize);
-        yield return new("Close Window", "", Close, Keywords: ["quit", "exit"]);
+        yield return new("Close Window", "", () => RequestClose(), Keywords: ["quit", "exit"]);
         yield return new("Settings", "", () => SettingsWindow.Open(this), ShortcutId: "settings", Keywords: ["preferences", "options"]);
         yield return new("Keyboard Shortcuts", "", () => SettingsWindow.Open(this, "shortcuts"), Keywords: ["keys"]);
         yield return new("Manage Extensions", "", () => SettingsWindow.Open(this, "extensions"));
@@ -148,13 +164,36 @@ public sealed partial class MainWindow
         SaveSessionSoon();
     }
 
-    /// <summary>Every tab in the tab list closes (Essentials, pinned and folder tabs stay), as Arc's Clear does.</summary>
-    private void ClearTabs()
+    /// <summary>
+    /// Every tab in the tab list closes (Essentials, pinned and folder tabs stay), as Arc's Clear does;
+    /// Undo brings them all back, in their order (Confirm.cs).
+    /// </summary>
+    private async void ClearTabs()
     {
+        var pages = Tabs.SelectMany(RegularTabsOf).Where(p => !p.IsPinned).ToList();
+        if (pages.Count == 0 || !await MayLeaveAsync(pages)) return;
+        var front = _active is { } active ? pages.IndexOf(active) : -1;
+        var entries = pages.Select((p, i) => ClosedEntry(p, i)).ToList();
         foreach (var row in Tabs.ToList())
         {
-            if (row is { IsSplitRow: true, Split: { } split }) CloseSplit(split);
-            else if (Tabs.Contains(row)) RemoveTab(row);
+            if (row is { IsSplitRow: true, Split: { } split }) CloseSplit(split, remember: false);
+            else if (Tabs.Contains(row)) RemoveTab(row, remember: false);
+        }
+        // Each can still be reopened on its own, later.
+        foreach (var entry in entries.OfType<SessionTab>()) RememberClosed(entry);
+        ShowUndo(pages.Count == 1 ? "Cleared 1 tab" : $"Cleared {pages.Count} tabs",
+            () => _ = RestoreClearedAsync(entries, front));
+    }
+
+    private async Task RestoreClearedAsync(List<SessionTab?> entries, int front)
+    {
+        foreach (var entry in entries.OfType<SessionTab>()) _closedTabs.Remove(entry);
+        SaveSessionSoon();
+        for (var i = 0; i < entries.Count; i++)
+        {
+            if (entries[i] is not { } entry || !Uri.TryCreate(entry.Url, UriKind.Absolute, out var uri)) continue;
+            Uri.TryCreate(entry.Home, UriKind.Absolute, out var home);
+            await CreateTabAsync(uri, TabPlace.Regular, activate: i == front, title: entry.Title, home: home, index: i);
         }
     }
 

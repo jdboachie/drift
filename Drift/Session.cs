@@ -43,6 +43,14 @@ public sealed class SessionFolder
     public bool Expanded { get; set; } = true;
     /// <summary>Where it is among its parent's contents (or among the top-level folders).</summary>
     public int Position { get; set; }
+    /// <summary>A live folder's kind (LiveSource), and the keys of what was closed in it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Live { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Dismissed { get; set; }
+    /// <summary>A live folder that has been filled once (LiveSource.Filled).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Filled { get; set; }
 }
 
 /// <summary>A split view: its two tabs (indices into SessionData.Tabs) and its row in the tab list.</summary>
@@ -65,6 +73,11 @@ internal sealed class SessionData
     public List<SessionSplit> Splits { get; set; } = new();
     /// <summary>Recently closed tabs, oldest first, for Reopen closed tab.</summary>
     public List<SessionTab> Closed { get; set; } = new();
+    /// <summary>The docked sidebar's width, as last dragged; null for the default.</summary>
+    public double? SidebarWidth { get; set; }
+    /// <summary>The pull requests folder has been made for you once, so it isn't again (LiveFolders.cs).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PullsFolderMade { get; set; }
 }
 
 /// <summary>

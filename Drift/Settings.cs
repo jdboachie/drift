@@ -86,6 +86,8 @@ internal sealed record ShortcutAction(string Id, string Name, Shortcut Default);
 internal sealed class SettingsData
 {
     public CloseBehavior OnClose { get; set; } = CloseBehavior.KeepTabs;
+    /// <summary>Closing Drift takes a second click (or Alt+F4) soon after the first (Confirm.cs).</summary>
+    public bool CloseTwice { get; set; } = true;
     public StartupBehavior OnStartup { get; set; } = StartupBehavior.LastTab;
     public string StartupPage { get; set; } = "";
     /// <summary>Ad blocking, with uBlock Origin Lite (Extensions).</summary>
@@ -101,6 +103,13 @@ internal sealed class SettingsData
     public bool Autofill { get; set; } = true;
     /// <summary>The installed uBlock Origin Lite, to find it again.</summary>
     public string? AdBlockExtensionId { get; set; }
+    /// <summary>Tab in the command bar sends what's typed to AI (AskAiBar.cs); off, it takes the completion.</summary>
+    public bool AskAiWithTab { get; set; } = true;
+    /// <summary>Which is asked, if it's ready; the other if not.</summary>
+    public AiProvider AskFirst { get; set; } = AiProvider.Claude;
+    /// <summary>Claude Code's name for the model ("sonnet", "opus", "haiku").</summary>
+    public string ClaudeModel { get; set; } = "sonnet";
+    public string CodexModel { get; set; } = "gpt-6-luna";
     /// <summary>Action id → shortcut, for the ones changed from their defaults.</summary>
     public Dictionary<string, string> Shortcuts { get; set; } = new();
 }
@@ -121,9 +130,11 @@ internal static class Settings
         new("prevtab", "Previous tab", new Shortcut(VirtualKey.Tab, true, true, false)),
         new("address", "Edit address", new Shortcut(VirtualKey.L, true, false, false)),
         new("copyurl", "Copy link", new Shortcut(VirtualKey.C, true, true, false)),
+        new("bookmark", "Bookmark page", new Shortcut(VirtualKey.D, true, false, false)),
         new("private", "New private window", new Shortcut(VirtualKey.N, true, true, false)),
         new("downloads", "Downloads", new Shortcut(VirtualKey.J, true, false, false)),
         new("history", "History", new Shortcut(VirtualKey.H, true, false, false)),
+        new("bookmarks", "Bookmarks", new Shortcut(VirtualKey.O, true, true, false)),
         new("sidebar", "Show or hide sidebar", new Shortcut(VirtualKey.S, true, false, false)),
         new("settings", "Settings", new Shortcut((VirtualKey)188, true, false, false)),
     };

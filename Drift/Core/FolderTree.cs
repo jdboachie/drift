@@ -24,6 +24,8 @@ public sealed class FolderTree
     /// </summary>
     public TabFolder NewFolder(string name, TabFolder? parent = null)
     {
+        // A live folder holds only what its source gives it.
+        while (parent is { IsLive: true }) parent = parent.Parent;
         if (parent is not null && DepthOf(parent) + 1 >= MaxDepth) parent = parent.Parent;
         var folder = new TabFolder(name) { Parent = parent };
         if (parent is null) _folders.Add(folder);
@@ -73,6 +75,7 @@ public sealed class FolderTree
     /// <summary>Whether a folder can go into another (or to the top, for null): not inside itself, and not past MaxDepth.</summary>
     public bool CanNest(TabFolder folder, TabFolder? into)
     {
+        if (into is { IsLive: true }) return false;
         for (var f = into; f is not null; f = f.Parent)
             if (f == folder) return false;
         var depth = into is null ? 0 : DepthOf(into) + 1;
@@ -157,7 +160,8 @@ public sealed class FolderTree
     /// <param name="dragging">The folder being dragged; null for a tab.</param>
     public FolderDrop? DropAt(IReadOnlyList<object> rows, int gap, TabFolder? onto, TabFolder? dragging)
     {
-        bool Fits(TabFolder? into) => dragging is null ? into is not null : CanNest(dragging, into);
+        // Nothing goes into a live folder: it holds only what its source gives it.
+        bool Fits(TabFolder? into) => dragging is null ? into is { IsLive: false } : CanNest(dragging, into);
 
         if (onto is not null) return Fits(onto) ? new FolderDrop(onto, onto.Children.Count) : null;
 
@@ -176,8 +180,8 @@ public sealed class FolderTree
         return previous switch
         {
             _ when dragging is not null => new FolderDrop(null, _folders.Count),
-            IFolderTab { Folder: { } aboveFolder } above => new FolderDrop(aboveFolder, aboveFolder.Children.IndexOf(above) + 1),
-            TabFolder above => new FolderDrop(above, above.Children.Count),
+            IFolderTab { Folder: { } aboveFolder } above when Fits(aboveFolder) => new FolderDrop(aboveFolder, aboveFolder.Children.IndexOf(above) + 1),
+            TabFolder above when Fits(above) => new FolderDrop(above, above.Children.Count),
             _ => null,
         };
     }
@@ -197,6 +201,9 @@ public sealed class FolderTree
                 Parent = folder.Parent?.Id,
                 Expanded = folder.IsExpanded,
                 Position = position,
+                Live = folder.Live?.Kind,
+                Dismissed = folder.Live is { } live ? live.Dismissed.Order(StringComparer.OrdinalIgnoreCase).ToList() : null,
+                Filled = folder.Live?.Filled,
             });
             for (var i = 0; i < folder.Children.Count; i++)
                 if (folder.Children[i] is TabFolder sub) Add(sub, i);
@@ -223,6 +230,13 @@ public sealed class FolderTree
         {
             if (string.IsNullOrEmpty(s.Id) || byId.ContainsKey(s.Id)) continue;
             var folder = new TabFolder(string.IsNullOrWhiteSpace(s.Name) ? "Folder" : s.Name, s.Id) { IsExpanded = s.Expanded };
+            if (s.Live == LiveSource.GitHubPulls)
+                folder.Live = new LiveSource
+                {
+                    Kind = s.Live,
+                    Dismissed = new HashSet<string>(s.Dismissed ?? [], StringComparer.OrdinalIgnoreCase),
+                    Filled = s.Filled ?? true,
+                };
             byId[s.Id] = folder;
             _positions[folder] = s.Position;
         }
@@ -312,6 +326,11 @@ public sealed class FolderTree
             rows.Add(folder);
             if (folder.IsExpanded)
             {
+                if (LiveNote.Shows(folder))
+                {
+                    folder.Note.Depth = depth + 1;
+                    rows.Add(folder.Note);
+                }
                 foreach (var child in folder.Children)
                 {
                     if (child is TabFolder sub) AddFolder(sub, depth + 1);

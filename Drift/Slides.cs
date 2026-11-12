@@ -118,6 +118,8 @@ public sealed partial class MainWindow
             foreach (var slide in plan)
                 if (list.ContainerFromItem(slide.Key) is UIElement row) SlideFrom(row, slide);
         }
+        // After the rows' own slides and jumps, which would otherwise stop it.
+        GlideDropped();
 
         if (groupsWere is null) return;
         foreach (var slide in SlidePlan.For(groupsWere, Groups()))

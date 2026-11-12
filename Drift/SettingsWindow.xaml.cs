@@ -86,7 +86,13 @@ public sealed partial class SettingsWindow : Window
         // Back from Windows' Default apps page: show whether Drift is the default now.
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState != WindowActivationState.Deactivated) ShowDefaultBrowser();
+            if (e.WindowActivationState == WindowActivationState.Deactivated) return;
+            ShowDefaultBrowser();
+            if (_aiRecheck && AiPage.Visibility == Visibility.Visible)
+            {
+                _aiRecheck = false;
+                _ = ShowAiAsync();
+            }
         };
         Extensions.Changed += Extensions_Changed;
         Nav.SelectedIndex = 0;
@@ -99,9 +105,12 @@ public sealed partial class SettingsWindow : Window
         StartupPagePanel.Visibility = settings.OnStartup == StartupBehavior.Page ? Visibility.Visible : Visibility.Collapsed;
         AdBlockToggle.IsOn = settings.BlockAds;
         PipToggle.IsOn = settings.AutoPictureInPicture;
+        CloseTwiceToggle.IsOn = settings.CloseTwice;
         RecentTabsToggle.IsOn = settings.CtrlTabRecentOrder;
         PasswordsToggle.IsOn = settings.SavePasswords;
         AutofillToggle.IsOn = settings.Autofill;
+        AskTabToggle.IsOn = settings.AskAiWithTab;
+        AskFirstCombo.SelectedIndex = settings.AskFirst == AiProvider.Claude ? 0 : 1;
         ClearRangeCombo.SelectedIndex = 1;
         _loading = false;
         ShowDefaultBrowser();
@@ -128,11 +137,13 @@ public sealed partial class SettingsWindow : Window
         var page = (Nav.SelectedItem as ListViewItem)?.Tag as string ?? "general";
         GeneralPage.Visibility = page == "general" ? Visibility.Visible : Visibility.Collapsed;
         TabsPage.Visibility = page == "tabs" ? Visibility.Visible : Visibility.Collapsed;
+        AiPage.Visibility = page == "ai" ? Visibility.Visible : Visibility.Collapsed;
         ShortcutsPage.Visibility = page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
         ExtensionsPage.Visibility = page == "extensions" ? Visibility.Visible : Visibility.Collapsed;
         PrivacyPage.Visibility = page == "privacy" ? Visibility.Visible : Visibility.Collapsed;
         if (page == "extensions") _ = ShowExtensionsAsync();
         if (page == "privacy") _ = ShowPermissionsAsync();
+        if (page == "ai") _ = ShowAiAsync();
     }
 
     // ───────────────────────── General ─────────────────────────
@@ -160,6 +171,13 @@ public sealed partial class SettingsWindow : Window
         {
             DefaultBrowserText.Text = "Couldn't register Drift: " + ex.Message;
         }
+    }
+
+    private void CloseTwiceToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || CloseTwiceToggle.IsOn == Settings.Current.CloseTwice) return;
+        var on = CloseTwiceToggle.IsOn;
+        Settings.Update(s => s.CloseTwice = on);
     }
 
     private void PipToggle_Toggled(object sender, RoutedEventArgs e)
@@ -302,6 +320,7 @@ public sealed partial class SettingsWindow : Window
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, $"Remove {extension.Name}");
             remove.Click += async (_, _) =>
             {
+                if (!await ConfirmDialog.AskAsync(Content.XamlRoot, Warnings.RemoveExtension(extension.Name))) return;
                 try
                 {
                     await extension.RemoveAsync();
@@ -371,6 +390,12 @@ public sealed partial class SettingsWindow : Window
             ClearDataText.Text = "Tick something to clear";
             return;
         }
+        var ticked = new[] { ClearHistoryCheck, ClearCookiesCheck, ClearCacheCheck, ClearDownloadsCheck, ClearPasswordsCheck }
+            .Where(c => c.IsChecked == true)
+            .Select(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName)
+            .ToList();
+        var range = (ClearRangeCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "All time";
+        if (Warnings.ClearData(ticked, range) is { } warning && !await ConfirmDialog.AskAsync(Content.XamlRoot, warning)) return;
 
         ClearDataButton.IsEnabled = false;
         ClearDataText.Text = "Clearing…";
@@ -715,10 +740,114 @@ public sealed partial class SettingsWindow : Window
         StopRecording();
     }
 
-    private void ResetAll_Click(object sender, RoutedEventArgs e)
+    private async void ResetAll_Click(object sender, RoutedEventArgs e)
     {
         StopRecording();
+        if (Warnings.ResetShortcuts(Settings.Current.Shortcuts.Count) is { } warning
+            && !await ConfirmDialog.AskAsync(Content.XamlRoot, warning)) return;
         Settings.Update(s => s.Shortcuts.Clear());
         foreach (var action in Settings.Actions) ShowShortcut(action);
     }
+
+    // ───────────────────────── AI ─────────────────────────
+
+    private static readonly string[] ClaudeModels = ["sonnet", "opus", "haiku"];
+    private static readonly string[] CodexFallbackModels = ["gpt-6-luna", "gpt-6-sol", "gpt-6-astra"];
+
+    /// <summary>Asks each CLI whether it's there and signed in, and Codex which models you have.</summary>
+    private async System.Threading.Tasks.Task ShowAiAsync()
+    {
+        _loading = true;
+        FillModels(ClaudeModelCombo, ClaudeModels, Settings.Current.ClaudeModel);
+        FillModels(CodexModelCombo, CodexFallbackModels, Settings.Current.CodexModel);
+        _loading = false;
+        ClaudeStatus.Text = CodexStatus.Text = "Checking…";
+        ClaudeAction.Visibility = CodexAction.Visibility = Visibility.Collapsed;
+
+        var claude = AiReadinessCheck.CheckAsync(AiProvider.Claude);
+        var codex = AiReadinessCheck.CheckAsync(AiProvider.Codex);
+        ShowReadiness(AiProvider.Claude, await claude);
+        var codexReady = await codex;
+        ShowReadiness(AiProvider.Codex, codexReady);
+        if (codexReady == AiReadiness.Ready && await AiReadinessCheck.CodexModelsAsync() is { Count: > 0 } models)
+        {
+            _loading = true;
+            FillModels(CodexModelCombo, models, Settings.Current.CodexModel);
+            _loading = false;
+        }
+    }
+
+    private void ShowReadiness(AiProvider provider, AiReadiness readiness)
+    {
+        AiReadinessCheck.Known[provider] = readiness;
+        var (status, action) = provider == AiProvider.Claude ? (ClaudeStatus, ClaudeAction) : (CodexStatus, CodexAction);
+        status.Text = readiness switch
+        {
+            AiReadiness.Ready => "Ready",
+            AiReadiness.SignedOut => "Not signed in",
+            _ => "Not installed",
+        };
+        action.Content = readiness == AiReadiness.Missing ? "Get it" : "Sign in";
+        action.Visibility = readiness == AiReadiness.Ready ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private static void FillModels(ComboBox combo, IEnumerable<string> models, string current)
+    {
+        var list = models.ToList();
+        if (!list.Contains(current)) list.Insert(0, current);
+        combo.Items.Clear();
+        foreach (var model in list) combo.Items.Add(new ComboBoxItem { Content = AiNames.Model(model), Tag = model });
+        combo.SelectedIndex = list.IndexOf(current);
+    }
+
+    private void AiModelCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || sender is not ComboBox { SelectedItem: ComboBoxItem { Tag: string model } } combo) return;
+        if (combo == ClaudeModelCombo) Settings.Update(s => s.ClaudeModel = model);
+        else Settings.Update(s => s.CodexModel = model);
+    }
+
+    private void AskTabToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || AskTabToggle.IsOn == Settings.Current.AskAiWithTab) return;
+        Settings.Update(s => s.AskAiWithTab = AskTabToggle.IsOn);
+    }
+
+    private void AskFirstCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || AskFirstCombo.SelectedIndex < 0) return;
+        Settings.Update(s => s.AskFirst = AskFirstCombo.SelectedIndex == 0 ? AiProvider.Claude : AiProvider.Codex);
+    }
+
+    /// <summary>
+    /// "Sign in": a terminal running the CLI's own sign-in, which opens your browser; Drift never
+    /// sees the sign-in. "Get it": the install instructions. Checked again when you come back.
+    /// </summary>
+    private async void AiAction_Click(object sender, RoutedEventArgs e)
+    {
+        var provider = (sender as FrameworkElement)?.Tag as string == "Codex" ? AiProvider.Codex : AiProvider.Claude;
+        if (AiLocator.Find(provider) is not { } exe)
+        {
+            var page = provider == AiProvider.Claude
+                ? "https://code.claude.com/docs/en/setup"
+                : "https://developers.openai.com/codex/cli";
+            await Launcher.LaunchUriAsync(new Uri(page));
+            return;
+        }
+        var args = provider == AiProvider.Claude ? "auth login" : "login";
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
+                Arguments = $"/k \"\"{exe}\" {args}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch { }
+        _aiRecheck = true;
+    }
+
+    // Back from signing in: check again.
+    private bool _aiRecheck;
 }
