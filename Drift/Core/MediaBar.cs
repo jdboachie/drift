@@ -30,6 +30,25 @@ public static class MediaBar
     }
 }
 
+/// <summary>
+/// Whether a tab's sound is media, worth the mini player, rather than a notification's chime: the site
+/// says what's playing (its media session), or the playing audio or video is long enough or live (a
+/// stream, a call), or the sound has simply gone on long enough.
+/// </summary>
+public static class MediaWorth
+{
+    /// <summary>Shorter than this, a playing element is a sound effect.</summary>
+    public const double MinSeconds = 15;
+
+    /// <summary>Sound that's gone on this long without a break is media, whatever's making it.</summary>
+    public const long SteadyMs = 10_000;
+
+    /// <param name="playingSeconds">How long the playing audio or video is (infinite when live); null if there's none.</param>
+    /// <param name="playedMs">How long the tab's been playing sound without a break.</param>
+    public static bool IsMedia(bool describedBySite, double? playingSeconds, long playedMs) =>
+        describedBySite || playingSeconds >= MinSeconds || playedMs >= SteadyMs;
+}
+
 public enum TabAudioIcon { None, Speaker, Muted }
 
 /// <summary>A tab row's sound icon: a speaker while it plays sound, crossed out while it's muted (click to unmute).</summary>

@@ -19,7 +19,7 @@
                  and settle, which storyboards can't do. This storyboard has the parts that should land exactly:
                  the page's shrink to whole pixels (PageShrink/PageShift, set in code) on the iOS drawer curve,
                  cubic-bezier(0.32, 0.72, 0, 1), over 300ms, and the fades, on the strong ease-out,
-                 cubic-bezier(0.23, 1, 0.32, 1). The card starts small at the link and fades up over 100ms; the
+                 cubic-bezier(0.23, 1, 0.32, 1). The card starts as the link's box and fades up over 50ms; the
                  page dims a little behind it so the card reads first; the buttons fade in as the card settles,
                  sliding out from its edge (SpringPeekIn), all three together.
                  Timings match the Peek constants in MainWindow.xaml.cs. -->
@@ -38,7 +38,7 @@
                 </DoubleAnimationUsingKeyFrames>
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PeekCardFrame" Storyboard.TargetProperty="Opacity">
                     <DiscreteDoubleKeyFrame KeyTime="0" Value="0" />
-                    <SplineDoubleKeyFrame KeyTime="0:0:0.100" Value="1" KeySpline="0.23,1 0.32,1" />
+                    <SplineDoubleKeyFrame KeyTime="0:0:0.050" Value="1" KeySpline="0.23,1 0.32,1" />
                 </DoubleAnimationUsingKeyFrames>
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PeekControls" Storyboard.TargetProperty="Opacity">
                     <DiscreteDoubleKeyFrame KeyTime="0" Value="0" />
@@ -57,10 +57,10 @@
             <!-- Peek exit: quicker than the entrance, since the user has already decided. The card springs back
                  toward the link it came from (ClosePeek) while this fades it and restores the page. -->
             <Storyboard x:Name="PeekExitAnimation">
-                <!-- Holds so the card is still visible as it heads back to the link and dips past it. -->
+                <!-- Holds so the card is still visible as it heads back to the link, all but a speck when it fades. -->
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PeekLayer" Storyboard.TargetProperty="Opacity">
-                    <DiscreteDoubleKeyFrame KeyTime="0:0:0.110" Value="1" />
-                    <SplineDoubleKeyFrame KeyTime="0:0:0.240" Value="0" KeySpline="0.23,1 0.32,1" />
+                    <DiscreteDoubleKeyFrame KeyTime="0:0:0.150" Value="1" />
+                    <SplineDoubleKeyFrame KeyTime="0:0:0.250" Value="0" KeySpline="0.23,1 0.32,1" />
                 </DoubleAnimationUsingKeyFrames>
                 <!-- The buttons go at once, back toward the card (SpringPeekOut), not with it. -->
                 <DoubleAnimationUsingKeyFrames Storyboard.TargetName="PeekControls" Storyboard.TargetProperty="Opacity">
@@ -577,7 +577,7 @@
                             <MenuFlyoutSeparator />
                             <MenuFlyoutItem x:Name="DownloadsMenuItem" Text="Downloads" Click="Downloads_Click">
                                 <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE896;" />
+                                    <FontIcon Glyph="&#xEBD3;" />
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutItem x:Name="HistoryMenuItem" Text="History" Click="History_Click">
@@ -1133,13 +1133,12 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="16" />
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" Opacity="0.6"
                                                       Visibility="{x:Bind PlaceholderVisibility, Mode=OneWay}" />
                                             <Image Source="{x:Bind Favicon, Mode=OneWay}" Width="16" Height="16"
                                                    Opacity="{x:Bind ContentOpacity, Mode=OneWay}" />
-                                            <Grid Grid.Column="1" ColumnSpacing="6">
+                                            <Grid Grid.Column="1" ColumnSpacing="6" Margin="{x:Bind TitleEndMargin, Mode=OneWay}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="*" />
@@ -1177,7 +1176,7 @@
                                                          Visibility="{x:Bind NewVisibility, Mode=OneWay}"
                                                          AutomationProperties.Name="New" />
                                             </Grid>
-                                            <Button Grid.Column="2"
+                                            <Button Grid.Column="1" HorizontalAlignment="Right"
                                                     Opacity="0"
                                                     Tag="{x:Bind}"
                                                     Click="PinnedAction_Click"
@@ -1187,7 +1186,7 @@
                                                     ToolTipService.ToolTip="{x:Bind PinnedActionName, Mode=OneWay}">
                                                 <FontIcon Glyph="{x:Bind PinnedActionGlyph, Mode=OneWay}" FontSize="10" />
                                             </Button>
-                                            <Border Grid.Column="2"
+                                            <Border Grid.Column="1"
                                                     Width="24" Height="24"
                                                     HorizontalAlignment="Right"
                                                     CornerRadius="6"
@@ -1276,13 +1275,12 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="16" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" Opacity="0.6"
                                               Visibility="{x:Bind PlaceholderVisibility, Mode=OneWay}" />
                                     <Image Source="{x:Bind Favicon, Mode=OneWay}" Width="16" Height="16"
                                            Opacity="{x:Bind ContentOpacity, Mode=OneWay}" />
-                                    <Grid Grid.Column="1" ColumnSpacing="6">
+                                    <Grid Grid.Column="1" ColumnSpacing="6" Margin="{x:Bind TitleEndMargin, Mode=OneWay}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
@@ -1315,7 +1313,7 @@
                                                 Visibility="{x:Bind JoinVisibility, Mode=OneWay}" />
                                     </Grid>
                                     <!-- Shown on hover, like Arc. -->
-                                    <Button Grid.Column="2"
+                                    <Button Grid.Column="1" HorizontalAlignment="Right"
                                             Opacity="0"
                                             Tag="{x:Bind}"
                                             Click="PinnedAction_Click"
@@ -1326,7 +1324,7 @@
                                         <FontIcon Glyph="{x:Bind PinnedActionGlyph, Mode=OneWay}" FontSize="10" />
                                     </Button>
                                     <!-- While this tab has a page open in Peek, that page's icon sits at the row's end. -->
-                                    <Border Grid.Column="2"
+                                    <Border Grid.Column="1"
                                             Width="24" Height="24"
                                             HorizontalAlignment="Right"
                                             CornerRadius="6"
@@ -1468,7 +1466,6 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="16" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <Grid Visibility="{x:Bind SingleVisibility, Mode=OneWay}">
                                         <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" Opacity="0.6"
@@ -1476,7 +1473,7 @@
                                         <Image Source="{x:Bind Favicon, Mode=OneWay}" Width="16" Height="16"
                                                Opacity="{x:Bind ContentOpacity, Mode=OneWay}" />
                                     </Grid>
-                                    <Grid Grid.Column="1" ColumnSpacing="6" Visibility="{x:Bind SingleVisibility, Mode=OneWay}">
+                                    <Grid Grid.Column="1" ColumnSpacing="6" Margin="{x:Bind TitleEndMargin, Mode=OneWay}" Visibility="{x:Bind SingleVisibility, Mode=OneWay}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
@@ -1512,7 +1509,7 @@
                                          filling its side of the row. While the split is the tab you're on, the selected-tab card
                                          sits on the half you're on, and springs across when you switch (PlaceSplitCard). On hover
                                          a half's favicon becomes its ×, as Safari's tabs do, so the title keeps its room. -->
-                                    <Grid Grid.ColumnSpan="3" Visibility="{x:Bind SplitVisibility, Mode=OneWay}" SizeChanged="SplitRow_SizeChanged">
+                                    <Grid Grid.ColumnSpan="2" Visibility="{x:Bind SplitVisibility, Mode=OneWay}" SizeChanged="SplitRow_SizeChanged">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="3" />
@@ -1592,7 +1589,7 @@
                                         </Grid>
                                     </Grid>
                                     <!-- Shown on hover, like Arc. (A split's row has one per half instead.) -->
-                                    <Button Grid.Column="2"
+                                    <Button Grid.Column="1" HorizontalAlignment="Right"
                                             Opacity="0"
                                             Visibility="{x:Bind SingleVisibility, Mode=OneWay}"
                                             Tag="{x:Bind}"
@@ -1604,7 +1601,7 @@
                                         <FontIcon Glyph="&#xE711;" FontSize="10" />
                                     </Button>
                                     <!-- While this tab has a page open in Peek, that page's icon sits at the row's end, as on pinned rows. -->
-                                    <Border Grid.Column="2"
+                                    <Border Grid.Column="1"
                                             Width="24" Height="24"
                                             HorizontalAlignment="Right"
                                             CornerRadius="6"
@@ -1759,8 +1756,6 @@
                 </Grid>
             </Grid>
 
-            <!-- Downloads: while one runs, or one has finished since you last looked, a row at the bottom
-                 with its name and progress. It opens the library's list; so do Ctrl+J and the menu. -->
             <!-- The library (bookmarks, downloads and history), like Zen's button in the same place. -->
             <Button x:Name="LibraryButton"
                     Grid.Row="9"
@@ -1771,34 +1766,101 @@
                     VerticalAlignment="Bottom"
                     Style="{StaticResource IconButtonStyle}"
                     Click="LibraryButton_Click"
+                    PointerEntered="DownloadPeekAnchor_PointerEntered"
+                    PointerExited="DownloadPeek_PointerExited"
+                    ContextRequested="LibraryButton_ContextRequested"
                     AutomationProperties.Name="Library"
                     ToolTipService.ToolTip="Library">
-                <FontIcon Glyph="&#xE8F1;" FontSize="14" />
-            </Button>
-            <Button x:Name="DownloadsButton"
-                    Grid.Row="9"
-                    Margin="44,4,4,0"
-                    Click="DownloadsButton_Click"
-                    Height="40"
-                    Style="{StaticResource SubtleButtonStyle}"
-                    CornerRadius="8"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch"
-                    Padding="11,0"
-                    Visibility="Collapsed"
-                    AutomationProperties.Name="Downloads">
-                <Grid ColumnSpacing="10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <FontIcon x:Name="DownloadsGlyph" Glyph="&#xE896;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                        <TextBlock x:Name="DownloadsText" FontSize="13" TextTrimming="CharacterEllipsis" />
-                        <ProgressBar x:Name="DownloadsProgress" Height="3" MinHeight="3" Visibility="Collapsed" />
-                    </StackPanel>
+                <!-- As in Zen (DownloadsPeek.cs): the newest download's file sits on a badge at the top right,
+                     ringed with progress while files download, till you've hovered the button or opened the library. -->
+                <Grid Width="32" Height="32">
+                    <FontIcon x:Name="LibraryGlyph" Glyph="&#xE8F1;" FontSize="14" />
+                    <Grid x:Name="LibraryBadge"
+                          Width="22" Height="22"
+                          Margin="0,-2,-4,0"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Top"
+                          IsHitTestVisible="False"
+                          Visibility="Collapsed">
+                        <Ellipse Fill="{ThemeResource DriftPeekBadgeBrush}" Stroke="{ThemeResource DriftPeekBadgeBorderBrush}" StrokeThickness="1" />
+                        <Border Width="15" Height="15" CornerRadius="3">
+                            <Grid>
+                                <FontIcon Glyph="&#xE8A5;" FontSize="13" Foreground="{ThemeResource DriftIconBrush}" />
+                                <Image x:Name="LibraryBadgeImage" Stretch="UniformToFill" />
+                            </Grid>
+                        </Border>
+                        <ProgressRing x:Name="DownloadsRing"
+                                      Width="22" Height="22"
+                                      Minimum="0" Maximum="1"
+                                      IsActive="False"
+                                      Visibility="Collapsed" />
+                    </Grid>
                 </Grid>
             </Button>
+
+            <!-- Hover the Library button and your newest downloads rise above it, as in
+                 Arc: click one to open it, or drag it onto a page, Explorer or another app (DownloadPeek.cs). -->
+            <Border x:Name="DownloadPeekCard"
+                    Grid.RowSpan="9"
+                    Margin="0,0,4,4"
+                    Padding="4"
+                    VerticalAlignment="Bottom"
+                    CornerRadius="8"
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource DriftActiveBorderBrush}"
+                    Background="{ThemeResource DriftSwitcherBrush}"
+                    Opacity="0"
+                    Translation="0,8,0"
+                    IsHitTestVisible="False"
+                    PointerEntered="DownloadPeek_PointerEntered"
+                    PointerExited="DownloadPeek_PointerExited">
+                <Border.OpacityTransition>
+                    <ScalarTransition Duration="0:0:0.15" />
+                </Border.OpacityTransition>
+                <Border.TranslationTransition>
+                    <Vector3Transition Duration="0:0:0.15" />
+                </Border.TranslationTransition>
+                <ListView x:Name="DownloadPeekList"
+                          SelectionMode="None"
+                          IsItemClickEnabled="True"
+                          ItemClick="DownloadPeek_ItemClick"
+                          CanDragItems="True"
+                          DragItemsStarting="DownloadItems_DragItemsStarting"
+                          DragItemsCompleted="DownloadItems_DragItemsCompleted"
+                          ItemContainerStyle="{StaticResource TabRowStyle}"
+                          AutomationProperties.Name="Recent downloads">
+                    <ListView.ItemContainerTransitions>
+                        <TransitionCollection />
+                    </ListView.ItemContainerTransitions>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:DownloadItem">
+                            <Grid ColumnSpacing="10" Padding="0,6" Background="Transparent"
+                                  AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"
+                                  ToolTipService.ToolTip="{x:Bind FileName, Mode=OneWay}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="40" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid Width="40" Height="40">
+                                    <FontIcon Glyph="&#xE8A5;" FontSize="24"
+                                              Visibility="{x:Bind GlyphVisibility, Mode=OneWay}"
+                                              Foreground="{ThemeResource DriftIconBrush}" />
+                                    <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="Uniform" />
+                                </Grid>
+                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind PeekStatus, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                                    <ProgressBar Margin="0,3,0,0"
+                                                 Value="{x:Bind Percent, Mode=OneWay}"
+                                                 IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
+                                                 Visibility="{x:Bind RunningVisibility, Mode=OneWay}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Border>
 
             <!-- Where a dragged tab will land, like Zen's: a line with a ring between rows, in the accent
                  colour (ShowDropIndicator). Essentials show it by moving aside instead (PreviewEssentials);
@@ -1906,7 +1968,7 @@
                             Style="{StaticResource SubtleButtonStyle}" Width="64" Height="58" Padding="0" CornerRadius="8"
                             HorizontalAlignment="Center" AutomationProperties.Name="Downloads">
                         <StackPanel Spacing="4">
-                            <FontIcon x:Name="LibraryDownloadsGlyph" Glyph="&#xE896;" FontSize="18" />
+                            <FontIcon x:Name="LibraryDownloadsGlyph" Glyph="&#xEBD3;" FontSize="18" />
                             <TextBlock Text="Downloads" FontSize="11" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -1930,9 +1992,60 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <TextBox x:Name="LibrarySearch" PlaceholderText="Search downloads" IsSpellCheckEnabled="False"
-                         TextChanged="LibrarySearch_TextChanged" KeyDown="LibrarySearch_KeyDown"
-                         AutomationProperties.Name="Search" />
+                <!-- The search, and on History the filter (Library.cs), which takes its place while it's open, as in Zen. -->
+                <Grid x:Name="LibrarySearchRow" ColumnSpacing="8" VerticalAlignment="Top">
+                    <Grid.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </Grid.OpacityTransition>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="LibrarySearch" PlaceholderText="Search downloads" IsSpellCheckEnabled="False"
+                             TextChanged="LibrarySearch_TextChanged" KeyDown="LibrarySearch_KeyDown"
+                             AutomationProperties.Name="Search" />
+                    <Button x:Name="LibraryFilterButton" Grid.Column="1" Style="{StaticResource SubtleButtonStyle}"
+                            Padding="10,6" VerticalAlignment="Stretch" Visibility="Collapsed"
+                            Click="LibraryFilter_Click" AutomationProperties.Name="Filter history">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE71C;" FontSize="13" />
+                            <TextBlock Text="Filter" FontSize="13" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <StackPanel x:Name="LibraryFilterPanel" Spacing="6" Visibility="Collapsed" Opacity="0">
+                    <StackPanel.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </StackPanel.OpacityTransition>
+                    <Grid Margin="0,0,0,4">
+                        <TextBlock Text="Filter history" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,0,0" />
+                        <Button Content="Done" HorizontalAlignment="Right" Style="{StaticResource FilterChipStyle}"
+                                Click="LibraryFilterDone_Click" />
+                    </Grid>
+                    <TextBlock Text="When was it visited?" FontSize="12" Margin="4,0,0,0"
+                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="RangeToday" Tag="range:Today" Content="Today" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                        <Button x:Name="RangeWeek" Tag="range:Week" Content="This week" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                        <Button x:Name="RangeMonth" Tag="range:Month" Content="This month" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                    </StackPanel>
+                    <TextBlock Text="Sort by" FontSize="12" Margin="4,8,0,0"
+                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="SortDate" Tag="sort:Date" Content="By date" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                        <Button x:Name="SortSite" Tag="sort:Site" Content="By site" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="SortMostVisited" Tag="sort:MostVisited" Content="By most visited" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                        <Button x:Name="SortLastVisited" Tag="sort:LastVisited" Content="By last visited" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                    </StackPanel>
+                    <TextBlock Text="What to look through" FontSize="12" Margin="4,8,0,0"
+                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+                        <Button x:Name="SourceHistory" Tag="source:History" Content="History" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                        <Button x:Name="SourceClosedTabs" Tag="source:ClosedTabs" Content="Closed tabs" Style="{StaticResource FilterChipStyle}" Click="LibraryFilterChip_Click" />
+                    </StackPanel>
+                </StackPanel>
                 <Grid x:Name="LibraryDownloadsPage" Grid.Row="1" RowSpacing="4">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -1959,23 +2072,28 @@
                               Margin="-12,0,0,0"
                               SelectionMode="None"
                               IsItemClickEnabled="True"
-                              ItemClick="DownloadList_ItemClick">
+                              ItemClick="DownloadList_ItemClick"
+                              CanDragItems="True"
+                              DragItemsStarting="DownloadItems_DragItemsStarting"
+                          DragItemsCompleted="DownloadItems_DragItemsCompleted">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:DownloadItem">
                                 <Grid ColumnSpacing="12" Padding="0,8" Background="Transparent"
+                                      Tag="{x:Bind}" ContextRequested="DownloadRow_ContextRequested"
                                       AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="24" />
+                                        <ColumnDefinition Width="32" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <!-- Windows' icon for the file, as Explorer has it (FileIcons); the plain glyph till it comes. -->
-                                    <Grid Width="24" Height="24" VerticalAlignment="Top" Margin="0,4,0,0"
+                                    <!-- The file's own picture once it's saved (FileThumbnails), else Windows' icon for its type, as
+                                         Explorer has it (FileIcons); the plain glyph till one comes. -->
+                                    <Grid Width="32" Height="32" VerticalAlignment="Top"
                                           Opacity="{x:Bind ContentOpacity, Mode=OneWay}">
-                                        <FontIcon Glyph="&#xE8A5;" FontSize="18"
+                                        <FontIcon Glyph="&#xE8A5;" FontSize="20"
                                                   Visibility="{x:Bind GlyphVisibility, Mode=OneWay}"
                                                   Foreground="{ThemeResource DriftIconBrush}" />
-                                        <Image Source="{x:Bind Icon, Mode=OneWay}" Stretch="Uniform" />
+                                        <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="Uniform" />
                                     </Grid>
                                     <StackPanel Grid.Column="1" Spacing="2" Opacity="{x:Bind ContentOpacity, Mode=OneWay}">
                                         <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" />
@@ -1991,6 +2109,12 @@
                                                 Visibility="{x:Bind FolderVisibility, Mode=OneWay}"
                                                 AutomationProperties.Name="Show in folder" ToolTipService.ToolTip="Show in folder">
                                             <FontIcon Glyph="&#xE838;" FontSize="12" />
+                                        </Button>
+                                        <Button Style="{StaticResource TabCloseButtonStyle}" Tag="{x:Bind}" Click="DownloadPause_Click"
+                                                Visibility="{x:Bind RunningVisibility, Mode=OneWay}"
+                                                AutomationProperties.Name="{x:Bind PauseLabel, Mode=OneWay}"
+                                                ToolTipService.ToolTip="{x:Bind PauseLabel, Mode=OneWay}">
+                                            <FontIcon Glyph="{x:Bind PauseGlyph, Mode=OneWay}" FontSize="10" />
                                         </Button>
                                         <Button Style="{StaticResource TabCloseButtonStyle}" Tag="{x:Bind}" Click="DownloadCancel_Click"
                                                 Visibility="{x:Bind RunningVisibility, Mode=OneWay}"

@@ -8,6 +8,23 @@ public static class SplitLayout
     /// <summary>The half of the page a dragged tab is over.</summary>
     public static SplitSide Side(double x, double width) => x < width / 2 ? SplitSide.Left : SplitSide.Right;
 
+    public static SplitSide Other(SplitSide side) => side == SplitSide.Left ? SplitSide.Right : SplitSide.Left;
+
+    /// <summary>
+    /// The tab a dragged tab is split with when dropped on the page: the page in front, or, when it's
+    /// the page in front being dragged, the tab you were on before it (<paramref name="recent"/> is
+    /// latest first). Null when there's none that can be.
+    /// </summary>
+    public static T? Partner<T>(T dragged, T? front, System.Collections.Generic.IEnumerable<T> recent, System.Func<T, T, bool> canSplit)
+        where T : class
+    {
+        if (front is null) return null;
+        if (!ReferenceEquals(dragged, front)) return canSplit(front, dragged) ? front : null;
+        foreach (var tab in recent)
+            if (!ReferenceEquals(tab, front) && canSplit(tab, dragged)) return tab;
+        return null;
+    }
+
     /// <summary>Each page's width in an even split, with the gap between them.</summary>
     public static double HalfWidth(double width, double gap) => System.Math.Max(0, (width - gap) / 2);
 

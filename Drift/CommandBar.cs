@@ -155,6 +155,8 @@ public sealed partial class MainWindow
         Spring.Jump(CommandCard, "Scale", Vector3.One);
         CommandLayer.Visibility = Visibility.Collapsed;
         UpdateDragRegions();
+        // Room left for a page beside (Split.cs), and none coming: the page takes the whole width again.
+        if (!_splitComing) ReleaseDropRoom();
         if (focusPage) _active?.View.Focus(FocusState.Programmatic);
     }
 
@@ -963,6 +965,7 @@ public sealed partial class MainWindow
         }
         if (item?.Kind == CommandKind.Tab && item.Tab is { } tab)
         {
+            _splitComing = splitWith is not null;
             CloseCommandBar(focusPage: false);
             if (splitWith is not null) SplitBeside(splitWith, tab);
             else Activate(tab);
@@ -976,6 +979,7 @@ public sealed partial class MainWindow
         var newTab = _commandNewTab || _active is null;
         // Still there? It may have been deleted while the bar was open.
         var folder = _commandFolder is { } f && _folderTree.AllFolders.Contains(f) ? f : null;
+        _splitComing = splitWith is not null && uri is not null;
         CloseCommandBar(focusPage: uri is null);
         if (uri is null) return;
 

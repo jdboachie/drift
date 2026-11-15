@@ -24,6 +24,9 @@ internal sealed class SessionTab
     public string? Folder { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Position { get; set; }
+    /// <summary>For closed tabs, when it was closed (UTC), for the library's Closed tabs. Missing from older files.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? Closed { get; set; }
     /// <summary>
     /// Split view, as saved before splits had rows of their own (SessionData.Splits): this tab is the
     /// right-hand page beside the tab before it, the left taking SplitRatio of the width. Read, not written.

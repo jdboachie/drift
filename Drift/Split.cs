@@ -447,6 +447,7 @@ public sealed partial class MainWindow
     // leaving the half under the pointer empty for the tab; crossing to the other half, it springs
     // back. The empty half is outlined. Under the pointer the tab is a card of its page (its icon and title). Let go, and the new
     // page settles into the empty half; drag away, and the page takes the whole width again.
+    // Dragging the tab you're on: the tab you were on before takes its place, and makes room for it.
 
     private const double SplitSpringSeconds = 0.3;
     private const double SplitSpringBounce = 0.15;
@@ -454,19 +455,86 @@ public sealed partial class MainWindow
     // The half the page has made room on, while a tab is dragged over it.
     private SplitSide? _dropSide;
 
-    /// <summary>While a tab is dragged: if it can go beside the page in front, the page takes the drop.</summary>
+    /// <summary>The tab a dragged tab would be split with (SplitLayout.Partner), or none.</summary>
+    private BrowserTab? SplitPartner(BrowserTab dragged)
+    {
+        var tabs = AllTabs.ToHashSet();
+        return SplitLayout.Partner(dragged, _active, _recentTabs.Where(tabs.Contains), CanSplit);
+    }
+
+    /// <summary>While a tab is dragged: if it has a tab to go beside (SplitPartner), the page takes the drop.</summary>
     private void ShowSplitDrop(BrowserTab dragged)
     {
         _dropSide = null;
-        SplitDropLayer.Visibility = _active is { } current && CanSplit(current, dragged) && !IsPeekShown
+        _pairShown = false;
+        var partner = SplitPartner(dragged);
+        _pairPartner = dragged == _active ? partner : null;
+        SplitDropLayer.Visibility = (partner is not null || CanSplitWithNew(dragged)) && !IsPeekShown
             ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// The tab you're on with no other to go beside: it makes room all the same (as in Zen), and dropped,
+    /// the command bar opens for the page to go in the empty half.
+    /// </summary>
+    private bool CanSplitWithNew(BrowserTab dragged) => dragged == _active && dragged is { IsSplitRow: false, Split: null };
+
+    // Room left for a page beside, while the command bar's open for it; and whether a page is on its way.
+    private bool _dropRoomHeld;
+    private bool _splitComing;
+    private (BrowserTab With, SplitSide Side)? _splitBarAfterDrag;
+
+    /// <summary>The page takes the whole width again, if room was left for a page beside it.</summary>
+    private void ReleaseDropRoom()
+    {
+        if (!_dropRoomHeld) return;
+        _dropRoomHeld = false;
+        MakeRoom(null);
+    }
+
+    /// <summary>A page is going in the room left: the split takes over from where the page is, without a jump.</summary>
+    private void TakeDropRoom()
+    {
+        if (!_dropRoomHeld) return;
+        _dropRoomHeld = false;
+        _dropSide = null;
+        SplitDropSlot.Opacity = 0;
+        MainCard.Margin = new Thickness(0);
+        Spring.Jump(MainCard, "Translation", Vector3.Zero);
+    }
+
+    /// <summary>After the drag's done (it takes the focus back to the page): the command bar, if it was dropped for one.</summary>
+    private void OpenSplitBarAfterDrag()
+    {
+        if (_splitBarAfterDrag is not { } pending) return;
+        _splitBarAfterDrag = null;
+        if (_active == pending.With) OpenSplitCommandBar(pending.With, pending.Side);
+        else ReleaseDropRoom();
     }
 
     /// <summary>The drag's over: the page takes the whole width again, if it had made room.</summary>
     private void HideSplitDrop()
     {
         SplitDropLayer.Visibility = Visibility.Collapsed;
-        MakeRoom(null);
+        if (!_dropRoomHeld) MakeRoom(null);
+        ShowPairPartner(false);
+        _pairPartner = null;
+    }
+
+    // While the tab you're on is dragged: the tab it'll go beside, and whether that's in front meanwhile.
+    private BrowserTab? _pairPartner;
+    private bool _pairShown;
+
+    /// <summary>
+    /// The tab you're on, dragged over the page: the tab you were on before takes its place in front,
+    /// to make room for it as any page does (MakeRoom). Off the page again, the tab you're on is back.
+    /// </summary>
+    private void ShowPairPartner(bool shown)
+    {
+        if (shown == _pairShown || _active is not { } page || _pairPartner is not { } partner) return;
+        _pairShown = shown;
+        partner.View.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        page.View.Visibility = shown ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>The page makes room for a tab on <paramref name="side"/>, or (null) takes the whole width again.</summary>
@@ -518,7 +586,9 @@ public sealed partial class MainWindow
         ui.IsContentVisible = true;
         if (_pageGhost is not null) ui.SetContentFromSoftwareBitmap(_pageGhost, _pageGhostAnchor);
         else if (_rowGhost is not null) ui.SetContentFromSoftwareBitmap(_rowGhost, _rowGhostAnchor);
-        MakeRoom(SplitLayout.Side(e.GetPosition(SplitDropLayer).X, SplitDropLayer.ActualWidth));
+        var side = SplitLayout.Side(e.GetPosition(SplitDropLayer).X, SplitDropLayer.ActualWidth);
+        ShowPairPartner(true);
+        MakeRoom(side);
     }
 
     private void SplitDrop_DragLeave(object sender, DragEventArgs e)
@@ -527,6 +597,7 @@ public sealed partial class MainWindow
         var at = e.GetPosition(SplitDropLayer);
         if (at.X >= 0 && at.Y >= 0 && at.X < SplitDropLayer.ActualWidth && at.Y < SplitDropLayer.ActualHeight) return;
         MakeRoom(null);
+        ShowPairPartner(false);
     }
 
     private void SplitDrop_Drop(object sender, DragEventArgs e)
@@ -534,20 +605,32 @@ public sealed partial class MainWindow
         var dragged = _dragTab;
         var width = SplitDropLayer.ActualWidth;
         var side = SplitLayout.Side(e.GetPosition(SplitDropLayer).X, width);
-        if (dragged is null || _active is not { } current || !CanSplit(current, dragged))
+        if (dragged is not null && SplitPartner(dragged) is null && CanSplitWithNew(dragged))
+        {
+            // Nothing to go beside: the room stays, and the command bar opens for a page to go in it.
+            e.AcceptedOperation = DataPackageOperation.Move;
+            SplitDropLayer.Visibility = Visibility.Collapsed;
+            _dropRoomHeld = true;
+            _splitBarAfterDrag = (dragged, side);
+            return;
+        }
+        if (dragged is null || SplitPartner(dragged) is not { } partner)
         {
             HideSplitDrop();
             return;
         }
         e.AcceptedOperation = DataPackageOperation.Move;
+        SplitDropLayer.Visibility = Visibility.Collapsed;
+        // The tab you were on before is in front by now, if it's the tab you're on that's dropped.
+        _pairShown = false;
+        _pairPartner = null;
         // The page is already where the split puts it: the split takes over from here, without a jump.
         _dropSide = null;
-        SplitDropLayer.Visibility = Visibility.Collapsed;
         SplitDropSlot.Opacity = 0;
         MainCard.Margin = new Thickness(0);
         Spring.Jump(MainCard, "Translation", Vector3.Zero);
-        if (side == SplitSide.Left) SplitTabs(dragged, current, front: dragged);
-        else SplitTabs(current, dragged, front: dragged);
+        if (side == SplitSide.Left) SplitTabs(dragged, partner, front: dragged);
+        else SplitTabs(partner, dragged, front: dragged);
         AnimateSplitIn(side, width, dragged);
     }
 

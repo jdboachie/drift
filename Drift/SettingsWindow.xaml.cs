@@ -112,6 +112,9 @@ public sealed partial class SettingsWindow : Window
         AskTabToggle.IsOn = settings.AskAiWithTab;
         AskFirstCombo.SelectedIndex = settings.AskFirst == AiProvider.Claude ? 0 : 1;
         ClearRangeCombo.SelectedIndex = 1;
+        var keep = DownloadArchive.Choices.ToList().IndexOf(settings.KeepDownloadsDays);
+        KeepDownloadsCombo.SelectedIndex = keep >= 0 ? keep : DownloadArchive.Choices.ToList().IndexOf(DownloadArchive.DefaultDays);
+        ShowDownloadFolder();
         _loading = false;
         ShowDefaultBrowser();
         ShowAdBlockStatus();
@@ -137,6 +140,7 @@ public sealed partial class SettingsWindow : Window
         var page = (Nav.SelectedItem as ListViewItem)?.Tag as string ?? "general";
         GeneralPage.Visibility = page == "general" ? Visibility.Visible : Visibility.Collapsed;
         TabsPage.Visibility = page == "tabs" ? Visibility.Visible : Visibility.Collapsed;
+        DownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
         AiPage.Visibility = page == "ai" ? Visibility.Visible : Visibility.Collapsed;
         ShortcutsPage.Visibility = page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
         ExtensionsPage.Visibility = page == "extensions" ? Visibility.Visible : Visibility.Collapsed;
@@ -144,6 +148,41 @@ public sealed partial class SettingsWindow : Window
         if (page == "extensions") _ = ShowExtensionsAsync();
         if (page == "privacy") _ = ShowPermissionsAsync();
         if (page == "ai") _ = ShowAiAsync();
+    }
+
+    // ───────────────────────── Downloads ─────────────────────────
+
+    private void ShowDownloadFolder()
+    {
+        DownloadFolderText.Text = Downloads.Folder;
+        ToolTipService.SetToolTip(DownloadFolderText, Downloads.Folder);
+        DownloadFolderReset.Visibility = Settings.Current.DownloadFolder.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void DownloadFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new Windows.Storage.Pickers.FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        Windows.Storage.StorageFolder? folder;
+        try { folder = await picker.PickSingleFolderAsync(); }
+        catch { return; }
+        if (folder is null) return;
+        Settings.Update(s => s.DownloadFolder = folder.Path);
+        ShowDownloadFolder();
+    }
+
+    private void DownloadFolderReset_Click(object sender, RoutedEventArgs e)
+    {
+        Settings.Update(s => s.DownloadFolder = "");
+        ShowDownloadFolder();
+    }
+
+    private void KeepDownloadsCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || KeepDownloadsCombo.SelectedIndex < 0) return;
+        var days = DownloadArchive.Choices[KeepDownloadsCombo.SelectedIndex];
+        if (days != Settings.Current.KeepDownloadsDays) Settings.Update(s => s.KeepDownloadsDays = days);
     }
 
     // ───────────────────────── General ─────────────────────────

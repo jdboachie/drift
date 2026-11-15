@@ -87,10 +87,16 @@ public sealed partial class MainWindow : Window
               const token = '__TOKEN__';
               const shortcuts = [__KEYS__];
               const linkOf = (e) => e.composedPath().find((n) => n instanceof Element && n.matches('a[href], area[href]'));
-              const postLink = (x, y) => post(token + ':link:' + x + ',' + y + ',' + window.innerWidth);
+              // The link's box goes with the press (the line of it pressed, for a link that wraps), for Peek to grow from.
+              const boxOf = (link, x, y) => [...link.getClientRects()].find((r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) || link.getBoundingClientRect();
+              const postLink = (x, y, link) => {
+                const r = boxOf(link, x, y);
+                post(token + ':link:' + [x, y, window.innerWidth, r.left, r.top, r.width, r.height].join(','));
+              };
               window.addEventListener('pointerdown', (e) => {
                 if (!e.isTrusted || e.button > 1) return;
-                if (linkOf(e)) postLink(e.clientX, e.clientY);
+                const link = linkOf(e);
+                if (link) postLink(e.clientX, e.clientY, link);
               }, true);
               window.addEventListener('click', (e) => {
                 if (e.isTrusted && e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.button === 0) {
@@ -105,7 +111,7 @@ public sealed partial class MainWindow : Window
                 const link = linkOf(e);
                 if (!link) return;
                 const r = link.getBoundingClientRect();
-                postLink(r.left + r.width / 2, r.top + r.height / 2);
+                postLink(r.left + r.width / 2, r.top + r.height / 2, link);
               }, true);
               window.addEventListener('keydown', (e) => {
                 if (!e.isTrusted) return;
@@ -124,6 +130,14 @@ public sealed partial class MainWindow : Window
                 .addEventListener('change', () => { zoom(); watchZoom(); }, { once: true });
               zoom();
               watchZoom();
+              // Its first content drawn, often well before DOMContentLoaded: Peek shows the page then (RevealWhenLoaded).
+              try {
+                new PerformanceObserver((list, observer) => {
+                  if (!list.getEntries().some((p) => p.name === 'first-contentful-paint')) return;
+                  observer.disconnect();
+                  post(token + ':painted');
+                }).observe({ type: 'paint', buffered: true });
+              } catch { }
             __PIP__
             })();
             """.Replace("__PIP__", PipScript() + MediaScript()).Replace("__TOKEN__", ShortcutToken).Replace("__KEYS__", keys);
@@ -184,7 +198,10 @@ public sealed partial class MainWindow : Window
     // Elements already wired by AddPressFeedback (list containers are recycled, so they come round again).
     private readonly HashSet<UIElement> _pressFeedback = new();
     // Where the Peek card grows from and shrinks back to (AimPeekCard).
-    private float _cardFromScale = 0.5f, _cardFromY, _cardToScale = 0.6f, _cardToY;
+    // Where Peek's card grows from and goes back to (AimPeekCard): its scale and shift.
+    private Vector3 _cardFromScale = new(0.5f, 0.5f, 1), _cardFromShift, _cardToScale = new(0.6f, 0.6f, 1), _cardToShift;
+    private double _cardToBounce;
+    private double _cardGrowKick = PeekGrowKick, _cardGrowSeconds = PeekGrowSeconds;
     private readonly DispatcherQueueTimer _sidebarDismissTimer;
     private readonly DispatcherQueueTimer _sidebarWatch;
     private readonly DispatcherQueueTimer _sessionTimer;
@@ -290,6 +307,7 @@ public sealed partial class MainWindow : Window
             History.SaveNow(wait: true);
         };
         Downloads.Changed += ShowDownloads;
+        WireDownloadDrops();
         _sessionTimer = DispatcherQueue.CreateTimer();
         _sessionTimer.Interval = TimeSpan.FromSeconds(2);
         _sessionTimer.IsRepeating = false;
@@ -431,6 +449,11 @@ public sealed partial class MainWindow : Window
             }
             await Task.WhenAll(opening);
             _restored = true;
+            // The first tab put back was in front a moment, till the one you were on came: it wasn't visited.
+            _recentTabs.Clear();
+            if (_active is not null) NoteRecentTab(_active);
+            // The first Peek starts loading at once too, once the tabs have had their start.
+            PrepareSparePeekViewSoon(5000);
             StartCalendar();
             StartMail();
             StartOutlook();
@@ -611,13 +634,21 @@ public sealed partial class MainWindow : Window
 
     private async Task InitWebViewAsync(WebView2 view)
     {
+        // Files dragged in from Explorer or another app reach the page (WinUI's WebView2 turns them away by default).
+        view.AllowDrop = true;
         var environment = await EnvironmentAsync();
         if (_private) await view.EnsureCoreWebView2Async(environment, PrivateOptions(environment));
         else await view.EnsureCoreWebView2Async(environment);
         var core = view.CoreWebView2;
         if (_private) Extensions.AttachPrivate(core.Profile);
         else Extensions.Attach(core.Profile);
-        core.DownloadStarting += (_, e) => Downloads.Track(e, _private);
+        Downloads.UseProfile(core.Profile);
+        core.DownloadStarting += (_, e) =>
+        {
+            var path = e.ResultFilePath;
+            Downloads.Track(e, _private);
+            FlyDownloadIn(view, path);
+        };
         await AddInputScriptAsync(core);
     }
 
@@ -647,7 +678,8 @@ public sealed partial class MainWindow : Window
     /// Over the page in its background colour: shown at once on load, the page, and the cover fades instead.
     /// A WebView2 fading in (in the Peek card) stopped everything else in the card drawing while it did.
     /// </param>
-    private static void RevealWhenLoaded(WebView2 view, UIElement? cover = null)
+    /// <returns>Shows it now, if it hasn't been: when the page reports its first content drawn ("painted").</returns>
+    private static Action RevealWhenLoaded(WebView2 view, UIElement? cover = null)
     {
         var core = view.CoreWebView2;
         view.Opacity = 0;
@@ -668,6 +700,7 @@ public sealed partial class MainWindow : Window
             revealed = true;
             view.Opacity = 1;
             if (cover is null) return;
+            PeekTrace("revealed");
             cover.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
             cover.Opacity = 0;
         }
@@ -686,6 +719,7 @@ public sealed partial class MainWindow : Window
         void OnNavigationCompleted(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e) => RevealDrawn();
         core.DOMContentLoaded += OnContentLoaded;
         core.NavigationCompleted += OnNavigationCompleted;
+        return RevealDrawn;
     }
 
     private void OpenInNewTab(Uri uri) => _ = CreateTabAsync(uri, TabPlace.Regular, activate: true);
@@ -927,7 +961,7 @@ public sealed partial class MainWindow : Window
         tab.Crash = TabCrash.None;
         tab.IsUnloaded = true;
         // Its page and its sound are gone (MediaControls.cs).
-        tab.IsPlayingAudio = tab.IsMuted = false;
+        tab.IsPlayingAudio = tab.IsMuted = tab.IsMedia = false;
         tab.AudioSince = null;
         UpdateMediaBar();
         if (home is not null)
@@ -1059,24 +1093,25 @@ public sealed partial class MainWindow : Window
         _peekPending = uri;
         _peekOwner = owner;
         owner.HasPeek = true;
+        PeekTrace("open " + uri.Host);
 
         // A previous Peek may still be fading out; finish it now rather than fight its animation.
         FinishPeekExit();
         var press = TakeLinkPress(owner);
-        AimPeekCard(owner, press);
+        AimPeekCard(owner, press?.Point, press?.Box);
         // From a link: a moment later, the card grows out of it.
         if (press is not null && _uiSettings.AnimationsEnabled) ShowPeekLayerSoon(owner);
         else ShowPeekLayer(animate: true);
 
         // Hidden until its page has content (RevealWhenLoaded): the card grows in its themed colour.
-        var view = new WebView2 { Opacity = 0 };
+        // The view made ready ahead, if there is one, so the page starts loading at once.
+        var (view, ready) = TakeSparePeekView();
         _peekView = view;
         _peekZoom = 1;
-        PeekWebHost.Children.Add(view);
 
         try
         {
-            await InitWebViewAsync(view);
+            await ready;
         }
         catch
         {
@@ -1084,6 +1119,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        PeekTrace("engine ready");
         // Dismissed while the engine was starting.
         if (_peekView != view)
         {
@@ -1092,8 +1128,28 @@ public sealed partial class MainWindow : Window
         }
 
         RoundCorners(view, 7);
-        RevealWhenLoaded(view, PeekCover);
+        var revealNow = RevealWhenLoaded(view, PeekCover);
         var core = view.CoreWebView2;
+        // Shown as soon as the page has drawn something, rather than once its whole document has parsed.
+        var painted = ShortcutToken + ":painted";
+        core.WebMessageReceived += (_, e) =>
+        {
+            string message;
+            try { message = e.TryGetWebMessageAsString(); }
+            catch { return; }
+            if (_peekView == view && message == painted)
+            {
+                PeekTrace("painted");
+                revealNow();
+            }
+        };
+        if (Tracing)
+        {
+            core.NavigationStarting += (_, _) => PeekTrace("navigation starting");
+            core.ContentLoading += (_, _) => PeekTrace("content loading");
+            core.DOMContentLoaded += (_, _) => PeekTrace("dom content loaded");
+            core.NavigationCompleted += (_, _) => PeekTrace("navigation completed");
+        }
         core.FaviconChanged += async (_, _) =>
         {
             var icon = await LoadFaviconAsync(core, remember: !_private);
@@ -1134,6 +1190,76 @@ public sealed partial class MainWindow : Window
 
         view.Source = _peekPending ?? uri;
         if (IsPeekShown) view.Focus(FocusState.Programmatic);
+        // And one ready for the next Peek, once this page has had a head start.
+        PrepareSparePeekViewSoon();
+    }
+
+    // ── A view ready for the next Peek ──
+    // A new view's engine takes ~200ms to start, and its page can't start loading until it has. So one is
+    // kept ready, hidden under Peek's page and never taking a click, and the next Peek takes it and starts
+    // loading at once.
+    private WebView2? _sparePeekView;
+    private Task? _sparePeekReady;
+    private Task<CoreWebView2Environment>? _sparePeekEngine;
+
+    private (WebView2 View, Task Ready) TakeSparePeekView()
+    {
+        // Not one from an engine that has since stopped (EngineStopped).
+        if (_sparePeekView is { } spare && _sparePeekReady is { IsFaulted: false } ready && _sparePeekEngine == _environment)
+        {
+            _sparePeekView = null;
+            _sparePeekReady = null;
+            spare.IsHitTestVisible = true;
+            PeekTrace("view ready ahead" + (ready.IsCompleted ? "" : " (still starting)"));
+            return (spare, ready);
+        }
+        DropSparePeekView();
+        PeekTrace("new view");
+        var view = new WebView2 { Opacity = 0 };
+        PeekWebHost.Children.Add(view);
+        return (view, InitWebViewAsync(view));
+    }
+
+    /// <summary>Makes a view ready for the next Peek in a moment, so it doesn't compete with what's loading now.</summary>
+    private void PrepareSparePeekViewSoon(int delayMs = 1500)
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.IsRepeating = false;
+        timer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            PrepareSparePeekView();
+        };
+        timer.Start();
+    }
+
+    private async void PrepareSparePeekView()
+    {
+        if (_sparePeekView is not null || _closeConfirmed) return;
+        var view = new WebView2 { Opacity = 0, IsHitTestVisible = false };
+        PeekWebHost.Children.Insert(0, view);
+        _sparePeekView = view;
+        var ready = InitWebViewAsync(view);
+        _sparePeekReady = ready;
+        _sparePeekEngine = _environment;
+        try
+        {
+            await ready;
+        }
+        catch
+        {
+            if (_sparePeekView == view) DropSparePeekView();
+        }
+    }
+
+    private void DropSparePeekView()
+    {
+        if (_sparePeekView is not { } view) return;
+        _sparePeekView = null;
+        _sparePeekReady = null;
+        PeekWebHost.Children.Remove(view);
+        try { view.Close(); } catch { }
     }
 
     // On opening from a link, how long before the card grows out of it.
@@ -1155,43 +1281,66 @@ public sealed partial class MainWindow : Window
         timer.Start();
     }
 
-    /// <summary>The owner's last link press, if it was recent enough to be what opened this Peek.</summary>
-    private static Point? TakeLinkPress(BrowserTab owner)
+    /// <summary>The owner's last link press, and the link's box, if it was recent enough to be what opened this Peek.</summary>
+    private static (Point Point, Area? Box)? TakeLinkPress(BrowserTab owner)
     {
         var press = owner.LinkPress;
+        var box = owner.LinkBox;
         owner.LinkPress = null;
+        owner.LinkBox = null;
         // Press to navigation is a click's length; anything older belongs to some other link.
-        return Environment.TickCount64 - owner.LinkPressTime < 1500 ? press : null;
+        return press is { } point && Environment.TickCount64 - owner.LinkPressTime < 1500 ? (point, box) : null;
     }
 
     /// <summary>
-    /// Sets where the card grows from and shrinks back to. From a link, it scales about the press
-    /// point from a small card (PeekGrowFrom): always towards its final place, and visibly out of what was clicked.
-    /// With no link (a window a script opened), it rises from just below centre like a modal.
+    /// Sets where the card grows from and shrinks back to. From a link, it starts as the link itself:
+    /// covering the link's box (Core/PeekOrigin.cs), each edge then springs out to its place, so it's
+    /// plain which link opened; closing, it goes back into that box. With only the press point, it
+    /// scales about it from a speck (PeekGrowFrom). With no link (a window a script opened), it rises
+    /// from just below centre like a modal.
     /// </summary>
-    private void AimPeekCard(BrowserTab owner, Point? press)
+    private void AimPeekCard(BrowserTab owner, Point? press, Area? box)
     {
         // The card frame and the page share the page column; the card is inset by its margin.
         // The page isn't transformed yet, since Peek is only now opening.
         var page = PageArea.TransformToVisual(Root).TransformPoint(new Point(0, 0));
         var cardLeft = page.X - PageArea.Margin.Left + PeekCardFrame.Margin.Left;
         var cardTop = page.Y - PageArea.Margin.Top + PeekCardFrame.Margin.Top;
+        // Collapsed until now, so the card's size comes from the page it sits over.
+        var margin = PeekCardFrame.Margin;
+        var width = PageArea.ActualWidth + PageArea.Margin.Left + PageArea.Margin.Right - margin.Left - margin.Right;
+        var height = PageArea.ActualHeight + PageArea.Margin.Top + PageArea.Margin.Bottom - margin.Top - margin.Bottom;
 
-        // From either page of a split: the link's point is in its own page.
+        // From either page of a split: the link's point and box are in its own page.
         if (press is { } point && _shownPages.Contains(owner))
         {
-            var inRoot = owner.View.TransformToVisual(Root).TransformPoint(point);
-            PeekCardFrame.CenterPoint = new Vector3((float)(inRoot.X - cardLeft), (float)(inRoot.Y - cardTop), 0);
-            (_cardFromScale, _cardFromY, _cardToScale, _cardToY) = (PeekGrowFrom, 0, PeekShrinkTo, 0);
+            var toRoot = owner.View.TransformToVisual(Root);
+            if (box is { } link && width > 0 && height > 0)
+            {
+                var at = toRoot.TransformPoint(new Point(link.X, link.Y));
+                var start = PeekOrigin.From(new Area(at.X, at.Y, link.Width, link.Height), new Area(cardLeft, cardTop, width, height));
+                PeekCardFrame.CenterPoint = Vector3.Zero;
+                var scale = new Vector3((float)start.ScaleX, (float)start.ScaleY, 1);
+                var shift = new Vector3((float)start.OffsetX, (float)start.OffsetY, 0);
+                (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) = (scale, shift, scale, shift, PeekShrinkToLinkBounce);
+                // Eases out of the link rather than leaving it at speed, so it's seen there first.
+                (_cardGrowKick, _cardGrowSeconds) = (PeekGrowFromLinkKick, PeekGrowFromLinkSeconds);
+            }
+            else
+            {
+                var inRoot = toRoot.TransformPoint(point);
+                PeekCardFrame.CenterPoint = new Vector3((float)(inRoot.X - cardLeft), (float)(inRoot.Y - cardTop), 0);
+                (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) =
+                    (new(PeekGrowFrom, PeekGrowFrom, 1), Vector3.Zero, new(PeekShrinkTo, PeekShrinkTo, 1), Vector3.Zero, PeekShrinkToLinkBounce);
+                (_cardGrowKick, _cardGrowSeconds) = (PeekGrowKick, PeekGrowSeconds);
+            }
         }
         else
         {
-            // Collapsed until now, so the card's size comes from the page it sits over.
-            var margin = PeekCardFrame.Margin;
-            var width = PageArea.ActualWidth + PageArea.Margin.Left + PageArea.Margin.Right - margin.Left - margin.Right;
-            var height = PageArea.ActualHeight + PageArea.Margin.Top + PageArea.Margin.Bottom - margin.Top - margin.Bottom;
             PeekCardFrame.CenterPoint = new Vector3((float)width / 2, (float)height / 2, 0);
-            (_cardFromScale, _cardFromY, _cardToScale, _cardToY) = (0.96f, 16, 0.98f, 8);
+            (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) =
+                (new(0.96f, 0.96f, 1), new(0, 16, 0), new(0.98f, 0.98f, 1), new(0, 8, 0), PeekShrinkBounce);
+            (_cardGrowKick, _cardGrowSeconds) = (PeekGrowKick, PeekGrowSeconds);
         }
     }
 
@@ -1200,13 +1349,18 @@ public sealed partial class MainWindow : Window
     /// the buttons beside it come in once it's mostly there.
     /// </summary>
     // Peek motion, tuned by eye. The storyboards in MainWindow.xaml are timed to match.
-    private const float PeekGrowFrom = 0.15f;     // card's scale on its first frame, about the link
+    // With no box for the link (AimPeekCard), from and back to a speck at the press, so it's still plain where it came from.
+    private const float PeekGrowFrom = 0.02f;     // card's scale on its first frame, about the press
     private const double PeekGrowSeconds = 0.32;
     private const double PeekGrowBounce = 0.25;   // overshoots ~3% of the way, then settles
-    private const double PeekGrowKick = 0.6;     // leaves the link at speed instead of easing out of it
-    private const float PeekShrinkTo = 0.3f;      // where it heads back to on close
+    private const double PeekGrowKick = 0.6;     // leaves the press point at speed instead of easing out of it
+    private const double PeekGrowFromLinkSeconds = 0.36; // and takes a little longer over it, as there's further to go
+    private const double PeekGrowFromLinkKick = 0; // from the link's box: eases out of it, so the link is seen turning into the card
+    private const float PeekShrinkTo = 0.02f;     // where it heads back to on close
     private const double PeekShrinkSeconds = 0.22;
-    private const double PeekShrinkBounce = 0.25; // dips just past its end before it fades
+    // No dip past the end on the way back to a speck: past zero, the card would turn inside out.
+    private const double PeekShrinkToLinkBounce = 0;
+    private const double PeekShrinkBounce = 0.25; // with no link: dips just past its end before it fades
     private const int PeekControlsDelayMs = 120;  // the buttons come out as the card settles (with its fade, PeekEnterAnimation)
     private const double PeekControlsSeconds = 0.25;
     private const double PeekControlsBounce = 0.15; // the card's family, lighter: they're smaller and follow it
@@ -1216,10 +1370,11 @@ public sealed partial class MainWindow : Window
     {
         // Starting points go in as `from`, never as the elements' own Scale: XAML draws them at that,
         // and a card drawn at half size then stretched up has soft borders the whole way.
-        Spring.To(PeekCardFrame, "Scale", Vector3.One, duration: PeekGrowSeconds, bounce: PeekGrowBounce,
-            from: new Vector3(_cardFromScale, _cardFromScale, 1), kick: PeekGrowKick);
-        Spring.To(PeekCardFrame, "Translation", Vector3.Zero, duration: PeekGrowSeconds, bounce: PeekGrowBounce,
-            from: new Vector3(0, _cardFromY, 0), kick: PeekGrowKick);
+        // Scale and shift on the same spring, so each edge travels straight from the link's to its place.
+        Spring.To(PeekCardFrame, "Scale", Vector3.One, duration: _cardGrowSeconds, bounce: PeekGrowBounce,
+            from: _cardFromScale, kick: _cardGrowKick);
+        Spring.To(PeekCardFrame, "Translation", Vector3.Zero, duration: _cardGrowSeconds, bounce: PeekGrowBounce,
+            from: _cardFromShift, kick: _cardGrowKick);
 
         // The buttons, all at once (Peek opens many times a day: no stagger), out from the card's edge
         // as it lands, so they read as coming from it. About their middle when pulled away (PeekGrab).
@@ -1232,8 +1387,8 @@ public sealed partial class MainWindow : Window
     /// <summary>Back toward the link on a spring, with a little bounce as it gets there; the buttons back toward the card.</summary>
     private void SpringPeekOut()
     {
-        Spring.To(PeekCardFrame, "Scale", new Vector3(_cardToScale, _cardToScale, 1), duration: PeekShrinkSeconds, bounce: PeekShrinkBounce);
-        Spring.To(PeekCardFrame, "Translation", new Vector3(0, _cardToY, 0), duration: PeekShrinkSeconds, bounce: PeekShrinkBounce);
+        Spring.To(PeekCardFrame, "Scale", _cardToScale, duration: PeekShrinkSeconds, bounce: _cardToBounce);
+        Spring.To(PeekCardFrame, "Translation", _cardToShift, duration: PeekShrinkSeconds, bounce: _cardToBounce);
         TuckPeekControls();
     }
 
@@ -2177,10 +2332,13 @@ public sealed partial class MainWindow : Window
     private void Settings_Changed()
     {
         ApplyShortcuts();
+        Downloads.FolderChanged();
+        Downloads.ArchiveOld();
+        if (_downloadPeekShown) RefreshDownloadPeek();
         ShowNewTabHint();
         // Pages loaded from now on keep the new shortcuts from the page too; pages already open
         // pass them on anyway (InputScript), only without holding them back from the page.
-        foreach (var view in AllTabs.Select(t => t.View).Append(_peekView))
+        foreach (var view in AllTabs.Select(t => t.View).Append(_peekView).Append(_sparePeekView))
             if (view?.CoreWebView2 is { } core) _ = SwapInputScriptAsync(core);
         SaveSessionSoon();
     }
@@ -2286,8 +2444,10 @@ public sealed partial class MainWindow : Window
 
     private void RememberClosed(SessionTab entry)
     {
+        entry.Closed ??= DateTime.UtcNow;
         _closedTabs.Add(entry);
         if (_closedTabs.Count > MaxClosedTabs) _closedTabs.RemoveAt(0);
+        ClosedTabsChanged();
     }
 
     /// <summary>A closed tab as Reopen closed tab brings it back; null if it had no page.</summary>
@@ -2311,10 +2471,15 @@ public sealed partial class MainWindow : Window
     /// <summary>Ctrl+Shift+T: the last tab closed comes back, in its group and place, on the page it was on.</summary>
     private void ReopenClosedTab()
     {
-        if (_closedTabs.Count == 0) return;
+        if (_closedTabs.Count > 0) ReopenClosedTab(_closedTabs[^1]);
+    }
+
+    /// <summary>A closed tab back (the last, or one from the library's Closed tabs), out of the closed list.</summary>
+    private void ReopenClosedTab(SessionTab saved)
+    {
+        if (!_closedTabs.Remove(saved)) return;
         if (_commandBarOpen) CloseCommandBar(focusPage: false);
-        var saved = _closedTabs[^1];
-        _closedTabs.RemoveAt(_closedTabs.Count - 1);
+        ClosedTabsChanged();
         SaveSessionSoon();
         if (!Uri.TryCreate(saved.Url, UriKind.Absolute, out var uri)) return;
         Uri.TryCreate(saved.Home, UriKind.Absolute, out var home);
@@ -2757,39 +2922,16 @@ public sealed partial class MainWindow : Window
 
     // ───────────────────────── Downloads ─────────────────────────
 
-    private static readonly string DownloadGlyph = ((char)0xE896).ToString();
-    private static readonly string DoneGlyph = ((char)0xE73E).ToString();
 
     /// <summary>
-    /// The sidebar's downloads row: shown while something downloads (name and progress) and, once it's
-    /// done, until you've looked at the list.
+    /// A download started, moved on or finished: the Library button (its ring, or a finished file's
+    /// picture), the peek and the library's list, as Arc has them. No row of its own in the sidebar.
     /// </summary>
     private void ShowDownloads()
     {
-        var running = Downloads.Items.Where(i => i.IsRunning).ToList();
-        var latest = running.FirstOrDefault() ?? (Downloads.HasUnseen ? Downloads.Items.FirstOrDefault() : null);
         if (_libraryOpen && _libraryPage == "downloads") UpdateDownloadsPage();
-        if (latest is null)
-        {
-            DownloadsButton.Visibility = Visibility.Collapsed;
-            return;
-        }
-        DownloadsButton.Visibility = Visibility.Visible;
-        DownloadsText.Text = running.Count > 1 ? $"{running.Count} downloads" : latest.FileName;
-        ToolTipService.SetToolTip(DownloadsButton, running.Count > 1 ? $"{running.Count} downloads" : $"{latest.FileName} · {latest.Status}");
-        if (running.Count > 0)
-        {
-            long received = running.Sum(i => i.Received), total = running.Sum(i => i.Total ?? 0);
-            DownloadsProgress.Visibility = Visibility.Visible;
-            DownloadsProgress.IsIndeterminate = running.Any(i => i.Total is not > 0);
-            DownloadsProgress.Value = total > 0 ? received * 100.0 / total : 0;
-            DownloadsGlyph.Glyph = DownloadGlyph;
-        }
-        else
-        {
-            DownloadsProgress.Visibility = Visibility.Collapsed;
-            DownloadsGlyph.Glyph = latest.State == DownloadState.Completed ? DoneGlyph : WarningGlyph;
-        }
+        RefreshDownloadPeek();
+        ShowLibraryButtonDownloads(Downloads.Items.Where(i => i.IsRunning).ToList());
     }
 
     private void DownloadList_ItemClick(object sender, ItemClickEventArgs e)
@@ -2801,6 +2943,11 @@ public sealed partial class MainWindow : Window
     private void DownloadFolder_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is DownloadItem item) Downloads.ShowInFolder(item);
+    }
+
+    private void DownloadPause_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is DownloadItem item) Downloads.PauseOrResume(item);
     }
 
     private void DownloadCancel_Click(object sender, RoutedEventArgs e)
@@ -2873,17 +3020,18 @@ public sealed partial class MainWindow : Window
     private static string ShortcutText(string id) =>
         Settings.ShortcutFor(Settings.Actions.First(a => a.Id == id)).ToString();
 
-    /// <param name="args">"x,y,pageWidth" in CSS pixels. The view's width over the page's is the zoom.</param>
+    /// <param name="args">"x,y,pageWidth,left,top,width,height" in CSS pixels (Core/PeekOrigin.cs). The view's width over the page's is the zoom.</param>
     private static void RecordLinkPress(BrowserTab tab, string args)
     {
-        var parts = args.Split(',');
-        if (parts.Length != 3) return;
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x)) return;
-        if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y)) return;
-        if (!double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var pageWidth) || pageWidth <= 0) return;
-
-        var zoom = tab.View.ActualWidth / pageWidth;
-        tab.LinkPress = new Point(x * zoom, y * zoom);
+        if (PeekOrigin.Parse(args) is not { } press) return;
+        PeekTrace("link press");
+        var zoom = tab.View.ActualWidth / press.PageWidth;
+        tab.LinkPress = new Point(press.X * zoom, press.Y * zoom);
+        // The part of the link that shows, in the view's coordinates.
+        tab.LinkBox = press.Link is { } link
+            ? PeekOrigin.Clip(new Area(link.X * zoom, link.Y * zoom, link.Width * zoom, link.Height * zoom),
+                new Area(0, 0, tab.View.ActualWidth, tab.View.ActualHeight))
+            : null;
         tab.LinkPressTime = Environment.TickCount64;
     }
 
@@ -3045,6 +3193,7 @@ public sealed partial class MainWindow : Window
             Activate(_active);
             _active.View.Focus(FocusState.Programmatic);
         }
+        OpenSplitBarAfterDrag();
         SaveSessionSoon();
     }
 
@@ -3374,9 +3523,17 @@ public sealed partial class MainWindow : Window
         IntegrationAnchor_PointerExited(sender, e);
     }
 
+    /// <summary>
+    /// Shows or hides a row's ×/−. It sits over the end of the title, so while it shows, the title
+    /// stops short of it.
+    /// </summary>
     private static void SetCloseButtonOpacity(object row, double opacity)
     {
-        if (row is Grid grid && grid.Children.OfType<Button>().FirstOrDefault() is { } close) close.Opacity = opacity;
+        if (row is not Grid grid || grid.Children.OfType<Button>().FirstOrDefault() is not { } close) return;
+        close.Opacity = opacity;
+        var shown = opacity > 0 && close.Visibility == Visibility.Visible;
+        foreach (var title in grid.Children.OfType<Grid>().Where(g => Grid.GetColumn(g) == 1))
+            title.Padding = shown ? new Thickness(0, 0, close.Width + 4, 0) : default;
     }
 
     // ───────────────────────── Window and sidebar ─────────────────────────

@@ -29,6 +29,12 @@
                     <TextBlock Text="Tabs" />
                 </StackPanel>
             </ListViewItem>
+            <ListViewItem Tag="downloads" AutomationProperties.Name="Downloads">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <FontIcon Glyph="&#xEBD3;" FontSize="16" />
+                    <TextBlock Text="Downloads" />
+                </StackPanel>
+            </ListViewItem>
             <ListViewItem Tag="ai" AutomationProperties.Name="AI">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <FontIcon Glyph="&#xE945;" FontSize="16" />
@@ -206,6 +212,50 @@
                     </StackPanel>
 
                     <!-- AI: Ask AI in the command bar (AskAiBar.cs), with the Claude Code or Codex you have. -->
+                    <!-- Downloads -->
+                    <StackPanel x:Name="DownloadsPage" Spacing="8" Visibility="Collapsed">
+                        <TextBlock Text="Downloads" Style="{StaticResource SettingsTitleStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                                <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Save files to" />
+                                        <TextBlock x:Name="DownloadFolderText" Style="{StaticResource SettingsDescriptionStyle}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <Button x:Name="DownloadFolderReset" Grid.Column="1" VerticalAlignment="Center"
+                                            Content="Reset" Click="DownloadFolderReset_Click" />
+                                    <Button Grid.Column="2" VerticalAlignment="Center"
+                                            Content="Change" Click="DownloadFolder_Click" />
+                                </Grid>
+                                <Border Style="{StaticResource SettingsDividerStyle}" />
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Keep downloads in the list" />
+                                        <TextBlock Text="The files stay where they are" Style="{StaticResource SettingsDescriptionStyle}" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="KeepDownloadsCombo" Grid.Column="1" Width="160" VerticalAlignment="Center"
+                                              AutomationProperties.Name="Keep downloads in the list"
+                                              SelectionChanged="KeepDownloadsCombo_SelectionChanged">
+                                        <ComboBoxItem Content="For a day" />
+                                        <ComboBoxItem Content="For a week" />
+                                        <ComboBoxItem Content="For a month" />
+                                        <ComboBoxItem Content="Forever" />
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <StackPanel x:Name="AiPage" Spacing="8" Visibility="Collapsed">
                         <TextBlock Text="AI" Style="{StaticResource SettingsTitleStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">

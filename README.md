@@ -3,6 +3,12 @@
 A native Windows browser shell: WinUI 3 for the interface, WebView2 (Chromium) for pages.
 Same split as Arc: an unmodified engine with your own UI on top.
 
+![Drift with Essentials, a folder, pinned and open tabs in the sidebar](docs/main.png)
+
+| Peek | Split view | Command bar |
+|---|---|---|
+| ![A link opened in Peek over Hacker News](docs/peek.png) | ![Two tabs side by side](docs/split-view.png) | ![The command bar over a page](docs/command-bar.png) |
+
 ## What works
 
 - Arc-style window: acrylic backdrop (the windows behind show through, blurred; Windows makes it
@@ -50,19 +56,31 @@ Same split as Arc: an unmodified engine with your own UI on top.
   Drift's. Neither window gets a taskbar button. Settings › Tabs turns it off.
 - **Mini player**, as in Arc: a tab playing sound has a speaker on its row (on an Essential, a badge on
   its icon); click it to mute the tab, and again to unmute. At the bottom of the sidebar, a
-  controller for the tab playing: its icon (click to go to it), skip back, play/pause, skip
-  forward and mute. Skipping goes to the previous or next track where the site has them (as its
+  controller for the tab playing media (not a notification's chime: the site describes it, it's
+  over 15 seconds or live, or it's played 10 seconds straight): its icon (click to go to it), skip
+  back, play/pause, skip forward and mute. Skipping goes to the previous or next track where the site has them (as its
   media keys would), otherwise 10 seconds back or on. It stays while the tab plays, from any
   tab, and for five minutes after it's paused. Hover it and it grows into a card: the album
   cover or video thumbnail where the site gives one, the title (scrolling by when it's long), the artist or site, picture-in-picture, close, and a bar to seek with.
-- **Downloads**: while a file downloads, a row at the bottom of the sidebar shows its name and
-  progress; once it's done it stays (with a tick) until you've looked. Click it for the library's
-  list: progress and time left, cancel, open a file (click it), show it in its folder, remove it
-  from the list. Files go to your Downloads folder; the list is kept in `downloads.json`. WebView2
+- **Downloads**, as in Arc and Zen, on the library button: when a download starts, its file's icon
+  pops up where you clicked and curves into a badge at the button's top right, which shows the
+  newest download's picture with a ring that fills with their progress (spinning while a size isn't
+  known, greyed while they're all paused); once they're done the badge stays until you've hovered
+  the button or opened the library, which then opens at Downloads. Hover the button and your three newest downloads rise above it, each with the
+  file's own picture (an image, a PDF's first page, a video's frame; otherwise its type's icon) and
+  when it finished, or its progress. Click one to open it, or drag it onto a page's upload box,
+  Explorer or another app; right-click the button to choose which kinds of file (images, documents,
+  archives…) show there. The library's list has progress and time left, pause and resume, cancel,
+  open a file (click it), show it in its folder, remove it from the list, or drag it out; right-click
+  one to copy its link or move the file itself to the Recycle Bin. Files go to your Downloads folder,
+  or the one chosen in Settings › Downloads, where you also choose how long finished downloads stay
+  in the list (a month at first; the files stay). The list is kept in `downloads.json`. WebView2
   doesn't always say when a download has finished, so once every byte is in, Drift also counts it
   done when the file is saved under its final name.
 - **History**: every page you've visited, newest first, by day. Click a page to open it in a new
-  tab; right-click to forget it.
+  tab. Hover a page and, as in Zen, it shows when you visited it, with buttons to remove it or
+  reopen it. Filter (beside the search), as in Zen: visited today, this week or this month; by date,
+  by site, by most visited or by last visited; history or closed tabs (reopened just as they were).
 - **Privacy** (Settings › Privacy): clear browsing history, cookies and site data, cached files,
   the download list and saved passwords, for the last hour, day, week, 4 weeks or all time. Switch
   saving passwords and filling forms on or off (both on: Drift offers to save a password after you
@@ -159,9 +177,11 @@ Same split as Arc: an unmodified engine with your own UI on top.
 - Ctrl+S (or the sidebar button) hides the sidebar; hover the window's left edge to bring it back as a
   floating panel over the page (inset, rounded, with a shadow, like Zen's).
 - **Peek**: in a pinned tab, any link that leaves the tab's site (or asks for a new
-  window) opens in a floating card that grows out of the link you clicked, while the page
+  window) opens in a floating card that grows out of the link you clicked: it starts as the
+  link's own box and each edge springs out to its place, as Zen's Glance does, while the page
   behind shrinks slightly and fades. Closing it (the button, a click on the page, or Esc)
-  shrinks it back toward the link.
+  shrinks it back into the link. The page starts loading the moment you click (a view is kept
+  ready for it), and shows as soon as it has drawn something, often well before it's finished.
   An Essential shows the Peek page's icon on its tile's corner; a pinned tab shows it at the end
   of its row, after the "−". Click the faded page or press
   Esc to dismiss, or use the round "Open as tab" button beside the card to keep it: the card
@@ -175,7 +195,9 @@ Same split as Arc: an unmodified engine with your own UI on top.
   light/dark theme and accent colour.
 - Split view, like Arc's: two tabs side by side, each its own card. Drag a tab onto the page: the
   page there makes room, moving to the other half as you drag, and the tab follows the pointer as a
-  card of its page; let go on the empty half. Or right-click a tab for Split with current tab. Any
+  card of its page; let go on the empty half. Drag the tab you're on, and the tab you were on before
+  takes its place and makes room for it; with no tab before it, the page makes room and, dropped,
+  the command bar opens for a page to go in the empty half. Or right-click a tab for Split with current tab. Any
   tabs can be split, Essentials and pinned tabs too. Drag the divider (by its grip, which turns the
   accent colour while held) to share the width; double-click it for half and half. In the sidebar a
   split is a row of its own in the tab list, with both pages as pills, the one you're on brighter;
@@ -287,4 +309,3 @@ the site, and `NewWindowRequested` catches `target="_blank"` links.
   pixel ratio, and resetting it presses Ctrl+0 in the page (so a page that takes that key for
   itself gets it instead). Zoom is per page: it resets as you navigate. Hosting the engine
   directly would give real zoom control; see `Drift/ROADMAP.md`.
-- No split view yet. See `Drift/ROADMAP.md`.

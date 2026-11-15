@@ -188,6 +188,7 @@ public sealed partial class MainWindow
     private async Task RestoreClearedAsync(List<SessionTab?> entries, int front)
     {
         foreach (var entry in entries.OfType<SessionTab>()) _closedTabs.Remove(entry);
+        ClosedTabsChanged();
         SaveSessionSoon();
         for (var i = 0; i < entries.Count; i++)
         {
@@ -235,25 +236,35 @@ public sealed partial class MainWindow
     }
 
     /// <summary>The command bar again, for the page to open beside this tab: a new page, or a tab you have.</summary>
-    private void OpenSplitCommandBar(BrowserTab with)
+    /// <param name="side">Where it goes: on the right, or where the tab you're on was dropped (Split.cs).</param>
+    private void OpenSplitCommandBar(BrowserTab with, SplitSide side = SplitSide.Right)
     {
         OpenCommandBar(newTab: true, animate: false);
         _commandSplitWith = with;
+        _commandSplitSide = side;
         CommandBox.PlaceholderText = "Open beside this tab…";
         UpdateCommandResults();
     }
 
-    /// <summary>A page opened from "Add Split View" goes on the right of the tab it was for.</summary>
+    private SplitSide _commandSplitSide = SplitSide.Right;
+
+    /// <summary>A page opened from "Add Split View" goes beside the tab it was for (_commandSplitSide).</summary>
     private void SplitBeside(BrowserTab with, BrowserTab tab)
     {
+        _splitComing = false;
         if (!AllTabs.Contains(with) || !CanSplit(with, tab))
         {
+            ReleaseDropRoom();
             Activate(tab);
             return;
         }
         var width = PageColumns.ActualWidth;
-        SplitTabs(with, tab, front: tab);
-        AnimateSplitIn(SplitSide.Right, width, tab);
+        var side = _commandSplitSide;
+        // Room was left for it, where the tab you're on was dropped: the split takes over from there.
+        TakeDropRoom();
+        if (side == SplitSide.Left) SplitTabs(tab, with, front: tab);
+        else SplitTabs(with, tab, front: tab);
+        AnimateSplitIn(side, width, tab);
     }
 
     private static async Task SavePageAsync(CoreWebView2 core)

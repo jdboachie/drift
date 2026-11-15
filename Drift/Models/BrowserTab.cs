@@ -173,6 +173,9 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     /// <summary>Where the last link press in this page landed (in the view's coordinates), so Peek can grow from it.</summary>
     public Point? LinkPress { get; set; }
 
+    /// <summary>The pressed link's box, the part of it that shows (in the view's coordinates), for Peek's card to grow out of.</summary>
+    public Area? LinkBox { get; set; }
+
     /// <summary>Whether the page is loading: the reload button is a stop button meanwhile.</summary>
     public PageLoad Load { get; } = new();
 
@@ -262,6 +265,12 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     /// </summary>
     public long? AudioSince { get; set; }
 
+    /// <summary>
+    /// Its sound is media (MediaWorth), not just a notification's chime: only then does the mini player
+    /// come for it. Till it goes to another page.
+    /// </summary>
+    public bool IsMedia { get; set; }
+
     private TabAudioIcon AudioIcon => TabAudio.Icon(_isPlayingAudio, _isMuted);
 
     /// <summary>The row's speaker (Segoe Fluent Icons): Volume while it plays, Mute while it's muted.</summary>
@@ -314,14 +323,19 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
             OnPropertyChanged(nameof(PeekPlaceholderVisibility));
             OnPropertyChanged(nameof(PeekBadgeVisibility));
             OnPropertyChanged(nameof(RowButtonMargin));
+            OnPropertyChanged(nameof(TitleEndMargin));
         }
     }
 
     /// <summary>
-    /// A row's ×/− keeps to the row's end, and steps aside for the Peek badge, which shares its
-    /// column (an extra column would leave a gap even when empty).
+    /// A row's ×/− and Peek badge sit over the end of the title's column, so the title has the row's
+    /// width when neither shows (a column for them would keep its room while they're hidden). The
+    /// ×/− keeps to the row's end, and steps aside for the badge.
     /// </summary>
     public Thickness RowButtonMargin => _hasPeek ? new Thickness(0, 0, 28, 0) : default;
+
+    /// <summary>The title stops short of the Peek badge while there is one; the ×/− makes its own room on hover.</summary>
+    public Thickness TitleEndMargin => _hasPeek ? new Thickness(0, 0, 28, 0) : default;
 
     /// <summary>The icon of the page open in Peek, shown as a badge on the tile.</summary>
     public BitmapImage? PeekFavicon

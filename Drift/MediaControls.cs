@@ -101,6 +101,12 @@ public sealed partial class MainWindow
               const v = video();
               return v ? v.requestPictureInPicture().then(() => 'ok', (e) => e.name) : 'none';
             },
+            worth: () => {
+              const m = media();
+              const about = navigator.mediaSession && navigator.mediaSession.metadata;
+              const seconds = m && !m.paused && m.duration > 0 ? (isFinite(m.duration) ? m.duration : -1) : null;
+              return JSON.stringify({ described: !!(about && about.title), seconds });
+            },
             state: () => {
               const m = media();
               const about = navigator.mediaSession && navigator.mediaSession.metadata;
@@ -119,6 +125,14 @@ public sealed partial class MainWindow
     /// <summary>A tab's sound: whether it's playing and muted, kept on the tab for its row and the controller.</summary>
     private void WireAudio(BrowserTab tab, CoreWebView2 core)
     {
+        // While it plays sound that isn't known to be media yet: asked again every couple of seconds.
+        var check = DispatcherQueue.CreateTimer();
+        check.Interval = TimeSpan.FromSeconds(2);
+        check.Tick += (_, _) => Safely(() =>
+        {
+            if (tab.IsMedia || !tab.IsPlayingAudio || tab.View.CoreWebView2 != core) check.Stop();
+            else CheckMedia(tab, core);
+        });
         void Update()
         {
             if (tab.View.CoreWebView2 != core) return;
@@ -131,19 +145,55 @@ public sealed partial class MainWindow
             }
             tab.IsPlayingAudio = playing;
             tab.IsMuted = core.IsMuted;
+            if (playing && !tab.IsMedia)
+            {
+                CheckMedia(tab, core);
+                check.Start();
+            }
             UpdateMediaBar();
         }
         core.IsDocumentPlayingAudioChanged += (_, _) => Update();
         core.IsMutedChanged += (_, _) => Update();
+        // Another page: whatever it plays has to show it's media again.
+        core.NavigationStarting += (_, _) => tab.IsMedia = false;
         tab.IsMuted = core.IsMuted;
         if (core.IsDocumentPlayingAudio) Update();
+    }
+
+    /// <summary>
+    /// Asks the page what's making the sound (MediaScript's worth): media the site describes, audio or
+    /// video long enough or live, or sound that's gone on long enough (MediaWorth) gets the controller.
+    /// </summary>
+    private async void CheckMedia(BrowserTab tab, CoreWebView2 core)
+    {
+        var since = tab.AudioSince;
+        bool described = false;
+        double? seconds = null;
+        try
+        {
+            if ((await EvaluateAsync(core, "window.__driftMedia ? window.__driftMedia.worth() : null", gesture: false))?.GetString() is { } json)
+            {
+                using var answer = JsonDocument.Parse(json);
+                described = answer.RootElement.GetProperty("described").GetBoolean();
+                if (answer.RootElement.GetProperty("seconds") is { ValueKind: JsonValueKind.Number } length)
+                    seconds = length.GetDouble() < 0 ? double.PositiveInfinity : length.GetDouble();
+            }
+        }
+        catch
+        {
+            // The page went away, or has no MediaScript: the sound's length decides.
+        }
+        if (tab.IsMedia || !tab.IsPlayingAudio || tab.AudioSince != since || tab.View.CoreWebView2 != core || since is null) return;
+        if (!MediaWorth.IsMedia(described, seconds, Environment.TickCount64 - since.Value)) return;
+        tab.IsMedia = true;
+        UpdateMediaBar();
     }
 
     /// <summary>The controller, for the tab MediaBar picks, or gone.</summary>
     private void UpdateMediaBar()
     {
         var now = Environment.TickCount64;
-        var tabs = AllTabs.Where(t => t.AudioSince is not null && !t.IsUnloaded && t.View.CoreWebView2 is not null && t != _mediaDismissed)
+        var tabs = AllTabs.Where(t => t.IsMedia && t.AudioSince is not null && !t.IsUnloaded && t.View.CoreWebView2 is not null && t != _mediaDismissed)
             .Select(t => new MediaTab(t, t.IsPlayingAudio, t.AudioSince!.Value)).ToList();
         var tab = MediaBar.Pick(tabs, now) as BrowserTab;
         if (tab != _mediaTab)

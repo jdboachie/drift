@@ -9,14 +9,14 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Arc-style palette: a warm window colour, translucent chips on top of it,
-                 and near-white for whatever is active. -->
+            <!-- Windows' own neutral colours and acrylic, so Drift matches the system theme;
+                 translucent chips on top, and near-white for whatever is active. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
                     <!-- Plain acrylic: no tint of Drift's own over it, so the windows behind show through. -->
                     <SolidColorBrush x:Key="DriftWindowBrush" Color="Transparent" />
                     <!-- The sidebar floats over the page when hidden, so it needs its own backdrop. -->
-                    <AcrylicBrush x:Key="DriftFloatingSidebarBrush" TintColor="#EEE8D6" TintOpacity="0.85" FallbackColor="#EEE8D6" />
+                    <StaticResource x:Key="DriftFloatingSidebarBrush" ResourceKey="AcrylicBackgroundFillColorBaseBrush" />
                     <SolidColorBrush x:Key="DriftPageBrush" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="DriftPageBorderBrush" Color="#1A000000" />
                     <SolidColorBrush x:Key="DriftFocusedPageBorderBrush" Color="#38000000" />
@@ -24,15 +24,15 @@
                     <SolidColorBrush x:Key="DriftPillHoverBrush" Color="#1C000000" />
                     <SolidColorBrush x:Key="DriftTileBrush" Color="#0D000000" />
                     <SolidColorBrush x:Key="DriftHoverBrush" Color="#14000000" />
-                    <SolidColorBrush x:Key="DriftActiveBrush" Color="#FAF9F4" />
+                    <SolidColorBrush x:Key="DriftActiveBrush" Color="#F9F9F9" />
                     <!-- The selected tab or tile: see-through, so the acrylic carries on under it. -->
                     <SolidColorBrush x:Key="DriftSelectedBrush" Color="#B3FFFFFF" />
                     <SolidColorBrush x:Key="DriftActiveBorderBrush" Color="#14000000" />
                     <SolidColorBrush x:Key="DriftDividerBrush" Color="#1A000000" />
                     <!-- Where a dragged tab will land beside the page (split view). -->
                     <SolidColorBrush x:Key="DriftDropOutlineBrush" Color="#33000000" />
-                    <SolidColorBrush x:Key="DriftIconBrush" Color="#4A4844" />
-                    <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#8F8875" />
+                    <SolidColorBrush x:Key="DriftIconBrush" Color="#474747" />
+                    <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#888888" />
                     <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#F3F3F3" />
                     <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#EBEBEB" />
@@ -43,7 +43,7 @@
                     <!-- The command bar's card (Ctrl+T, Ctrl+L). -->
                     <SolidColorBrush x:Key="DriftCommandBarBrush" Color="#FFFFFF" />
                     <!-- Ctrl+Tab's bar, frosted over the page. -->
-                    <AcrylicBrush x:Key="DriftSwitcherBrush" TintColor="#FFFFFF" TintOpacity="0.7" FallbackColor="#F7F7F5" />
+                    <StaticResource x:Key="DriftSwitcherBrush" ResourceKey="AcrylicInAppFillColorDefaultBrush" />
                     <!-- Private windows: a violet tint over the acrylic, and a badge saying so. -->
                     <SolidColorBrush x:Key="DriftPrivateWindowBrush" Color="#337A5AC8" />
                     <SolidColorBrush x:Key="DriftPrivateBadgeBrush" Color="#337A5AC8" />
@@ -51,29 +51,29 @@
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="DriftWindowBrush" Color="Transparent" />
-                    <AcrylicBrush x:Key="DriftFloatingSidebarBrush" TintColor="#23211D" TintOpacity="0.85" FallbackColor="#23211D" />
-                    <SolidColorBrush x:Key="DriftPageBrush" Color="#1C1B19" />
+                    <StaticResource x:Key="DriftFloatingSidebarBrush" ResourceKey="AcrylicBackgroundFillColorBaseBrush" />
+                    <SolidColorBrush x:Key="DriftPageBrush" Color="#1C1C1C" />
                     <SolidColorBrush x:Key="DriftPageBorderBrush" Color="#1FFFFFFF" />
                     <SolidColorBrush x:Key="DriftFocusedPageBorderBrush" Color="#47FFFFFF" />
                     <SolidColorBrush x:Key="DriftPillBrush" Color="#1AFFFFFF" />
                     <SolidColorBrush x:Key="DriftPillHoverBrush" Color="#24FFFFFF" />
                     <SolidColorBrush x:Key="DriftTileBrush" Color="#12FFFFFF" />
                     <SolidColorBrush x:Key="DriftHoverBrush" Color="#1AFFFFFF" />
-                    <SolidColorBrush x:Key="DriftActiveBrush" Color="#3D3A34" />
+                    <SolidColorBrush x:Key="DriftActiveBrush" Color="#3A3A3A" />
                     <SolidColorBrush x:Key="DriftSelectedBrush" Color="#2EFFFFFF" />
                     <SolidColorBrush x:Key="DriftActiveBorderBrush" Color="#1FFFFFFF" />
                     <SolidColorBrush x:Key="DriftDividerBrush" Color="#1FFFFFFF" />
                     <SolidColorBrush x:Key="DriftDropOutlineBrush" Color="#40FFFFFF" />
-                    <SolidColorBrush x:Key="DriftIconBrush" Color="#D8D3C8" />
-                    <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#9C9688" />
+                    <SolidColorBrush x:Key="DriftIconBrush" Color="#D3D3D3" />
+                    <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#969696" />
                     <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#2D2D2D" />
                     <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#383838" />
                     <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#323232" />
-                    <SolidColorBrush x:Key="DriftPeekBadgeBrush" Color="#56514A" />
+                    <SolidColorBrush x:Key="DriftPeekBadgeBrush" Color="#525252" />
                     <SolidColorBrush x:Key="DriftPeekBadgeBorderBrush" Color="#33FFFFFF" />
                     <SolidColorBrush x:Key="DriftPeekButtonBorderBrush" Color="#24FFFFFF" />
-                    <SolidColorBrush x:Key="DriftCommandBarBrush" Color="#2A2825" />
-                    <AcrylicBrush x:Key="DriftSwitcherBrush" TintColor="#2A2825" TintOpacity="0.75" FallbackColor="#2A2825" />
+                    <SolidColorBrush x:Key="DriftCommandBarBrush" Color="#2C2C2C" />
+                    <StaticResource x:Key="DriftSwitcherBrush" ResourceKey="AcrylicInAppFillColorDefaultBrush" />
                     <SolidColorBrush x:Key="DriftPrivateWindowBrush" Color="#4D2A1F4A" />
                     <SolidColorBrush x:Key="DriftPrivateBadgeBrush" Color="#4D9A7AE8" />
                     <SolidColorBrush x:Key="DriftPrivateBadgeTextBrush" Color="#E4DAFF" />
@@ -92,6 +92,13 @@
                 <Setter Property="Height" Value="30" />
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="Foreground" Value="{ThemeResource DriftIconBrush}" />
+            </Style>
+
+            <!-- A choice in the library's history filter, filled; the one chosen gets the active fill (Library.cs). -->
+            <Style x:Key="FilterChipStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="Padding" Value="12,7" />
+                <Setter Property="FontSize" Value="13" />
             </Style>
 
             <!-- The command bar's field: just text and its placeholder on the card. A template of its own

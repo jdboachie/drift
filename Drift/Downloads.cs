@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -31,6 +32,8 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public long? Total { get; set; }
     public DownloadState State { get; set; }
     public string? FailReason { get; set; }
+    /// <summary>When it finished (lists saved before Drift kept this have only <see cref="Started"/>).</summary>
+    public DateTime? Finished { get; set; }
 
     /// <summary>From a private window: listed until the last private window closes, never saved.</summary>
     [JsonIgnore] public bool IsPrivate { get; set; }
@@ -50,6 +53,11 @@ public sealed class DownloadItem : INotifyPropertyChanged
 
     /// <summary>The folder button: there's something on disk to show.</summary>
     [JsonIgnore] public Visibility FolderVisibility => State == DownloadState.Completed && !IsMissing ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>The row's pause button: pause while it runs, resume once it's paused.</summary>
+    [JsonIgnore] public string PauseGlyph => IsPaused ? "\uE768" : "\uE769";
+
+    [JsonIgnore] public string PauseLabel => IsPaused ? "Resume" : "Pause";
 
     [JsonIgnore] public double Percent => Total is > 0 ? Received * 100.0 / Total.Value : 0;
 
@@ -111,7 +119,40 @@ public sealed class DownloadItem : INotifyPropertyChanged
         }
     }
 
-    [JsonIgnore] public Visibility GlyphVisibility => _icon is null ? Visibility.Visible : Visibility.Collapsed;
+    [JsonIgnore] public Visibility GlyphVisibility => Picture is null ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>What a row shows under the name in the downloads peek: progress, or when it finished.</summary>
+    [JsonIgnore] public string PeekStatus => IsRunning || State != DownloadState.Completed ? Status : DownloadPeek.Ago(Finished ?? Started, DateTime.Now);
+
+    private Microsoft.UI.Xaml.Media.ImageSource? _thumbnail;
+    private string? _thumbnailFor;
+
+    /// <summary>
+    /// The file's own picture once it's saved (FileThumbnails: an image, a PDF's first page…), or
+    /// Windows' icon for its type.
+    /// </summary>
+    [JsonIgnore]
+    public Microsoft.UI.Xaml.Media.ImageSource? Picture
+    {
+        get
+        {
+            LoadThumbnail();
+            return _thumbnail ?? Icon;
+        }
+    }
+
+    /// <summary>Finished and still on disk: it can be opened, shown, or dragged somewhere.</summary>
+    [JsonIgnore] public bool IsOnDisk => State == DownloadState.Completed && File.Exists(FilePath);
+
+    private async void LoadThumbnail()
+    {
+        if (!IsOnDisk || FilePath == _thumbnailFor) return;
+        _thumbnailFor = FilePath;
+        var picture = await FileThumbnails.ForAsync(FilePath);
+        if (_thumbnailFor != FilePath || picture == _thumbnail) return;
+        _thumbnail = picture;
+        Refresh();
+    }
 
     private async void LoadIcon()
     {
@@ -133,9 +174,10 @@ public sealed class DownloadItem : INotifyPropertyChanged
 }
 
 /// <summary>
-/// Downloads, newest first. Drift shows them itself (the sidebar's downloads row and its list) rather
-/// than in WebView2's own popup. Finished ones are remembered in %LOCALAPPDATA%\Drift\downloads.json;
-/// files go where WebView2 puts them, your Downloads folder.
+/// Downloads, newest first. Drift shows them itself (on the Library button, its peek and the library's list) rather
+/// than in WebView2's own popup. Finished ones are remembered in %LOCALAPPDATA%\Drift\downloads.json,
+/// till they're older than Settings keeps them (DownloadArchive); files go to the folder chosen in Settings,
+/// or your Downloads folder.
 /// </summary>
 internal static class Downloads
 {
@@ -157,15 +199,27 @@ internal static class Downloads
 
     public static bool AnyRunning => Items.Any(i => i.IsRunning);
 
-    public static string Folder
+    /// <summary>Where files are saved: the folder chosen in Settings, or your Downloads folder.</summary>
+    public static string Folder =>
+        Settings.Current.DownloadFolder is { Length: > 0 } chosen && Directory.Exists(chosen) ? chosen : WindowsFolder;
+
+    /// <summary>Your Downloads folder, wherever Windows has it (it can be moved, to OneDrive or another drive).</summary>
+    public static string WindowsFolder
     {
         get
         {
-            var latest = Items.FirstOrDefault(i => i.State == DownloadState.Completed && File.Exists(i.FilePath));
-            if (latest is not null && Path.GetDirectoryName(latest.FilePath) is { } folder) return folder;
+            try
+            {
+                if (SHGetKnownFolderPath(new Guid("374DE290-123F-4565-9164-39C4925E467B"), 0, IntPtr.Zero, out var path) == 0) return path;
+            }
+            catch { }
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
         }
     }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int SHGetKnownFolderPath([System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPStruct)] Guid id,
+        uint flags, IntPtr token, out string path);
 
     /// <summary>Takes over a download a page started: WebView2's own popup stays closed.</summary>
     public static void Track(CoreWebView2DownloadStartingEventArgs e, bool isPrivate)
@@ -200,8 +254,8 @@ internal static class Downloads
         operation.StateChanged += (_, _) =>
         {
             item.FilePath = operation.ResultFilePath;
-            item.IsPaused = operation.State == CoreWebView2DownloadState.Interrupted && operation.CanResume
-                && operation.InterruptReason == CoreWebView2DownloadInterruptReason.None;
+            item.IsPaused = operation.State == CoreWebView2DownloadState.Interrupted
+                && operation.InterruptReason is CoreWebView2DownloadInterruptReason.UserPaused or CoreWebView2DownloadInterruptReason.None;
             switch (operation.State)
             {
                 case CoreWebView2DownloadState.Completed:
@@ -271,6 +325,7 @@ internal static class Downloads
     {
         item.Operation = null;
         item.EstimatedEnd = null;
+        item.Finished = DateTime.Now;
         HasUnseen = true;
         Save();
     }
@@ -304,6 +359,93 @@ internal static class Downloads
     }
 
     public static void Cancel(DownloadItem item) => item.Operation?.Cancel();
+
+    /// <summary>Pauses a running download, or carries on with a paused one.</summary>
+    public static void PauseOrResume(DownloadItem item)
+    {
+        if (item.Operation is not { } operation) return;
+        try
+        {
+            if (item.IsPaused) operation.Resume();
+            else operation.Pause();
+            item.IsPaused = !item.IsPaused;
+        }
+        catch
+        {
+            return;
+        }
+        item.Refresh();
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The file itself, to the Recycle Bin (as Explorer does it: StorageFile's delete skipped the bin), and
+    /// off the list. Windows says so if it can't (the file's open somewhere).
+    /// </summary>
+    public static bool Recycle(DownloadItem item)
+    {
+        if (!item.IsOnDisk) return false;
+        try
+        {
+            Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(item.FilePath,
+                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+        }
+        catch
+        {
+            return false;
+        }
+        Remove(item);
+        return true;
+    }
+
+    /// <summary>Takes finished downloads older than Settings keeps them off the list (the files stay).</summary>
+    public static void ArchiveOld()
+    {
+        var now = DateTime.Now;
+        var old = Items.Where(i => Leaves(i, now)).ToList();
+        if (old.Count == 0) return;
+        foreach (var item in old) Items.Remove(item);
+        Save();
+        Changed?.Invoke();
+    }
+
+    private static bool Leaves(DownloadItem item, DateTime now) =>
+        DownloadArchive.Leaves(item.IsRunning, item.Finished ?? item.Started, now, Settings.Current.KeepDownloadsDays);
+
+    // ── Where files go ──
+
+    private static readonly List<CoreWebView2Profile> Profiles = new();
+
+    /// <summary>
+    /// A profile (Drift's own, or a private window's) saves to the folder chosen in Settings, or your
+    /// Downloads folder. Every time: WebView2 remembers a profile's folder from one run to the next.
+    /// </summary>
+    public static void UseProfile(CoreWebView2Profile profile)
+    {
+        try
+        {
+            if (Profiles.Any(p => p.ProfilePath == profile.ProfilePath)) return;
+            Profiles.Add(profile);
+            ApplyFolder(profile);
+        }
+        catch { }
+    }
+
+    /// <summary>Settings changed: every profile follows the chosen folder.</summary>
+    public static void FolderChanged()
+    {
+        foreach (var profile in Profiles) ApplyFolder(profile);
+    }
+
+    private static void ApplyFolder(CoreWebView2Profile profile)
+    {
+        var folder = Folder;
+        try
+        {
+            if (profile.DefaultDownloadFolderPath != folder) profile.DefaultDownloadFolderPath = folder;
+        }
+        catch { }
+    }
 
     public static void Open(DownloadItem item)
     {
@@ -354,7 +496,10 @@ internal static class Downloads
         try
         {
             if (File.Exists(FilePath) && JsonSerializer.Deserialize<DownloadItem[]>(File.ReadAllText(FilePath), Json) is { } saved)
-                return new ObservableCollection<DownloadItem>(saved.Where(i => i.State != DownloadState.InProgress));
+            {
+                var now = DateTime.Now;
+                return new ObservableCollection<DownloadItem>(saved.Where(i => i.State != DownloadState.InProgress && !Leaves(i, now)));
+            }
         }
         catch
         {

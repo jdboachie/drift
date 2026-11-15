@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using Drift.Models;
 using Microsoft.UI.Xaml;
@@ -17,7 +18,7 @@ namespace Drift;
 
 /// <summary>
 /// The library, as Zen has it: Downloads and History in the sidebar's place, twice its width, with a
-/// rail to switch between them. It opens from the library button, the downloads row, Ctrl+J and
+/// rail to switch between them. It opens from the library button, Ctrl+J and
 /// Ctrl+H, or by swiping the sidebar sideways on a touchpad, which widens it under the finger (Zen's
 /// swipe, measured frame by frame): let go and it springs open or shut, the way it was flicked, or
 /// to whichever is nearer. The tabs give way to the library early on (LibrarySwipe.Fade).
@@ -88,6 +89,7 @@ public sealed partial class MainWindow
     {
         _libraryProps?.InsertScalar("Pulling", 0);
         if (_commandBarOpen) CloseCommandBar(focusPage: false);
+        HideDownloadPeek();
         ShowLibraryPage(page);
         MoveLibrary(open: true);
     }
@@ -540,6 +542,9 @@ public sealed partial class MainWindow
         LibraryDownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
         LibraryHistoryPage.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
         LibraryBookmarksPage.Visibility = page == "bookmarks" ? Visibility.Visible : Visibility.Collapsed;
+        // The filter is History's only.
+        LibraryFilterButton.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
+        if (page != "history") ShowFilterPanel(false, animate: false);
         LibrarySearch.PlaceholderText = page switch { "downloads" => "Search downloads", "bookmarks" => "Search bookmarks", _ => "Search history" };
         ShowRailItem(LibraryBookmarksTab, LibraryBookmarksGlyph, page == "bookmarks");
         ShowRailItem(LibraryDownloadsTab, LibraryDownloadsGlyph, page == "downloads");
@@ -566,9 +571,8 @@ public sealed partial class MainWindow
         else ShowLibraryHistory();
     }
 
-    private void LibraryButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(_libraryPage);
-
-    private void DownloadsButton_Click(object sender, RoutedEventArgs e) => OpenLibrary("downloads");
+    /// <summary>The library as you left it, or at Downloads while there's a finished file you haven't seen, as in Arc.</summary>
+    private void LibraryButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(Downloads.HasUnseen ? "downloads" : _libraryPage);
 
     private void LibraryBack_Click(object sender, RoutedEventArgs e) => CloseLibrary();
 
@@ -597,6 +601,7 @@ public sealed partial class MainWindow
     /// <summary>The downloads section: files checked again (they may have moved), and the search applied.</summary>
     private void RefreshDownloads()
     {
+        Downloads.ArchiveOld();
         foreach (var item in Downloads.Items) item.Refresh();
         var query = LibrarySearch.Text.Trim();
         DownloadList.ItemsSource = query.Length == 0
@@ -621,27 +626,173 @@ public sealed partial class MainWindow
     private int _libraryHistoryShown = LibraryHistoryPageSize;
     private static readonly string GlobeGlyph = ((char)0xE774).ToString();
 
-    /// <summary>The pages matching the search, newest first, by day (HistoryView, in Core).</summary>
+    /// <summary>The filter, as Zen has it (HistoryFilter, in Core): since when, sorted how, the pages visited or the tabs closed.</summary>
+    private HistoryFilter _historyFilter;
+
+    /// <summary>Goes up when the closed tabs change, so a list of them knows it's out of date.</summary>
+    private int _closedTabsVersion;
+
+    /// <summary>A line of the list: a page visited (Visit), or a tab closed (Closed). When is local time.</summary>
+    private sealed record HistoryLine(string Url, string Title, DateTime When, int Visits, HistoryEntry? Visit, SessionTab? Closed);
+
+    /// <summary>The pages matching the search and the filter (HistoryView, in Core).</summary>
     private HistoryListState? _historyListShown;
 
     private void ShowLibraryHistory()
     {
         var query = LibrarySearch.Text;
-        var now = new HistoryListState(History.Version, query, _libraryHistoryShown, DateTime.Today,
-            Root.ActualTheme == ElementTheme.Dark);
+        var filter = _historyFilter;
+        var closed = filter.Source == HistorySource.ClosedTabs;
+        ShowHistoryFilter();
+        var now = new HistoryListState(closed ? _closedTabsVersion : History.Version, query, _libraryHistoryShown, DateTime.Today,
+            Root.ActualTheme == ElementTheme.Dark, filter);
         if (!HistoryListState.Rebuild(_historyListShown, now)) return;
         _historyListShown = now;
-        var found = HistoryView.Find(History.All, h => h.Title ?? "", h => h.Url, h => h.LastVisit.ToLocalTime(),
-            query, _libraryHistoryShown, DateTime.Today);
+        // The closed tabs newest first, those from before closing times were kept too.
+        var items = closed
+            ? Enumerable.Reverse(_closedTabs).Select(t => new HistoryLine(t.Url, t.Title, t.Closed?.ToLocalTime() ?? DateTime.MinValue, 1, null, t))
+            : History.All.Select(h => new HistoryLine(h.Url, h.Title ?? "", h.LastVisit.ToLocalTime(), h.Visits, h, null));
+        var since = HistoryFilter.Since(filter.Range, DateTime.Now, CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek);
+        var found = HistoryView.Find(items, i => i.Title, i => i.Url, i => i.When, query, _libraryHistoryShown, DateTime.Today,
+            filter.Sort, since, i => i.Visits);
 
+        var narrowed = query.Trim().Length > 0 || filter.Range != HistoryRange.All;
         LibraryHistoryEmpty.Visibility = found.Days.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        LibraryHistoryEmpty.Text = query.Trim().Length > 0 ? "No pages match" : "Nothing in your history yet";
+        LibraryHistoryEmpty.Text = closed
+            ? narrowed ? "No closed tabs match" : "No closed tabs"
+            : narrowed ? "No pages match" : "Nothing in your history yet";
         LibraryHistoryMore.Visibility = found.HasMore ? Visibility.Visible : Visibility.Collapsed;
         // Rows made for the other theme have its colours: new ones.
         if (_historyRows is null || _historyRows.Dark != now.Dark)
             LibraryHistoryList.ItemTemplate = _historyRows = new HistoryRows(this, now.Dark);
         LibraryHistoryList.ItemsSource = HistoryView.Lines(found);
     }
+
+    // ── The filter ──
+
+    /// <summary>The choices made filled, the Filter button too while it's not the default, and the search's hint.</summary>
+    private void ShowHistoryFilter()
+    {
+        var f = _historyFilter;
+        (Button Chip, bool On)[] chips =
+        [
+            (RangeToday, f.Range == HistoryRange.Today), (RangeWeek, f.Range == HistoryRange.Week), (RangeMonth, f.Range == HistoryRange.Month),
+            (SortDate, f.Sort == HistorySort.Date), (SortSite, f.Sort == HistorySort.Site),
+            (SortMostVisited, f.Sort == HistorySort.MostVisited), (SortLastVisited, f.Sort == HistorySort.LastVisited),
+            (SourceHistory, f.Source == HistorySource.History), (SourceClosedTabs, f.Source == HistorySource.ClosedTabs),
+        ];
+        foreach (var (chip, on) in chips)
+        {
+            if (on) chip.Background = (Brush)Application.Current.Resources["DriftActiveBrush"];
+            else chip.ClearValue(Control.BackgroundProperty);
+        }
+        if (f.IsDefault) LibraryFilterButton.ClearValue(Control.BackgroundProperty);
+        else LibraryFilterButton.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+        if (_libraryPage == "history")
+            LibrarySearch.PlaceholderText = f.Source == HistorySource.ClosedTabs ? "Search closed tabs" : "Search history";
+    }
+
+    private void LibraryFilter_Click(object sender, RoutedEventArgs e) => ShowFilterPanel(true);
+
+    private void LibraryFilterDone_Click(object sender, RoutedEventArgs e) => ShowFilterPanel(false);
+
+    private bool _filterOpen;
+    private int _filterMotion;
+
+    // Measured from Zen: the list moves with CSS's ease over 300ms; the panel and the search cross-fade
+    // (their opacity transitions, in MainWindow.xaml).
+    private const int FilterSlideMs = 300;
+    private const int FilterFadeMs = 150;
+
+    /// <summary>
+    /// The filter in the search's place, or the search back, as in Zen: the search and the panel's
+    /// heading cross-fade; the panel fades in where it'll be as the list below slides down past it,
+    /// over it; closing, the panel fades where it is as the list slides back up over it.
+    /// </summary>
+    private async void ShowFilterPanel(bool open, bool animate = true)
+    {
+        if (open == _filterOpen) return;
+        _filterOpen = open;
+        var motion = ++_filterMotion;
+        animate &= new Windows.UI.ViewManagement.UISettings().AnimationsEnabled && _libraryOpen;
+        var list = LibraryHistoryPage;
+        var wasAt = list.ActualHeight > 0 ? list.TransformToVisual(Library).TransformPoint(default).Y : 0;
+
+        LibrarySearchRow.IsHitTestVisible = !open;
+        if (open)
+        {
+            LibraryFilterPanel.Margin = new Thickness(0);
+            LibraryFilterPanel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            // Out of the layout at once (the list closes up over it), still drawn while it fades.
+            LibraryFilterPanel.Margin = new Thickness(0, 0, 0, -LibraryFilterPanel.ActualHeight);
+            LibrarySearchRow.Visibility = Visibility.Visible;
+        }
+        // Laid out first: one just shown doesn't fade in if its opacity is set in the same pass.
+        Library.UpdateLayout();
+        (open ? LibraryFilterPanel : (UIElement)LibrarySearchRow).Opacity = 1;
+        (open ? LibrarySearchRow : (UIElement)LibraryFilterPanel).Opacity = 0;
+        if (!animate)
+        {
+            FinishFilterPanel(open);
+            return;
+        }
+
+        // The list drawn where it was, sliding to where it is now.
+        var isAt = list.TransformToVisual(Library).TransformPoint(default).Y;
+        if (list.Visibility == Visibility.Visible && Math.Abs(wasAt - isAt) > 0.5)
+        {
+            var compositor = CompositionTarget.GetCompositorForCurrentThread();
+            var slide = compositor.CreateVector3KeyFrameAnimation();
+            slide.Target = "Translation";
+            slide.InsertKeyFrame(0, new System.Numerics.Vector3(0, (float)(wasAt - isAt), 0));
+            slide.InsertKeyFrame(1, System.Numerics.Vector3.Zero,
+                compositor.CreateCubicBezierEasingFunction(new System.Numerics.Vector2(0.25f, 0.1f), new System.Numerics.Vector2(0.25f, 1)));
+            slide.Duration = TimeSpan.FromMilliseconds(FilterSlideMs);
+            list.StartAnimation(slide);
+        }
+        await System.Threading.Tasks.Task.Delay(FilterFadeMs + 30);
+        if (motion == _filterMotion) FinishFilterPanel(open);
+    }
+
+    /// <summary>The faded one out of the way: the search, or the panel.</summary>
+    private void FinishFilterPanel(bool open)
+    {
+        if (open) LibrarySearchRow.Visibility = Visibility.Collapsed;
+        else
+        {
+            LibraryFilterPanel.Visibility = Visibility.Collapsed;
+            LibraryFilterPanel.Margin = new Thickness(0);
+        }
+    }
+
+    /// <summary>A choice: when (choosing it again is any time), how it's sorted, or what it looks through.</summary>
+    private void LibraryFilterChip_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string tag || tag.Split(':') is not [var kind, var value]) return;
+        var was = _historyFilter;
+        var now = kind switch
+        {
+            "range" when Enum.Parse<HistoryRange>(value) is var range => was with { Range = range == was.Range ? HistoryRange.All : range },
+            "sort" => was with { Sort = Enum.Parse<HistorySort>(value) },
+            _ => was with { Source = Enum.Parse<HistorySource>(value) },
+        };
+        if (now == was) return;
+        _historyFilter = now;
+        _libraryHistoryShown = LibraryHistoryPageSize;
+        ShowLibraryHistory();
+    }
+
+    /// <summary>A tab was closed, or one reopened: the list of closed tabs, if it's showing.</summary>
+    private void ClosedTabsChanged()
+    {
+        _closedTabsVersion++;
+        if (_libraryOpen && _libraryPage == "history" && _historyFilter.Source == HistorySource.ClosedTabs) ShowLibraryHistory();
+    }
+
+    // ── The rows ──
 
     private HistoryRows? _historyRows;
 
@@ -657,7 +808,7 @@ public sealed partial class MainWindow
 
         public UIElement GetElement(ElementFactoryGetArgs args)
         {
-            var line = (HistoryView.Line<HistoryEntry>)args.Data;
+            var line = (HistoryView.Line<HistoryLine>)args.Data;
             if (line.Day is { } day)
             {
                 var heading = _headings.Count > 0 ? _headings.Pop() : new TextBlock
@@ -665,6 +816,7 @@ public sealed partial class MainWindow
                     FontSize = 12,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     Foreground = (Brush)Application.Current.Resources["DriftSecondaryTextBrush"],
+                    TextTrimming = TextTrimming.CharacterEllipsis,
                 };
                 heading.Text = day;
                 heading.Margin = new Thickness(8, line.FirstDay ? 2 : 14, 0, 4);
@@ -689,16 +841,24 @@ public sealed partial class MainWindow
         public required Image Icon { get; init; }
         public required TextBlock Title { get; init; }
         public required TextBlock Host { get; init; }
-        public HistoryEntry? Entry { get; set; }
+        public required StackPanel Text { get; init; }
+        public required StackPanel Actions { get; init; }
+        public required Button Remove { get; init; }
+        public required Button Reopen { get; init; }
+        public HistoryLine? Item { get; set; }
         public Uri? Uri { get; set; }
+        public string HostText { get; set; } = "";
     }
 
-    /// <summary>A page: icon, title and site. Click to open it in a new tab; its menu forgets it.</summary>
+    /// <summary>
+    /// A page: icon, title and site. Click to open it (a closed tab comes back as it was). Hovered, as in
+    /// Zen, the site gives way to when it was visited, and two buttons show: remove it, open it again.
+    /// </summary>
     private Grid NewHistoryRow()
     {
         var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
-        var row = new Grid { Padding = new Thickness(8, 6, 8, 6), ColumnSpacing = 10, CornerRadius = new CornerRadius(8), Background = transparent };
+        var row = new Grid { Padding = new Thickness(8, 6, 6, 6), ColumnSpacing = 10, CornerRadius = new CornerRadius(8), Background = transparent };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -719,19 +879,48 @@ public sealed partial class MainWindow
         text.Children.Add(hostText);
         Grid.SetColumn(text, 1);
         row.Children.Add(text);
-        var parts = new HistoryRowParts { Glyph = glyph, Icon = icon, Title = titleText, Host = hostText };
+
+        Button Action(string glyph) => new()
+        {
+            Style = (Style)Application.Current.Resources["IconButtonStyle"],
+            Width = 28,
+            Height = 28,
+            Content = new FontIcon { Glyph = glyph, FontSize = 13 },
+        };
+        var remove = Action("");
+        var reopen = Action("");
+        // Over the text's end, and only while hovered: otherwise the title and site have the row's whole width.
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        actions.Children.Add(remove);
+        actions.Children.Add(reopen);
+        Grid.SetColumn(actions, 1);
+        row.Children.Add(actions);
+
+        var parts = new HistoryRowParts { Glyph = glyph, Icon = icon, Title = titleText, Host = hostText, Text = text, Actions = actions, Remove = remove, Reopen = reopen };
         row.Tag = parts;
 
-        row.PointerEntered += (_, _) => row.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
-        row.PointerExited += (_, _) => row.Background = transparent;
-        row.Tapped += (_, _) =>
+        row.PointerEntered += (_, _) => ShowHistoryRowHover(row, parts, true);
+        row.PointerExited += (_, _) => ShowHistoryRowHover(row, parts, false);
+        row.Tapped += (_, e) =>
         {
-            if (parts.Uri is { } uri) OpenPage(uri);
+            // Not a click on one of its buttons.
+            for (var at = e.OriginalSource as DependencyObject; at is not null && at != row; at = VisualTreeHelper.GetParent(at))
+                if (at == actions) return;
+            if (parts.Item is { } item) ReopenHistoryItem(item);
+        };
+        remove.Click += (_, _) =>
+        {
+            if (parts.Item is { } item) RemoveHistoryItem(item);
+        };
+        reopen.Click += (_, _) =>
+        {
+            if (parts.Item is { } item) ReopenHistoryItem(item);
         };
         row.ContextRequested += (_, e) =>
         {
             e.Handled = true;
-            _historyMenuEntry = parts.Entry;
+            _historyMenuItem = parts.Item;
+            HistoryMenuRemove.Text = parts.Item?.Closed is not null ? "Remove from list" : "Remove from history";
             var options = new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions();
             if (e.TryGetPosition(row, out var at)) options.Position = at;
             HistoryMenu.ShowAt(row, options);
@@ -739,50 +928,93 @@ public sealed partial class MainWindow
         return row;
     }
 
-    private void ShowInHistoryRow(Grid row, HistoryEntry entry)
+    /// <summary>Hovered: the row lights up, its buttons show, and the site gives way to when it was visited.</summary>
+    private static void ShowHistoryRowHover(Grid row, HistoryRowParts parts, bool over)
+    {
+        row.Background = over
+            ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"]
+            : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        parts.Actions.Visibility = over ? Visibility.Visible : Visibility.Collapsed;
+        // The text makes way for the buttons only while they're there.
+        parts.Text.Margin = new Thickness(0, 0, over ? HistoryActionsWidth : 0, 0);
+        parts.Host.Text = over && parts.Item is { } item && item.When != DateTime.MinValue ? WhenText(item.When) : parts.HostText;
+    }
+
+    /// <summary>The two buttons and a little space before them.</summary>
+    private const double HistoryActionsWidth = 28 * 2 + 2 + 6;
+
+    /// <summary>As Zen shows it: 13 Nov 2026, 9:16 pm (in the format Windows is set to).</summary>
+    private static string WhenText(DateTime when) =>
+        $"{when.ToString("d MMM yyyy", CultureInfo.CurrentCulture)}, {when.ToString("t", CultureInfo.CurrentCulture)}";
+
+    private void ShowInHistoryRow(Grid row, HistoryLine item)
     {
         var parts = (HistoryRowParts)row.Tag;
-        var uri = Uri.TryCreate(entry.Url, UriKind.Absolute, out var parsed) ? parsed : null;
-        var title = string.IsNullOrWhiteSpace(entry.Title) ? entry.Url : entry.Title;
-        var host = uri?.Host ?? entry.Url;
-        if (host.StartsWith("www.")) host = host[4..];
-        parts.Entry = entry;
+        var uri = Uri.TryCreate(item.Url, UriKind.Absolute, out var parsed) ? parsed : null;
+        var title = string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title;
+        var host = HistoryView.Site(item.Url);
+        parts.Item = item;
         parts.Uri = uri;
         parts.Title.Text = title;
-        parts.Host.Text = host;
+        parts.HostText = host;
+        var closed = item.Closed is not null;
+        ToolTipService.SetToolTip(parts.Remove, closed ? "Remove from list" : "Remove from history");
+        ToolTipService.SetToolTip(parts.Reopen, closed ? "Reopen tab" : "Reopen page");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(parts.Remove, closed ? "Remove from list" : "Remove from history");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(parts.Reopen, closed ? "Reopen tab" : "Reopen page");
         // A reused row may still show the last page's hover and icon.
-        row.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        ShowHistoryRowHover(row, parts, false);
         parts.Icon.Source = null;
         parts.Glyph.Visibility = Visibility.Visible;
-        if (uri is not null) LoadHistoryIcon(uri.Authority, parts, entry);
-        ToolTipService.SetToolTip(row, entry.Url);
+        if (uri is not null) LoadHistoryIcon(uri.Authority, parts, item);
+        ToolTipService.SetToolTip(row, item.Url);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, $"{title}, {host}");
+    }
+
+    /// <summary>Opened again: a page in a new tab; a closed tab back as it was, in its place.</summary>
+    private void ReopenHistoryItem(HistoryLine item)
+    {
+        if (item.Closed is { } closed) ReopenClosedTab(closed);
+        else if (Uri.TryCreate(item.Url, UriKind.Absolute, out var uri)) OpenPage(uri);
+    }
+
+    /// <summary>Out of the list: a page forgotten, or a closed tab no longer to be reopened.</summary>
+    private void RemoveHistoryItem(HistoryLine item)
+    {
+        if (item.Closed is { } closed)
+        {
+            if (!_closedTabs.Remove(closed)) return;
+            SaveSessionSoon();
+            ClosedTabsChanged();
+            return;
+        }
+        History.Remove(item.Url);
+        ShowLibraryHistory();
     }
 
     /// <summary>A row's right-click menu: one, shared, since one per row made the list slow to build.</summary>
     private MenuFlyout HistoryMenu => _historyMenu ??= CreateHistoryMenu();
     private MenuFlyout? _historyMenu;
-    private HistoryEntry? _historyMenuEntry;
+    private HistoryLine? _historyMenuItem;
+    private MenuFlyoutItem HistoryMenuRemove => _historyMenuRemove ??= new MenuFlyoutItem { Text = "Remove from history", Icon = new FontIcon { Glyph = "" } };
+    private MenuFlyoutItem? _historyMenuRemove;
 
     private MenuFlyout CreateHistoryMenu()
     {
-        var forget = new MenuFlyoutItem { Text = "Remove from history", Icon = new FontIcon { Glyph = "" } };
-        forget.Click += (_, _) =>
+        HistoryMenuRemove.Click += (_, _) =>
         {
-            if (_historyMenuEntry is not { } entry) return;
-            History.Remove(entry.Url);
-            ShowLibraryHistory();
+            if (_historyMenuItem is { } item) RemoveHistoryItem(item);
         };
         var menu = new MenuFlyout();
-        menu.Items.Add(forget);
+        menu.Items.Add(HistoryMenuRemove);
         return menu;
     }
 
-    private static async void LoadHistoryIcon(string site, HistoryRowParts parts, HistoryEntry entry)
+    private static async void LoadHistoryIcon(string site, HistoryRowParts parts, HistoryLine item)
     {
         if (await History.IconAsync(site) is not { } icon) return;
         // The row may have moved on to another page meanwhile.
-        if (parts.Entry != entry) return;
+        if (!ReferenceEquals(parts.Item, item)) return;
         parts.Icon.Source = icon;
         parts.Glyph.Visibility = Visibility.Collapsed;
     }

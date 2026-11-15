@@ -110,6 +110,12 @@ internal sealed class SettingsData
     /// <summary>Claude Code's name for the model ("sonnet", "opus", "haiku").</summary>
     public string ClaudeModel { get; set; } = "sonnet";
     public string CodexModel { get; set; } = "gpt-6-luna";
+    /// <summary>Where downloads are saved; empty, your Downloads folder.</summary>
+    public string DownloadFolder { get; set; } = "";
+    /// <summary>Finished downloads leave the list after this many days (DownloadArchive); 0 keeps them.</summary>
+    public int KeepDownloadsDays { get; set; } = DownloadArchive.DefaultDays;
+    /// <summary>The kinds of file the downloads peek leaves out (the Library button's right-click menu).</summary>
+    public List<DownloadKind> PeekHides { get; set; } = new();
     /// <summary>Action id → shortcut, for the ones changed from their defaults.</summary>
     public Dictionary<string, string> Shortcuts { get; set; } = new();
 }
