@@ -194,7 +194,8 @@ public sealed partial class MainWindow
         {
             if (entries[i] is not { } entry || !Uri.TryCreate(entry.Url, UriKind.Absolute, out var uri)) continue;
             Uri.TryCreate(entry.Home, UriKind.Absolute, out var home);
-            await CreateTabAsync(uri, TabPlace.Regular, activate: i == front, title: entry.Title, home: home, index: i);
+            await CreateTabAsync(uri, TabPlace.Regular, activate: i == front, title: entry.Title, home: home, index: i,
+                name: entry.Name, icon: entry.Icon);
         }
     }
 

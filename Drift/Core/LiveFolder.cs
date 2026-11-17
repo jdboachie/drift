@@ -26,6 +26,21 @@ public sealed class LiveSource
 
     /// <summary>The last answer had nothing in it (LiveFolder.Believe).</summary>
     public bool EmptyOnce { get; set; }
+
+    /// <summary>Searches turned off in its menu (GitHubPulls.Queries): made by you, assigned, review requests, mentions.</summary>
+    public HashSet<string> Off { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Draft pull requests show too.</summary>
+    public bool Drafts { get; set; } = true;
+
+    /// <summary>Repositories ("owner/repo") whose pull requests don't show.</summary>
+    public HashSet<string> HiddenRepos { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The repositories in the last answer, to pick from in its menu (not saved).</summary>
+    public List<string> Repos { get; set; } = [];
+
+    /// <summary>When it was last asked, answered or not (not saved).</summary>
+    public DateTimeOffset? Checked { get; set; }
 }
 
 /// <summary>
@@ -73,6 +88,30 @@ public sealed record LivePlan(
 
 public static class LiveFolder
 {
+    /// <summary>The searches it asks GitHub, those not turned off.</summary>
+    public static IReadOnlyList<string> Searches(LiveSource live) =>
+        GitHubPulls.Queries.Where(q => !live.Off.Contains(q)).ToList();
+
+    /// <summary>The pull requests it shows of those found: drafts if they're on, none from a hidden repository.</summary>
+    public static List<PullRequest> Shown(LiveSource live, IEnumerable<PullRequest> found) =>
+        found.Where(p => (live.Drafts || !p.Draft) && !live.HiddenRepos.Contains(RepoOf(p))).ToList();
+
+    /// <summary>The repositories ("owner/repo", lower case) the pull requests are in, each once, in order.</summary>
+    public static List<string> Repos(IEnumerable<PullRequest> found) =>
+        found.Select(RepoOf).Distinct().Order(StringComparer.Ordinal).ToList();
+
+    public static string RepoOf(PullRequest pull) => $"{pull.Owner}/{pull.Repo}".ToLowerInvariant();
+
+    /// <summary>"Checked 2 min ago", for its menu.</summary>
+    public static string Checked(DateTimeOffset? at, DateTimeOffset now)
+    {
+        if (at is not { } when) return "Not checked yet";
+        var ago = now - when;
+        if (ago < TimeSpan.FromMinutes(1)) return "Checked just now";
+        if (ago < TimeSpan.FromHours(1)) return $"Checked {(int)ago.TotalMinutes} min ago";
+        return $"Checked {(int)ago.TotalHours} h ago";
+    }
+
     /// <summary>
     /// Whether to go by an answer. GitHub's search has been seen to answer with nothing for a moment
     /// (signed in, no error), so an empty answer counts only the second time running; until then the

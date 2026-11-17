@@ -198,12 +198,16 @@ public sealed class FolderTree
             {
                 Id = folder.Id,
                 Name = folder.Name,
+                Icon = folder.Icon,
                 Parent = folder.Parent?.Id,
                 Expanded = folder.IsExpanded,
                 Position = position,
                 Live = folder.Live?.Kind,
                 Dismissed = folder.Live is { } live ? live.Dismissed.Order(StringComparer.OrdinalIgnoreCase).ToList() : null,
                 Filled = folder.Live?.Filled,
+                Off = folder.Live is { Off.Count: > 0 } off ? off.Off.Order(StringComparer.OrdinalIgnoreCase).ToList() : null,
+                Drafts = folder.Live is { Drafts: false } ? false : null,
+                HiddenRepos = folder.Live is { HiddenRepos.Count: > 0 } hidden ? hidden.HiddenRepos.Order(StringComparer.OrdinalIgnoreCase).ToList() : null,
             });
             for (var i = 0; i < folder.Children.Count; i++)
                 if (folder.Children[i] is TabFolder sub) Add(sub, i);
@@ -229,13 +233,16 @@ public sealed class FolderTree
         foreach (var s in list)
         {
             if (string.IsNullOrEmpty(s.Id) || byId.ContainsKey(s.Id)) continue;
-            var folder = new TabFolder(string.IsNullOrWhiteSpace(s.Name) ? "Folder" : s.Name, s.Id) { IsExpanded = s.Expanded };
+            var folder = new TabFolder(string.IsNullOrWhiteSpace(s.Name) ? "Folder" : s.Name, s.Id) { IsExpanded = s.Expanded, Icon = s.Icon };
             if (s.Live == LiveSource.GitHubPulls)
                 folder.Live = new LiveSource
                 {
                     Kind = s.Live,
                     Dismissed = new HashSet<string>(s.Dismissed ?? [], StringComparer.OrdinalIgnoreCase),
                     Filled = s.Filled ?? true,
+                    Off = new HashSet<string>(s.Off ?? [], StringComparer.OrdinalIgnoreCase),
+                    Drafts = s.Drafts ?? true,
+                    HiddenRepos = new HashSet<string>(s.HiddenRepos ?? [], StringComparer.OrdinalIgnoreCase),
                 };
             byId[s.Id] = folder;
             _positions[folder] = s.Position;

@@ -11,6 +11,12 @@ internal sealed class SessionTab
 {
     public string Url { get; set; } = "";
     public string Title { get; set; } = "";
+    /// <summary>The name you gave it (Rename…), shown in place of Title.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
+    /// <summary>The icon you chose for it (Change icon…): an emoji, or a symbol (CustomIcon).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Icon { get; set; }
     public bool Pinned { get; set; }
     /// <summary>"Essential", "Pinned" or "Regular". Missing in files from before Essentials: Pinned meant a tile.</summary>
     public string? Place { get; set; }
@@ -41,6 +47,9 @@ public sealed class SessionFolder
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+    /// <summary>The icon you chose for it (Change icon…): an emoji, or a symbol (CustomIcon).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Icon { get; set; }
     /// <summary>The folder it's nested in; null at the top.</summary>
     public string? Parent { get; set; }
     public bool Expanded { get; set; } = true;
@@ -51,6 +60,13 @@ public sealed class SessionFolder
     public string? Live { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Dismissed { get; set; }
+    /// <summary>A live folder's menu: searches turned off, drafts shown, repositories hidden (LiveSource).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Off { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Drafts { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? HiddenRepos { get; set; }
     /// <summary>A live folder that has been filled once (LiveSource.Filled).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Filled { get; set; }

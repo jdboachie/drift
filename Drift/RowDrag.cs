@@ -68,7 +68,7 @@ public sealed partial class MainWindow
     {
         foreach (var list in SlidingLists)
             if (_dragTab is { } tab && list.ContainerFromItem(tab) is FrameworkElement row) return row.ActualHeight;
-        return 36;
+        return 38;
     }
 
     /// <summary>Where a drop at the pointer would land in this list.</summary>

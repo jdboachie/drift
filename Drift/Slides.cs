@@ -40,7 +40,8 @@ public sealed partial class MainWindow
     /// <summary>A list is changing: where everything is now (layout hasn't caught up yet), once per batch of changes.</summary>
     private void NoteSlideStart()
     {
-        if (!_restored || _slideRows is not null) return;
+        // A folder opening or closing moves its own rows (FolderMotion.cs).
+        if (!_restored || _slideRows is not null || _folderMotionRefresh) return;
         _slideRows = SlidingLists.ToDictionary(l => l, RowsWere);
         NoteGroupSlideStart();
     }

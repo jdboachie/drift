@@ -21,3 +21,15 @@ public sealed partial class FolderRowTemplateSelector : DataTemplateSelector
 
     protected override DataTemplate? SelectTemplateCore(object item, DependencyObject container) => SelectTemplateCore(item);
 }
+
+/// <summary>
+/// The folder list's rows' own looks: a folder's header has no hover fill of a tab's (hovered while
+/// closed, it shows its card, as Dia's groups do); everything else is a tab's row.
+/// </summary>
+public sealed partial class FolderRowStyleSelector : StyleSelector
+{
+    public Style? FolderStyle { get; set; }
+    public Style? RowStyle { get; set; }
+
+    protected override Style? SelectStyleCore(object item, DependencyObject container) => item is TabFolder ? FolderStyle : RowStyle;
+}

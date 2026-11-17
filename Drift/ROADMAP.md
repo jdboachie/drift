@@ -43,6 +43,13 @@ miss it. Items marked "check" haven't been confirmed in Drift.
 
 - Spaces / workspaces
 - More than one window (only a private one so far)
+- **Vertical split view** (Arc's top and bottom panes): one page over the other, as well as side by
+  side. Made from the page's buttons ("Add bottom split") and the command bar ("Add Bottom Split");
+  a divider dragged up and down (each page at least 160 px tall, double-click for half and half);
+  swapping, showing one alone and closing animating up and down; kept with the session. Its divider's
+  grip has to sit clear of the lower page's dots, which are in the middle of the gap. Still to work
+  out: dragging the dots to swap stacked pages, dropping a tab on the top or bottom half of the page,
+  Peek opening into a lower page, and switching a split between side by side and stacked.
 
 ## Probably handled by WebView2 (check)
 

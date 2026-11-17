@@ -62,11 +62,44 @@ public sealed class TabFolder : INotifyPropertyChanged
             _isExpanded = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(Glyph));
+            OnPropertyChanged(nameof(ChevronAngle));
             OnPropertyChanged(nameof(StateName));
         }
     }
 
-    public string Glyph => _isExpanded ? OpenGlyph : ClosedGlyph;
+    /// <summary>
+    /// The chevron after its name, as Dia's groups have it: pointing right while it's closed, turned to
+    /// point down while it's open.
+    /// </summary>
+    public float ChevronAngle => _isExpanded ? 90 : 0;
+
+    /// <summary>Its icon: a symbol chosen for it, else a folder, open or closed.</summary>
+    public string Glyph => _icon is { } icon && CustomIcon.IsSymbol(icon) ? icon : _isExpanded ? OpenGlyph : ClosedGlyph;
+
+    private string? _icon;
+
+    /// <summary>The icon you chose for it (Change icon…): an emoji, or a symbol (CustomIcon); null for a folder.</summary>
+    public string? Icon
+    {
+        get => _icon;
+        set
+        {
+            if (_icon == value) return;
+            _icon = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Glyph));
+            OnPropertyChanged(nameof(Emoji));
+            OnPropertyChanged(nameof(HasEmoji));
+            OnPropertyChanged(nameof(ShowsGlyph));
+        }
+    }
+
+    public bool HasEmoji => _icon is { } icon && !CustomIcon.IsSymbol(icon);
+
+    public string Emoji => HasEmoji ? _icon! : "";
+
+    /// <summary>Its row shows Glyph: not for an emoji, nor a live folder (which has its badge).</summary>
+    public bool ShowsGlyph => !HasEmoji && !IsLive;
 
     public string StateName => _isExpanded ? "expanded" : "collapsed";
 
@@ -103,6 +136,7 @@ public sealed class TabFolder : INotifyPropertyChanged
             _live = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsLive));
+            OnPropertyChanged(nameof(ShowsGlyph));
         }
     }
 

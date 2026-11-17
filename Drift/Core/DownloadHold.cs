@@ -12,7 +12,13 @@ public static class DownloadHold
     public static DownloadSettle Check(bool engineDone, long received, long? total, long? fileOnDisk)
     {
         if (engineDone) return DownloadSettle.Done;
-        if (total is not > 0 || received < total) return DownloadSettle.Running;
+        if (!AllIn(received, total)) return DownloadSettle.Running;
         return fileOnDisk == total ? DownloadSettle.Done : DownloadSettle.Waiting;
     }
+
+    /// <summary>
+    /// Every byte is in: the last stage, the file being checked and saved under its name, which the
+    /// engine won't let be paused or cancelled.
+    /// </summary>
+    public static bool AllIn(long received, long? total) => total is > 0 && received >= total;
 }

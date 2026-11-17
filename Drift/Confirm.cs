@@ -206,52 +206,99 @@ public sealed partial class MainWindow
     private async Task<bool> MayLeaveAsync(IEnumerable<BrowserTab> tabs) =>
         Warnings.LeavePages(await PagesWithChangesAsync(tabs)) is not { } warning || await AskAsync(warning);
 
-    // ---- Undo ----
+    // ---- Undo, and other notices with a button or two ----
 
-    private Action? _undo;
-    private DispatcherQueueTimer? _undoTimer;
+    private (string Label, Action Act)[] _toastActions = [];
+    private DispatcherQueueTimer? _toastTimer;
 
     /// <summary>"Deleted …" or "Cleared …" at the foot of the page, with Undo, for a few seconds (longer while the pointer's on it).</summary>
-    private void ShowUndo(string text, Action undo)
+    private void ShowUndo(string text, Action undo) => ShowToast(text, TimeSpan.FromSeconds(6), choices: false, ("Undo", undo));
+
+    private void HideUndo() => HideToast();
+
+    /// <summary>
+    /// A notice at the foot of the page with up to two buttons, for <paramref name="time"/> or longer
+    /// while the pointer's on it. A button closes it. Undo is a plain text button; a notice's
+    /// <paramref name="choices"/> are buttons, the first the coloured one.
+    /// </summary>
+    private void ShowToast(string text, TimeSpan time, bool choices, params (string Label, Action Act)[] actions)
     {
-        _undo = undo;
+        var plain = new Thickness(8, 3, 8, 3);
+        ToastAction1.Style = (Style)Application.Current.Resources[choices ? "AccentButtonStyle" : "SubtleButtonStyle"];
+        ToastAction2.Style = (Style)Application.Current.Resources[choices ? "DefaultButtonStyle" : "SubtleButtonStyle"];
+        foreach (var button in new[] { ToastAction1, ToastAction2 })
+        {
+            if (choices) button.ClearValue(Control.PaddingProperty);
+            else button.Padding = plain;
+        }
+        UndoToast.Padding = choices ? new Thickness(14, 10, 10, 10) : new Thickness(14, 4, 6, 4);
+        UndoToast.CornerRadius = new CornerRadius(choices ? 12 : 10);
+        // Room between what it says and what you can do about it.
+        ToastTexts.Margin = new Thickness(0, 0, choices ? 12 : 0, 0);
+        UndoToastText.FontWeight = choices ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
+        ToastIcon.Content = null;
+        ToastIcon.Visibility = Visibility.Collapsed;
+        ToastDetail.Visibility = Visibility.Collapsed;
+        _toastActions = actions;
         HideBookmarkToast();
         CopiedToast.Opacity = 0;
         UndoToastText.Text = text;
+        Button[] buttons = [ToastAction1, ToastAction2];
+        for (var i = 0; i < buttons.Length; i++)
+        {
+            buttons[i].Visibility = i < actions.Length ? Visibility.Visible : Visibility.Collapsed;
+            if (i < actions.Length) buttons[i].Content = actions[i].Label;
+        }
         UndoToast.Visibility = Visibility.Visible;
         UndoToast.Opacity = 1;
         UndoToast.IsHitTestVisible = true;
         Spring.To(UndoToast, "Translation", new Vector3(0, 0, 32), 0.25, 0, from: new Vector3(0, 8, 32));
-        if (_undoTimer is null)
+        if (_toastTimer is null)
         {
-            _undoTimer = DispatcherQueue.CreateTimer();
-            _undoTimer.IsRepeating = false;
-            _undoTimer.Interval = TimeSpan.FromSeconds(6);
-            _undoTimer.Tick += (_, _) => HideUndo();
+            _toastTimer = DispatcherQueue.CreateTimer();
+            _toastTimer.IsRepeating = false;
+            _toastTimer.Tick += (_, _) => HideToast();
         }
-        _undoTimer.Stop();
-        _undoTimer.Start();
+        _toastTimer.Interval = time;
+        _toastTimer.Stop();
+        _toastTimer.Start();
     }
 
-    private void HideUndo()
+    /// <summary>
+    /// A notice: <paramref name="icon"/>, <paramref name="title"/> over <paramref name="detail"/>, and
+    /// its choices as buttons, the first coloured.
+    /// </summary>
+    private void ShowNotice(FrameworkElement icon, string title, string detail, TimeSpan time, params (string Label, Action Act)[] actions)
     {
-        _undo = null;
-        _undoTimer?.Stop();
+        ShowToast(title, time, choices: true, actions);
+        ToastIcon.Content = icon;
+        ToastIcon.Visibility = Visibility.Visible;
+        ToastDetail.Text = detail;
+        ToastDetail.Visibility = Visibility.Visible;
+    }
+
+    private void HideToast()
+    {
+        _toastActions = [];
+        _toastTimer?.Stop();
         UndoToast.Opacity = 0;
         UndoToast.IsHitTestVisible = false;
+        // Out the way it came in: down a little as it fades.
+        Spring.To(UndoToast, "Translation", new Vector3(0, 8, 32), 0.25, 0);
     }
 
-    private void Undo_Click(object sender, RoutedEventArgs e)
+    private void ToastAction_Click(object sender, RoutedEventArgs e)
     {
-        var undo = _undo;
-        HideUndo();
-        undo?.Invoke();
+        var index = sender == ToastAction2 ? 1 : 0;
+        var act = index < _toastActions.Length ? _toastActions[index].Act : null;
+        HideToast();
+        act?.Invoke();
     }
 
-    private void UndoToast_PointerEntered(object sender, PointerRoutedEventArgs e) => _undoTimer?.Stop();
+    private void UndoToast_PointerEntered(object sender, PointerRoutedEventArgs e) => _toastTimer?.Stop();
 
     private void UndoToast_PointerExited(object sender, PointerRoutedEventArgs e)
     {
-        if (_undo is not null) _undoTimer?.Start();
+        if (_toastActions.Length > 0) _toastTimer?.Start();
     }
 }

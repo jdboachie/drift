@@ -59,7 +59,11 @@ public sealed partial class MainWindow
     private sealed record CommandRow(Grid Row, TextBlock Text, Run? Detail, FontIcon? Glyph, StackPanel? Hint, Border? Chip, TextBlock? Keys, Border Enter);
 
     private const int CommandRowsMax = 8;
-    private const double CommandRowHeight = 40;
+    // Rows as tall as the sidebar's tabs and 2 apart, 4 in from the card's edges, under a 51-tall field (Arc's).
+    private const double CommandRowHeight = 38;
+    private const double CommandRowGap = 2;
+    private const double CommandFieldHeight = 51;
+    private const double CommandResultsPadding = 4;
     private const double CommandCardMaxWidth = 720;
 
     // Google's suggestion service, as Chrome asks it: the "chrome" client also returns sites
@@ -656,8 +660,8 @@ public sealed partial class MainWindow
     private void ShowCommandItems(List<CommandItem> items, int defaultHighlight)
     {
         // As many rows as fit below the field in this window.
-        var room = Root.ActualHeight - CommandCard.Margin.Top - 52 - 1 - 12 - 16;
-        var fit = Math.Max(3, (int)(room / CommandRowHeight));
+        var room = Root.ActualHeight - CommandCard.Margin.Top - CommandFieldHeight - 1 - 2 * CommandResultsPadding - 16;
+        var fit = Math.Max(3, (int)((room + CommandRowGap) / (CommandRowHeight + CommandRowGap)));
         if (items.Count > fit) items = items.Take(fit).ToList();
 
         var keep = _highlightMoved && _highlight >= 0 && _highlight < _commandItems.Count ? _commandItems[_highlight].Key : null;
@@ -683,8 +687,9 @@ public sealed partial class MainWindow
         {
             Height = CommandRowHeight,
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 0, 12, 0),
-            ColumnSpacing = 12,
+            // Arc's: the icon 11 in, the text 16 after it.
+            Padding = new Thickness(11, 0, 12, 0),
+            ColumnSpacing = 16,
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
         };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
@@ -715,11 +720,12 @@ public sealed partial class MainWindow
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
         };
-        text.Inlines.Add(new Run { Text = item.Title });
+        // Cut to what a line could show: a long enough address fails Windows' text layout outright.
+        text.Inlines.Add(new Run { Text = DisplayText.Clip(item.Title) });
         Run? detail = null;
         if (!string.IsNullOrEmpty(item.Detail))
         {
-            detail = new Run { Text = " — " + item.Detail };
+            detail = new Run { Text = " — " + DisplayText.Clip(item.Detail) };
             text.Inlines.Add(detail);
         }
         StackPanel? hint = null;

@@ -165,9 +165,6 @@ public sealed partial class MainWindow
         var scale = rest * (float)PeekDrag.Scale(_peekGrabY, height);
         Spring.Jump(PeekCardFrame, "Translation", new Vector3(0, y + (float)PeekDrag.Follow(_peekGrabY), 0));
         Spring.Jump(PeekCardFrame, "Scale", new Vector3(scale, scale, 1));
-        // The buttons beside it shrink away as it goes.
-        var controls = (float)(1 - 0.3 * Math.Clamp(_peekGrabY / (height * PeekDrag.DismissShare), 0, 1));
-        Spring.Jump(PeekControls, "Scale", new Vector3(controls, controls, 1));
         e.Handled = true;
     }
 
@@ -201,7 +198,6 @@ public sealed partial class MainWindow
         Spring.To(PeekCardFrame, "Translation", new Vector3(0, y, 0), duration: 0.35, bounce: 0.1,
             from: at, velocity: new Vector3(0, (float)velocity, 0));
         Spring.To(PeekCardFrame, "Scale", new Vector3(scale, scale, 1), duration: 0.35, bounce: 0);
-        Spring.To(PeekControls, "Scale", Vector3.One, duration: 0.25, bounce: 0);
     }
 
     /// <summary>
@@ -216,7 +212,5 @@ public sealed partial class MainWindow
             from: at, velocity: new Vector3(0, (float)Math.Max(0, velocity), 0));
         var shrunk = (float)(1 - PeekDrag.Shrink);
         Spring.To(PeekCardFrame, "Scale", new Vector3(shrunk, shrunk, 1), duration: 0.3, bounce: 0);
-        // Already shrinking away with the pull: they carry on, and fade (PeekExitAnimation).
-        Spring.To(PeekControls, "Scale", new Vector3(0.7f, 0.7f, 1), duration: 0.2, bounce: 0);
     }
 }

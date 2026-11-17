@@ -50,6 +50,19 @@ internal sealed class GhostPopups
         window.Closed += (_, _) => RemoveWindowSubclass(_hwnd, _proc, 1);
     }
 
+    /// <summary>
+    /// A menu with a submenu closed: the submenu's window can be left behind, drawn at the window's
+    /// top-left corner (where WinUI first puts it before moving it beside its item). Whatever's left of
+    /// that submenu closes, and stray menu windows are hidden over the next moments.
+    /// </summary>
+    public void MenuClosed(MenuFlyoutItemBase inSubmenu)
+    {
+        if (_window.Content?.XamlRoot is { } root)
+            foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
+                if (popup.Child is MenuFlyoutPresenter presenter && presenter.Items.Contains(inSubmenu)) popup.IsOpen = false;
+        LookForGhosts();
+    }
+
     /// <summary>Minimizes the way the system does (Drift's menu item), so menus get closed first here too.</summary>
     public void Minimize() => PostMessage(_hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
 

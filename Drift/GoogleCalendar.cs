@@ -71,7 +71,7 @@ public sealed partial class MainWindow
     private static bool IsCalendarTab(BrowserTab tab) =>
         tab.IsPinned && GoogleCalendarLinks.IsCalendar(tab.HomeUri ?? (Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) ? u : null));
 
-    private BrowserTab? FindCalendarTab() => EssentialTabs.Concat(PinnedTabs).Concat(FolderTabs).FirstOrDefault(IsCalendarTab);
+    private BrowserTab? FindCalendarTab() => EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsCalendarTab);
 
     private int CalendarAccount => GoogleCalendarLinks.Account(_calendarTab?.HomeUri);
 
@@ -237,17 +237,33 @@ public sealed partial class MainWindow
         RenderCalendarCard(scroll: true);
     }
 
-    /// <summary>What the calendar card shows for the tab it's for: its meetings, or why there aren't any.</summary>
-    private (List<CalendarEvent> Events, string? Message) CalendarCardData()
+    /// <summary>What the calendar card shows for the tab it's for: its meetings, or why there aren't any and what to do about it.</summary>
+    private (List<CalendarEvent> Events, string? Message, string? Action) CalendarCardData()
     {
-        if (_hoverTab is { } tab && tab == _outlookCalendarTab) return (_outlookEvents, OutlookMessage());
-        return (_calendarEvents, _calendarState switch
+        if (_hoverTab is { } tab && tab == _outlookCalendarTab) return (_outlookEvents, OutlookMessage(), null);
+        return _calendarState switch
         {
-            CalendarState.SignedOut => "Sign in to Google Calendar in its tab",
-            CalendarState.Failed when _calendarFiles.Count == 0 => "Couldn't reach Google Calendar",
-            CalendarState.Loading => "Loading…",
-            _ => null,
-        });
+            CalendarState.SignedOut => (_calendarEvents, "You're signed out of Google Calendar", "Sign in"),
+            CalendarState.Failed when _calendarFiles.Count == 0 => (_calendarEvents, "Couldn't reach Google Calendar", "Try again"),
+            CalendarState.Loading => (_calendarEvents, "Loading…", null),
+            _ => (_calendarEvents, null, null),
+        };
+    }
+
+    /// <summary>Signed out: the calendar's tab, to sign in. Couldn't reach it: asked again, by a fresh view.</summary>
+    private void CalendarAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (_calendarState == CalendarState.SignedOut)
+        {
+            HideHoverCard();
+            if (_calendarTab is { } tab) Activate(tab);
+            return;
+        }
+        _calendarState = CalendarState.Loading;
+        RenderCalendarCard(scroll: true);
+        if (_calendarFetching) return;
+        CloseHiddenSite(GoogleCalendarLinks.Host);
+        _ = FetchCalendarAsync();
     }
 
     private void RenderCalendarCard(bool scroll)
@@ -259,10 +275,9 @@ public sealed partial class MainWindow
         CalendarAllDay.Children.Clear();
         CalendarTimeline.Children.Clear();
 
-        var (events, message) = CalendarCardData();
+        var (events, message, action) = CalendarCardData();
         var today = events.Where(e => e.Start < dayEnd && e.End > dayStart).ToList();
-        CalendarMessage.Text = message ?? "";
-        CalendarMessage.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+        ShowCardMessage(CalendarMessagePanel, CalendarMessage, CalendarActionButton, message, action);
         CalendarScroll.Visibility = message is null ? Visibility.Visible : Visibility.Collapsed;
         if (message is not null) return;
 
@@ -329,8 +344,7 @@ public sealed partial class MainWindow
 
         if (timed.Count == 0 && today.Count == 0)
         {
-            CalendarMessage.Text = "Nothing today";
-            CalendarMessage.Visibility = Visibility.Visible;
+            ShowCardMessage(CalendarMessagePanel, CalendarMessage, CalendarActionButton, "Nothing today", null);
         }
         // Opens on the hour before now.
         if (scroll) CalendarScroll.ChangeView(null, Math.Max(0, nowY - HourHeight), null, disableAnimation: true);

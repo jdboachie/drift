@@ -36,6 +36,8 @@ public sealed partial class MainWindow
     private DateTimeOffset _outlookNextFetch;
     private DateTimeOffset _outlookFetched;
     private bool _outlookFetching;
+    // Tries in a row where Outlook's page made no signed calls.
+    private int _outlookMisses;
     private bool _outlookHasData;
     private DispatcherQueueTimer? _outlookTimer;
 
@@ -60,7 +62,7 @@ public sealed partial class MainWindow
 
     private void OutlookTick()
     {
-        var pinned = EssentialTabs.Concat(PinnedTabs).Concat(FolderTabs).Where(t => t.IsPinned).ToList();
+        var pinned = EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).Where(t => t.IsPinned).ToList();
         var mail = pinned.FirstOrDefault(t => OutlookApi.IsMail(PageOf(t)));
         var calendar = pinned.FirstOrDefault(t => OutlookApi.IsCalendar(PageOf(t)));
         if (calendar != _outlookCalendarTab)
@@ -114,17 +116,33 @@ public sealed partial class MainWindow
             if (!await OutlookReadyAsync(core) && !OutlookApi.IsOutlook(Uri.TryCreate(core.Source, UriKind.Absolute, out var at) ? at : null))
                 await GoToAsync(core, OutlookApi.Start(host), TimeSpan.FromSeconds(30));
             // Outlook calls its API as soon as it's up; until it has, there's nothing to ask with.
+            // A cold start (Drift just opened, Outlook's tab booting alongside) can take well over 10s.
             var ready = false;
-            for (var i = 0; i < 20 && !(ready = await OutlookReadyAsync(core)); i++) await Task.Delay(500);
+            for (var i = 0; i < 30 && !(ready = await OutlookReadyAsync(core)); i++) await Task.Delay(500);
             if (!ready)
             {
                 var landed = Uri.TryCreate(core.Source, UriKind.Absolute, out var u) ? u : null;
-                _outlookState = OutlookApi.IsOutlook(landed) ? OutlookState.Failed : OutlookState.SignedOut;
-                if (_outlookState == OutlookState.Failed) App.LogCrash(new InvalidOperationException("Outlook: its page made no signed calls"));
+                if (!OutlookApi.IsOutlook(landed))
+                {
+                    _outlookState = OutlookState.SignedOut;
+                    _outlookNextFetch = DateTimeOffset.Now + OutlookRetry;
+                }
+                else
+                {
+                    // On Outlook but silent: an Outlook already loaded and idle makes no calls to note,
+                    // and asking the same page again never changed that (it failed for an hour at a
+                    // time), so the next try boots it afresh. Once, it's only "Loading…" and soon tried
+                    // again; it says it couldn't reach Outlook when that fails too.
+                    _outlookMisses++;
+                    App.LogCrash(new InvalidOperationException("Outlook: its page made no signed calls"));
+                    core.Reload();
+                    _outlookState = _outlookMisses > 1 ? OutlookState.Failed : OutlookState.Loading;
+                    _outlookNextFetch = DateTimeOffset.Now + (_outlookMisses > 1 ? OutlookRetry : TimeSpan.FromSeconds(10));
+                }
                 if (!_outlookHasData) { _outlookEvents = []; _outlookMail = []; }
-                _outlookNextFetch = DateTimeOffset.Now + OutlookRetry;
                 return;
             }
+            _outlookMisses = 0;
 
             var dayStart = new DateTimeOffset(DateTime.Today, TimeZoneInfo.Local.GetUtcOffset(DateTime.Today));
             var events = _outlookCalendarTab is not null ? await OutlookGetAsync(core, OutlookApi.CalendarView(host, dayStart, dayStart.AddDays(2))) : null;

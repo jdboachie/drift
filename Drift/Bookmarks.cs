@@ -53,7 +53,7 @@ public sealed partial class MainWindow
     /// <summary>Saves a tab's page, into a folder or at the top, and says so.</summary>
     private void BookmarkTab(BrowserTab tab, BookmarkNode? folder)
     {
-        var url = tab.View.CoreWebView2?.Source ?? tab.Url;
+        var url = LinkOf(tab);
         if (!CanBookmark(url)) return;
         var node = BookmarkStore.Tree.Find(url!);
         if (node is null)
@@ -291,7 +291,7 @@ public sealed partial class MainWindow
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
             if (uri is not null) LoadBookmarkIcon(uri.Authority, glyph, icon);
-            ToolTipService.SetToolTip(row, node.Url);
+            ToolTipService.SetToolTip(row, DisplayText.Clip(node.Url));
             row.Tapped += (_, _) =>
             {
                 if (uri is not null) OpenPage(uri);
@@ -419,36 +419,28 @@ public sealed partial class MainWindow
 
     private MenuFlyout BookmarkMenu(BookmarkNode node, FrameworkElement row)
     {
-        var menu = new MenuFlyout();
-        MenuFlyoutItem Item(string text, string glyph, Action run)
-        {
-            var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph } };
-            item.Click += (_, _) => run();
-            menu.Items.Add(item);
-            return item;
-        }
+        var menu = NewMenu();
+        var rename = Command(node.IsFolder ? "Rename" : "Edit", () => ShowBookmarkEditor(node, row, FlyoutPlacementMode.Bottom));
+        var delete = Command("Delete", () => RemoveBookmark(node));
         if (node.IsFolder)
         {
-            Item("Rename", "", () => ShowBookmarkEditor(node, row, FlyoutPlacementMode.Bottom));
-            Item("New folder inside", "", () => NewBookmarkFolder(node));
-            menu.Items.Add(new MenuFlyoutSeparator());
-            Item("Delete", "", () => RemoveBookmark(node));
+            FillMenu(menu, [Command("New folder inside", () => NewBookmarkFolder(node))], [rename], [delete]);
+            return menu;
         }
-        else
-        {
-            var uri = Uri.TryCreate(node.Url, UriKind.Absolute, out var parsed) ? parsed : null;
-            if (uri is not null) Item("Open in new tab", "", () => OpenPage(uri));
-            Item("Copy link", "", () =>
+        var uri = Uri.TryCreate(node.Url, UriKind.Absolute, out var parsed) ? parsed : null;
+        FillMenu(menu,
+        [uri is null ? null : Command("Open in new tab", () => OpenPage(uri))],
+        [
+            Command("Copy link", () =>
             {
                 var package = new DataPackage();
                 package.SetText(node.Url);
                 Clipboard.SetContent(package);
                 ShowCopiedToast();
-            });
-            Item("Edit", "", () => ShowBookmarkEditor(node, row, FlyoutPlacementMode.Bottom));
-            menu.Items.Add(new MenuFlyoutSeparator());
-            Item("Delete", "", () => RemoveBookmark(node));
-        }
+            }),
+        ],
+        [rename],
+        [delete]);
         return menu;
     }
 
@@ -486,33 +478,10 @@ public sealed partial class MainWindow
 
     // ───────────────────────── The tab's menu ─────────────────────────
 
-    /// <summary>A tab's right-click menu: "Bookmark", or "Remove bookmark" for a page already saved.</summary>
-    private void ShowBookmarkMenuItem(MenuFlyout menu)
-    {
-        var tab = menu.Items.Select(i => i.Tag).OfType<BrowserTab>().FirstOrDefault();
-        var item = menu.Items.OfType<MenuFlyoutItem>().FirstOrDefault(i => i.Tag as string == "bookmark");
-        if (item is null)
-        {
-            item = new MenuFlyoutItem { Tag = "bookmark" };
-            var close = menu.Items.OfType<MenuFlyoutItem>().FirstOrDefault(i => i.Text.StartsWith("Close tab"));
-            var at = close is null ? menu.Items.Count : menu.Items.IndexOf(close);
-            menu.Items.Insert(at, item);
-        }
-        var url = tab?.View.CoreWebView2?.Source ?? tab?.Url;
-        item.Visibility = tab is not null && CanBookmark(url) ? Visibility.Visible : Visibility.Collapsed;
-        if (tab is null || !CanBookmark(url)) return;
-        var saved = BookmarkStore.Tree.Find(url!);
-        item.Text = saved is null ? "Bookmark" : "Remove bookmark";
-        item.Icon = new FontIcon { Glyph = saved is null ? "" : "" };
-        item.Click -= TabBookmark_Click;
-        item.Click += TabBookmark_Click;
-        item.DataContext = tab;
-    }
-
     private void TabBookmark_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not BrowserTab tab) return;
-        var url = tab.View.CoreWebView2?.Source ?? tab.Url;
+        var url = LinkOf(tab);
         if (url is null) return;
         if (BookmarkStore.Tree.Find(url) is { } saved) RemoveBookmark(saved);
         else BookmarkTab(tab, null);

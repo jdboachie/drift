@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Drift.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
@@ -40,29 +42,122 @@ public sealed partial class MainWindow
 
     // ───────────────────────── Showing ─────────────────────────
 
+    // How each row sits among the folders' cards (FolderCard), worked out whenever the rows change.
+    private readonly Dictionary<object, CardRow> _folderCardRows = new(ReferenceEqualityComparer.Instance);
+
     /// <summary>Brings the folder list in line with the folders, changing only the rows that changed.</summary>
     private void RefreshFolderRows()
     {
+        // A folder mid-way open or shut gets there at once: its rows are about to change under it.
+        FinishFolderMotion();
         var syncing = _syncingSelection;
         _syncingSelection = true;
         ListSync.Apply(FolderRows, _folderTree.Rows(_active));
+        var cards = FolderCard.Layout(FolderRows.Select(CardInput).ToList());
+        _folderCardRows.Clear();
+        for (var i = 0; i < FolderRows.Count; i++) _folderCardRows[FolderRows[i]] = cards[i];
         FolderList.SelectedItem = _active is { Place: TabPlace.Folder, Split: null } && FolderRows.Contains(_active) ? _active : null;
         _syncingSelection = syncing;
         FolderList.Visibility = FolderRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var row in FolderRows) IndentFolderRow(FolderList.ContainerFromItem(row), row);
     }
 
+    private static int DepthOf(object row) => row switch { BrowserTab tab => tab.Depth, TabFolder folder => folder.Depth, LiveNote note => note.Depth, _ => 0 };
+
+    private static (int Depth, bool IsFolder, bool Open) CardInput(object row) =>
+        (DepthOf(row), row is TabFolder, row is TabFolder { IsExpanded: true });
+
+    // Folders' cards (FolderCard): the rows inside one sit this far in from its sides, with this much more
+    // room below its last row; its corners are a little rounder than the rows'. A folder's own header
+    // sits as any row does, its card fitting round it.
+    private const double CardInset = 4;
+    private const double CardRoom = 4;
+    private const double CardRadius = 10;
+    private const double RowGap = 3;
+
+    private static readonly CardRow NoCards = new([], 0, 0);
+
+    /// <summary>A card piece in a row: whose and which, for the folder motion (FolderMotion.cs).</summary>
+    private sealed record CardTag(CardPiece Piece);
+
     /// <summary>
     /// A row in a folder sits in from the edge a step per level, its highlight too, so it reads as
-    /// inside the folder.
+    /// inside the folder, and in a little more from both sides for each card it's in. It draws its
+    /// pieces of those cards (and its own, for a folder's header): the rows' pieces meet across the
+    /// gaps between them, so together each card is one rounded surface.
     /// </summary>
-    private static void IndentFolderRow(DependencyObject? container, object row)
+    private void IndentFolderRow(DependencyObject? container, object row)
     {
         if (container is not ListViewItem item) return;
-        var depth = row switch { BrowserTab tab => tab.Depth, TabFolder folder => folder.Depth, LiveNote note => note.Depth, _ => 0 };
-        item.Margin = new Thickness(depth * BrowserTab.IndentStep, 1, 0, 1);
+        var cards = _folderCardRows.GetValueOrDefault(row) ?? NoCards;
+        var depth = DepthOf(row);
+        var left = depth * BrowserTab.IndentStep + cards.Inside * CardInset;
+        var right = cards.Inside * CardInset;
+        var bottom = RowGap + cards.Ends * CardRoom;
+        item.Margin = new Thickness(left, RowGap, right, bottom);
         // A live folder's "No open pull requests" is only words: no hover, no click.
         item.IsHitTestVisible = row is not LiveNote { OpensSignIn: false };
+
+        item.ApplyTemplate();
+        if (VisualTreeHelper.GetChildrenCount(item) == 0 || VisualTreeHelper.GetChild(item, 0) is not Grid root) return;
+        // As many pieces as cards, behind the rest of the row, outermost first.
+        var pieces = root.Children.OfType<Border>().Where(b => b.Tag is CardTag).ToList();
+        while (pieces.Count > cards.Pieces.Count)
+        {
+            root.Children.Remove(pieces[^1]);
+            pieces.RemoveAt(pieces.Count - 1);
+        }
+        while (pieces.Count < cards.Pieces.Count)
+        {
+            var piece = new Border { Style = (Style)Application.Current.Resources["FolderCardStyle"], IsHitTestVisible = false };
+            root.Children.Insert(pieces.Count, piece);
+            pieces.Add(piece);
+        }
+
+        for (var i = 0; i < cards.Pieces.Count; i++)
+        {
+            var piece = cards.Pieces[i];
+            var card = pieces[i];
+            card.Tag = new CardTag(piece);
+            // The card's sides: its folder's header's.
+            var cardLeft = piece.Level * (BrowserTab.IndentStep + CardInset);
+            var cardRight = piece.Level * CardInset;
+            var ownHeader = row is TabFolder folder && folder.Depth == piece.Level;
+            var above = ownHeader ? 0 : RowGap;
+            var under = piece.Part switch
+            {
+                CardPart.Bottom => piece.Rank * CardRoom,
+                CardPart.Only or CardPart.Hover => 0,
+                _ => bottom,
+            };
+            card.Margin = new Thickness(-(left - cardLeft), -above, -(right - cardRight), -under);
+            card.CornerRadius = piece.Part switch
+            {
+                CardPart.Top => new CornerRadius(CardRadius, CardRadius, 0, 0),
+                CardPart.Bottom => new CornerRadius(0, 0, CardRadius, CardRadius),
+                CardPart.Only or CardPart.Hover => new CornerRadius(CardRadius),
+                _ => new CornerRadius(0),
+            };
+            card.BorderThickness = piece.Part switch
+            {
+                CardPart.Top => new Thickness(1, 1, 1, 0),
+                CardPart.Bottom => new Thickness(1, 0, 1, 1),
+                CardPart.Only or CardPart.Hover => new Thickness(1),
+                _ => new Thickness(1, 0, 1, 0),
+            };
+            card.Visibility = piece.Part != CardPart.Hover || row == _hoveredFolder ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private static T? FindNamed<T>(DependencyObject parent, string name) where T : FrameworkElement
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T { Name: var n } match && n == name) return match;
+            if (FindNamed<T>(child, name) is { } found) return found;
+        }
+        return null;
     }
 
     /// <summary>A tab came to the front: in a closed folder, it stays under the folder's header.</summary>
@@ -76,8 +171,13 @@ public sealed partial class MainWindow
 
     private void ToggleFolder(TabFolder folder)
     {
-        _folderTree.Toggle(folder, _active);
-        RefreshFolderRows();
+        HideFolderPreview();
+        // As Dia's groups: the card's bottom edge comes up over its tabs, or goes down to show them (FolderMotion.cs).
+        if (!AnimateFolder(folder))
+        {
+            _folderTree.Toggle(folder, _active);
+            RefreshFolderRows();
+        }
         SaveSessionSoon();
     }
 
@@ -267,9 +367,58 @@ public sealed partial class MainWindow
 
     private static TabFolder? FolderOf(object sender) => (sender as FrameworkElement)?.Tag as TabFolder;
 
+    /// <summary>
+    /// A folder's right-click menu, grouped as Arc's: what goes in it and its links; its name and icon;
+    /// opening and closing them all; then closing its tabs and deleting it. A live folder's tabs come
+    /// from GitHub, not from you: it's refreshed and shown there, and says what it shows, instead.
+    /// </summary>
+    private void FolderMenu_Opening(object? sender, object e)
+    {
+        if (sender is not MenuFlyout menu) return;
+        menu.Items.Clear();
+        if (menu.Target is not FrameworkElement { Tag: TabFolder folder }) return;
+
+        // Each item carries the folder, as the handlers expect.
+        MenuFlyoutItem Item(string text, RoutedEventHandler click)
+        {
+            var item = new MenuFlyoutItem { Text = text, Tag = folder };
+            item.Click += click;
+            return item;
+        }
+
+        var copyLinks = Item("Copy all links", FolderCopyLinks_Click);
+        var expand = new MenuFlyoutItemBase?[] { Item("Expand all folders", FolderExpandAll_Click), Item("Collapse all folders", FolderCollapseAll_Click) };
+        var ending = new MenuFlyoutItemBase?[] { Item("Close all tabs", FolderCloseAll_Click), Item("Delete folder", FolderDelete_Click) };
+
+        if (folder.Live is { } live)
+            FillMenu(menu,
+                [Item("Refresh", LiveFolderRefresh_Click), Item("Open on GitHub", LiveFolderOpenSource_Click), copyLinks],
+                LiveMenuItems(folder, live),
+                [Item("Rename", FolderRename_Click)],
+                expand,
+                ending);
+        else
+            FillMenu(menu,
+                [Item("New tab", FolderNewTab_Click), Item("New subfolder", FolderNewSubfolder_Click), copyLinks],
+                [Item("Rename", FolderRename_Click), Item("Change icon", FolderIcon_Click)],
+                expand,
+                ending);
+    }
+
     private void FolderRename_Click(object sender, RoutedEventArgs e)
     {
         if (FolderOf(sender) is { } folder) BeginRename(folder);
+    }
+
+    /// <summary>Change icon…: the picker beside the folder's row.</summary>
+    private void FolderIcon_Click(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is not { } folder || FolderList.ContainerFromItem(folder) is not FrameworkElement row) return;
+        ShowIconPicker(row, folder.Icon, "Use folder icon", icon =>
+        {
+            folder.Icon = icon;
+            SaveSessionSoon();
+        });
     }
 
     private void FolderNewSubfolder_Click(object sender, RoutedEventArgs e)
@@ -289,13 +438,177 @@ public sealed partial class MainWindow
 
     private void FolderCollapseAll_Click(object sender, RoutedEventArgs e) => SetAllExpanded(false);
 
-    /// <summary>Unloads every tab in it: their pages close, their rows stay.</summary>
+    /// <summary>Unloads every tab in it: their pages close, their rows stay. Its menu's, and its header's ×.</summary>
     private async void FolderCloseAll_Click(object sender, RoutedEventArgs e)
     {
         if (FolderOf(sender) is not { } folder) return;
         if (!await MayLeaveAsync(folder.AllTabs.Cast<BrowserTab>())) return;
         foreach (var tab in folder.AllTabs.Cast<BrowserTab>().ToList()) UnloadTab(tab);
         RefreshFolderRows();
+    }
+
+    // ───────────────────────── Hovering a header ─────────────────────────
+
+    /// <summary>
+    /// Its × shows, as Dia's groups' does. A closed folder, held a moment,
+    /// shows what's in it beside the sidebar.
+    /// </summary>
+    private void FolderHeader_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not Grid { Tag: TabFolder folder } header) return;
+        if (header.Children.OfType<Button>().FirstOrDefault() is { } close)
+        {
+            close.Visibility = Visibility.Visible;
+            close.Opacity = 1;
+        }
+        // Closed, it shows its card, as Dia's groups do.
+        _hoveredFolder = folder;
+        IndentFolderRow(FolderList.ContainerFromItem(folder), folder);
+        if (!folder.IsExpanded && !folder.IsRenaming && _dragTab is null) ShowFolderPreviewSoon(folder);
+    }
+
+    // The folder whose header the pointer's on: closed, its card shows (IndentFolderRow).
+    private TabFolder? _hoveredFolder;
+
+    private void FolderHeader_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is Grid { Tag: TabFolder folder } && folder == _hoveredFolder)
+        {
+            _hoveredFolder = null;
+            IndentFolderRow(FolderList.ContainerFromItem(folder), folder);
+        }
+        if (sender is Grid header && header.Children.OfType<Button>().FirstOrDefault() is { } close) close.Opacity = 0;
+        // Not yet shown: passing over it on the way somewhere else shows nothing. Shown, it stays while
+        // the pointer goes over to it (FlyoutShowMode.TransientWithDismissOnPointerMoveAway).
+        _folderPreviewTimer?.Stop();
+    }
+
+    /// <summary>The name takes the room there is, short of its chevron and the ×, and trims to fit.</summary>
+    private void FolderHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // The name's column (the emoji's is the first): it gives way so the × always fits.
+        if (sender is not Grid header || header.Children.OfType<TextBlock>().FirstOrDefault(t => Grid.GetColumn(t) == 1) is not { } name) return;
+        // Icon, chevron and × with the gaps between: 18 + 10 + 24, and four gaps of the header's spacing.
+        name.MaxWidth = Math.Max(0, e.NewSize.Width - 18 - 10 - 24 - 4 * header.ColumnSpacing);
+    }
+
+    // A closed folder's contents, beside the sidebar while its header's hovered (ShowFolderPreview).
+    private MenuFlyout? _folderPreview;
+    private DispatcherQueueTimer? _folderPreviewTimer;
+    private TabFolder? _folderPreviewFor;
+    // Long enough that passing over a header on the way past shows nothing.
+    private const int FolderPreviewDelayMs = 250;
+
+    private void ShowFolderPreviewSoon(TabFolder folder)
+    {
+        _folderPreviewFor = folder;
+        if (_folderPreviewTimer is null)
+        {
+            _folderPreviewTimer = DispatcherQueue.CreateTimer();
+            _folderPreviewTimer.Interval = TimeSpan.FromMilliseconds(FolderPreviewDelayMs);
+            _folderPreviewTimer.IsRepeating = false;
+            _folderPreviewTimer.Tick += (_, _) =>
+            {
+                if (_folderPreviewFor is { IsExpanded: false } shown) ShowFolderPreview(shown);
+            };
+        }
+        _folderPreviewTimer.Stop();
+        _folderPreviewTimer.Start();
+    }
+
+    /// <summary>
+    /// A closed folder's contents in a list beside its header, as Dia shows a closed group's: its tabs,
+    /// its folders (each opening its own list beside it), and New tab at the end. Pick a tab to go to
+    /// it (it shows under the header while it's in front). Goes when the pointer moves away from it.
+    /// </summary>
+    private void ShowFolderPreview(TabFolder folder)
+    {
+        // Still on screen: the list may have changed while the pointer rested on it.
+        // Not over the command bar, which is where the keyboard is.
+        if (_commandBarOpen) return;
+        if (FolderList.ContainerFromItem(folder) is not FrameworkElement { IsLoaded: true, XamlRoot: not null } row) return;
+        // A new one each time: one still open or on its way out doesn't take new content or a new place
+        // (XAML failed on a reused one and took Drift down). Inside the window, not a window of its own:
+        // the command bar opened from one of those took Drift down once you typed in it.
+        _folderPreview?.Hide();
+        var menu = _folderPreview = new MenuFlyout();
+        // What was picked happens once the list has gone, so the keyboard isn't moved while it's closing.
+        Action? picked = null;
+        var items = FolderPreviewItems(folder, action => picked = action);
+        // A live folder with nothing in it just now: nothing to list.
+        if (items.Count == 0) return;
+        foreach (var item in items) menu.Items.Add(item);
+        // Open, it keeps a sidebar that's floating over the page from going away.
+        menu.Opened += SidebarMenu_Opened;
+        menu.Closed += SidebarMenu_Closed;
+        menu.Closed += (_, _) =>
+        {
+            if (picked is { } action) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => action());
+            picked = null;
+        };
+        try
+        {
+            menu.ShowAt(row, new FlyoutShowOptions
+            {
+                Placement = FlyoutPlacementMode.RightEdgeAlignedTop,
+                ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway,
+            });
+        }
+        catch (Exception error)
+        {
+            // Nowhere to show it just now: the folder's still there to click.
+            App.LogCrash(error);
+            _folderPreview = null;
+        }
+    }
+
+    /// <summary>
+    /// A folder's list: its tabs and folders in sidebar order, then New tab into it. Not into a live
+    /// folder, whose tabs come from where it's following (as its own menu has no New tab).
+    /// </summary>
+    private List<MenuFlyoutItemBase> FolderPreviewItems(TabFolder folder, Action<Action> pick)
+    {
+        var items = new List<MenuFlyoutItemBase>();
+        foreach (var child in folder.Children)
+        {
+            switch (child)
+            {
+                case TabFolder sub:
+                    var subItem = new MenuFlyoutSubItem { Text = sub.Name, Icon = FolderIconOf(sub) };
+                    foreach (var item in FolderPreviewItems(sub, pick)) subItem.Items.Add(item);
+                    items.Add(subItem);
+                    break;
+                case BrowserTab tab:
+                    IconElement icon = tab.Favicon is { } favicon
+                        ? new ImageIcon { Source = favicon }
+                        : new FontIcon { Glyph = "\uE774" };
+                    var tabItem = new MenuFlyoutItem { Text = tab.Title, Icon = icon };
+                    tabItem.Click += (_, _) => pick(() => Activate(tab));
+                    items.Add(tabItem);
+                    break;
+            }
+        }
+        if (folder.IsLive) return items;
+        var newTab = new MenuFlyoutItem { Text = "New tab", Icon = new FontIcon { Glyph = "\uE710" } };
+        newTab.Click += (_, _) => pick(() =>
+        {
+            OpenCommandBar(newTab: true, animate: true);
+            _commandFolder = folder;
+        });
+        items.Add(newTab);
+        return items;
+    }
+
+    /// <summary>A folder's icon in the list: its emoji or symbol, else a folder.</summary>
+    private static IconElement FolderIconOf(TabFolder folder) => folder.HasEmoji
+        ? new FontIcon { Glyph = folder.Emoji, FontFamily = new FontFamily("Segoe UI Emoji") }
+        : new FontIcon { Glyph = folder.Glyph, FontFamily = Ui.IconFont(folder.Glyph) };
+
+    private void HideFolderPreview()
+    {
+        _folderPreviewTimer?.Stop();
+        _folderPreviewFor = null;
+        _folderPreview?.Hide();
     }
 
     private void FolderCopyLinks_Click(object sender, RoutedEventArgs e)
@@ -352,35 +665,6 @@ public sealed partial class MainWindow
     }
 
     private void NewFolder_Click(object sender, RoutedEventArgs e) => NewFolder(null);
-
-    /// <summary>A tab's menu: fills its "Add to folder" submenu with the folders there are now.</summary>
-    private void TabMenu_Opening(object? sender, object e)
-    {
-        if (sender is not MenuFlyout menu) return;
-        ShowSplitMenuItems(menu);
-        ShowBookmarkMenuItem(menu);
-        foreach (var sub in menu.Items.OfType<MenuFlyoutSubItem>().Where(s => s.Tag is BrowserTab))
-        {
-            var tab = (BrowserTab)sub.Tag;
-            sub.Items.Clear();
-            var add = new MenuFlyoutItem { Text = "New folder", Icon = new FontIcon { Glyph = "" } };
-            add.Click += (_, _) => NewFolder(null, tab);
-            sub.Items.Add(add);
-            if (_folderTree.Folders.Count > 0) sub.Items.Add(new MenuFlyoutSeparator());
-            foreach (var folder in _folderTree.AllFolders.Where(f => !f.IsLive))
-            {
-                var item = new MenuFlyoutItem
-                {
-                    Text = folder.Path,
-                    Icon = new FontIcon { Glyph = "" },
-                    IsEnabled = tab.Folder != folder,
-                };
-                var target = folder;
-                item.Click += (_, _) => MoveTabToFolder(tab, target, null);
-                sub.Items.Add(item);
-            }
-        }
-    }
 
     /// <summary>A folder tab's "Remove from folder": it becomes an ordinary pinned tab.</summary>
     private void RemoveFromFolder_Click(object sender, RoutedEventArgs e)

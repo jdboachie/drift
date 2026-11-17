@@ -7,6 +7,7 @@ using Drift.Models;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 
 namespace Drift;
@@ -17,8 +18,9 @@ namespace Drift;
 /// <list type="bullet">
 /// <item>Made for you the first time you make a pull request (a repo's comparison page, then the
 /// pull request), once; or from the menu's New pull requests folder.</item>
-/// <item>Asked of GitHub's search every five minutes, in a hidden view signed in as your tabs are
-/// (Integrations.cs), and soon after you do something on github.com.</item>
+/// <item>Asked of GitHub's search in a hidden view signed in as your tabs are (Integrations.cs): every
+/// minute while Drift's in front, every five behind, and soon after you do something on github.com
+/// (Core/LiveSchedule.cs).</item>
 /// <item>New ones go at the top, with a dot until opened; under a closed folder's header they show
 /// anyway. Finished ones go, unless they're in front.</item>
 /// <item>Its tabs close as pinned tabs do (unloaded, then closed). One you close, or drag out, stays
@@ -27,14 +29,11 @@ namespace Drift;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private static readonly TimeSpan LiveRefresh = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan LiveRetry = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan LiveSoonest = TimeSpan.FromSeconds(60);
-
     private DispatcherQueueTimer? _liveTimer;
-    private DateTimeOffset _liveNextFetch;
-    private DateTimeOffset _liveFetched;
+    private readonly LiveSchedule _liveSchedule = new();
     private bool _liveFetching;
+    // Drift's window is the one in front: asked more often (LiveSchedule).
+    private bool _liveInFront = true;
 
     /// <summary>The pull requests folder has been made for you once (session.json), so it isn't again.</summary>
     private bool _pullsFolderMade;
@@ -51,6 +50,13 @@ public sealed partial class MainWindow
         _liveTimer.Interval = TimeSpan.FromSeconds(10);
         _liveTimer.Tick += (_, _) => Safely(LiveTick);
         _liveTimer.Start();
+        Activated += (_, e) =>
+        {
+            _liveInFront = e.WindowActivationState != WindowActivationState.Deactivated;
+            if (!_liveInFront) return;
+            _liveSchedule.CameToFront(DateTimeOffset.Now);
+            Safely(LiveTick);
+        };
         LiveTick();
     }
 
@@ -64,7 +70,7 @@ public sealed partial class MainWindow
             return;
         }
         if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized }) return;
-        if (DateTimeOffset.Now >= _liveNextFetch && !_liveFetching) _ = FetchPullsAsync();
+        if (!_liveFetching && _liveSchedule.Due(DateTimeOffset.Now, _liveInFront)) _ = FetchPullsAsync();
     }
 
     /// <summary>A tab went from one page to another: a pull request made, or something done on GitHub.</summary>
@@ -73,13 +79,15 @@ public sealed partial class MainWindow
         if (_private || !Uri.TryCreate(to, UriKind.Absolute, out var now)
             || !string.Equals(now.Host, GitHubPulls.Host, StringComparison.OrdinalIgnoreCase)) return;
         Uri.TryCreate(from, UriKind.Absolute, out var before);
-        if (!_pullsFolderMade && !LiveFolders.Any() && GitHubPulls.MadePullRequest(before, now))
+        if (GitHubPulls.MadePullRequest(before, now))
         {
-            NewPullsFolder();
+            if (!_pullsFolderMade && !LiveFolders.Any()) NewPullsFolder();
+            // Asked again as GitHub's search catches up with it.
+            _liveSchedule.Acted(DateTimeOffset.Now);
             return;
         }
         // A review, a merge, signing in: asked again soon.
-        _liveNextFetch = Min(_liveNextFetch, _liveFetched + LiveSoonest);
+        _liveSchedule.Visited(DateTimeOffset.Now);
     }
 
     private TabFolder NewPullsFolder()
@@ -89,7 +97,7 @@ public sealed partial class MainWindow
         _pullsFolderMade = true;
         RefreshFolderRows();
         SaveSessionSoon();
-        _liveNextFetch = DateTimeOffset.MinValue;
+        _liveSchedule.Now();
         StartLiveFolders();
         LiveTick();
         return folder;
@@ -102,11 +110,76 @@ public sealed partial class MainWindow
 
     private void LiveFolderRefresh_Click(object sender, RoutedEventArgs e)
     {
-        _liveNextFetch = DateTimeOffset.MinValue;
+        _liveSchedule.Now();
         LiveTick();
     }
 
     private void LiveFolderOpenSource_Click(object sender, RoutedEventArgs e) => OpenInNewTab(GitHubPulls.Pulls);
+
+    // ---- Its menu: when it was checked, and what it shows ----
+
+    private static readonly (string Query, string Label)[] LiveSearchLabels =
+    [
+        ("author:@me", "Made by me"),
+        ("assignee:@me", "Assigned to me"),
+        ("review-requested:@me", "Waiting for my review"),
+        ("mentions:@me", "Mentioning me"),
+    ];
+
+    /// <summary>A live folder's menu: when it was last checked, and what it shows (Show ›, Repositories ›).</summary>
+    private List<MenuFlyoutItemBase> LiveMenuItems(TabFolder folder, LiveSource live)
+    {
+        var items = new List<MenuFlyoutItemBase>
+        {
+            new MenuFlyoutItem { Text = LiveFolder.Checked(live.Checked, DateTimeOffset.Now), IsEnabled = false },
+        };
+
+        var show = new List<MenuFlyoutItemBase>();
+        var on = LiveFolder.Searches(live);
+        foreach (var (query, label) in LiveSearchLabels)
+        {
+            var isOn = on.Contains(query);
+            // One search stays on: a folder that asks for nothing would just empty.
+            var item = new ToggleMenuFlyoutItem { Text = label, IsChecked = isOn, IsEnabled = !isOn || on.Count > 1 };
+            item.Click += (_, _) => ChangeLive(folder, () =>
+            {
+                if (isOn) live.Off.Add(query);
+                else live.Off.Remove(query);
+            });
+            show.Add(item);
+        }
+        show.Add(new MenuFlyoutSeparator());
+        var drafts = new ToggleMenuFlyoutItem { Text = "Include drafts", IsChecked = live.Drafts };
+        drafts.Click += (_, _) => ChangeLive(folder, () => live.Drafts = !live.Drafts);
+        show.Add(drafts);
+        items.Add(Submenu("Show", show));
+
+        // The ones in the last answer, and any hidden (which aren't in it, being hidden).
+        var repos = new List<MenuFlyoutItemBase>();
+        var all = live.Repos.Concat(live.HiddenRepos).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var repo in all)
+        {
+            var shown = !live.HiddenRepos.Contains(repo);
+            var item = new ToggleMenuFlyoutItem { Text = repo, IsChecked = shown };
+            item.Click += (_, _) => ChangeLive(folder, () =>
+            {
+                if (shown) live.HiddenRepos.Add(repo);
+                else live.HiddenRepos.Remove(repo);
+            });
+            repos.Add(item);
+        }
+        items.Add(Submenu("Repositories", repos));
+        return items;
+    }
+
+    /// <summary>What a live folder shows changed: kept, and it's asked again now.</summary>
+    private void ChangeLive(TabFolder folder, Action change)
+    {
+        change();
+        SaveSessionSoon();
+        _liveSchedule.Now();
+        LiveTick();
+    }
 
     /// <summary>A pull request's page title, in its live folder: just the pull request's.</summary>
     private static string LiveTitle(BrowserTab tab, string title) =>
@@ -130,7 +203,7 @@ public sealed partial class MainWindow
             var result = await SearchPullsAsync(core);
             if (result is not { } found)
             {
-                _liveNextFetch = DateTimeOffset.Now + LiveRetry;
+                _liveSchedule.Fetched(DateTimeOffset.Now, answered: false, doubted: false);
                 return;
             }
             var doubted = false;
@@ -138,24 +211,26 @@ public sealed partial class MainWindow
             {
                 folder.NeedsSignIn = !found.SignedIn;
                 if (!found.SignedIn) continue;
-                if (LiveFolder.Believe(folder.Live!, found.Pulls)) ApplyPulls(folder, found.Pulls);
+                var live = folder.Live!;
+                live.Checked = DateTimeOffset.Now;
+                live.Repos = LiveFolder.Repos(found.Pulls);
+                if (LiveFolder.Believe(live, found.Pulls)) ApplyPulls(folder, LiveFolder.Shown(live, found.Pulls));
                 else doubted = true;
             }
             // Its note (signed out, or nothing in it) may have changed.
             RefreshFolderRows();
             // An answer with nothing in it is asked again soon before it's believed.
-            _liveNextFetch = DateTimeOffset.Now + (doubted ? LiveSoonest : LiveRefresh);
+            _liveSchedule.Fetched(DateTimeOffset.Now, answered: true, doubted);
         }
         catch (Exception error)
         {
             App.LogCrash(error);
-            _liveNextFetch = DateTimeOffset.Now + LiveRetry;
+            _liveSchedule.Fetched(DateTimeOffset.Now, answered: false, doubted: false);
             CloseHiddenSite(GitHubPulls.Host);
         }
         finally
         {
             _liveFetching = false;
-            _liveFetched = DateTimeOffset.Now;
         }
     }
 
@@ -166,7 +241,9 @@ public sealed partial class MainWindow
     private async Task<(bool SignedIn, List<PullRequest> Pulls)?> SearchPullsAsync(CoreWebView2 core)
     {
         var lists = new List<List<PullRequest>>();
-        foreach (var who in GitHubPulls.Queries)
+        // The searches its menu has on (one live folder at most: NewPullsFolder).
+        var searches = LiveFolders.FirstOrDefault()?.Live is { } live ? LiveFolder.Searches(live) : GitHubPulls.Queries;
+        foreach (var who in searches)
         {
             var list = new List<PullRequest>();
             for (var page = 1; page <= GitHubPulls.MaxPages; page++)

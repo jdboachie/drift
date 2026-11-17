@@ -11,6 +11,13 @@ public static class Ui
 
     public static Visibility Hidden(bool hidden) => hidden ? Visibility.Collapsed : Visibility.Visible;
 
+    /// <summary>Drift's own icons (Ionicons, the picker's symbols), from the font it carries.</summary>
+    public static readonly Microsoft.UI.Xaml.Media.FontFamily DriftIcons = new("ms-appx:///Assets/DriftIcons.ttf#Drift Icons");
+
+    /// <summary>The font a symbol is in: Drift's own, or Segoe Fluent Icons (Windows' symbols, and older picks).</summary>
+    public static Microsoft.UI.Xaml.Media.FontFamily IconFont(string icon) =>
+        CustomIcon.IsDriftSymbol(icon) ? DriftIcons : (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"];
+
     /// <summary>
     /// Fades an element's opacity to a value, on the strong ease-out, about 150ms: what's left of a
     /// slide or spring with Windows' animation effects turned off. Less motion, still some feedback.

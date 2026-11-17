@@ -101,10 +101,16 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
 
     public double ContentOpacity => _isUnloaded ? 0.5 : 1;
 
-    /// <summary>A pinned row's hover button: "−" unloads it; once unloaded, "×" removes it.</summary>
-    public string PinnedActionGlyph => _isUnloaded ? CloseGlyph : UnloadGlyph;
+    /// <summary>
+    /// A pinned row's hover button: "−" unloads it; once unloaded, "×" removes it. While it has a page
+    /// in Peek, "×", as that goes first (TabCloses).
+    /// </summary>
+    public string PinnedActionGlyph => _isUnloaded || _hasPeek ? CloseGlyph : UnloadGlyph;
 
-    public string PinnedActionName => _isUnloaded ? "Close tab" : "Unload tab";
+    public string PinnedActionName => TabCloses.Name(_hasPeek, pinned: true, _isUnloaded);
+
+    /// <summary>A regular row's × (and a split half's): the tab, or first its Peek.</summary>
+    public string CloseName => TabCloses.Name(_hasPeek, pinned: false, unloaded: false);
 
     public TabPlace Place { get; set; }
 
@@ -285,30 +291,79 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
         OnPropertyChanged(nameof(AudioName));
     }
 
+    /// <summary>What its row says: the name you gave it (Rename…), else its page's title.</summary>
     public string Title
     {
-        get => _title;
+        get => _name ?? _title;
         set
         {
             if (_title == value) return;
             _title = value;
+            if (_name is null) OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Its page's own title, whatever it's been named.</summary>
+    public string PageTitle => _title;
+
+    private string? _name;
+
+    /// <summary>The name you gave it (its menu's Rename…); null for its page's title.</summary>
+    public string? Name
+    {
+        get => _name;
+        set
+        {
+            value = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+            if (_name == value) return;
+            _name = value;
+            OnPropertyChanged(nameof(Title));
+        }
+    }
+
+    private bool _isRenaming;
+
+    /// <summary>Its title is being edited in place (Rename…).</summary>
+    public bool IsRenaming
+    {
+        get => _isRenaming;
+        set
+        {
+            if (_isRenaming == value) return;
+            _isRenaming = value;
             OnPropertyChanged();
         }
     }
 
+    /// <summary>Its icon: the one you chose (Change icon…), else its site's.</summary>
     public BitmapImage? Favicon
     {
-        get => _favicon;
+        get => _iconImage ?? _favicon;
         set
         {
             _favicon = value;
+            if (_iconImage is not null) return;
             OnPropertyChanged();
             OnPropertyChanged(nameof(PlaceholderVisibility));
         }
     }
 
+    private BitmapImage? _iconImage;
+
+    /// <summary>The icon you chose (an emoji, or a symbol: CustomIcon); null for its site's.</summary>
+    public string? Icon { get; private set; }
+
+    /// <summary>Its own icon, drawn (MainWindow's IconPicker.cs); null for its site's again.</summary>
+    public void SetIcon(string? icon, BitmapImage? image)
+    {
+        Icon = image is null ? null : icon;
+        _iconImage = image;
+        OnPropertyChanged(nameof(Favicon));
+        OnPropertyChanged(nameof(PlaceholderVisibility));
+    }
+
     /// <summary>Shows the globe glyph until the site's favicon loads.</summary>
-    public Visibility PlaceholderVisibility => _favicon is null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility PlaceholderVisibility => Favicon is null ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>True while a page this tab opened is showing in Peek.</summary>
     public bool HasPeek
@@ -324,6 +379,9 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
             OnPropertyChanged(nameof(PeekBadgeVisibility));
             OnPropertyChanged(nameof(RowButtonMargin));
             OnPropertyChanged(nameof(TitleEndMargin));
+            OnPropertyChanged(nameof(PinnedActionGlyph));
+            OnPropertyChanged(nameof(PinnedActionName));
+            OnPropertyChanged(nameof(CloseName));
         }
     }
 

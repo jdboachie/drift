@@ -1,0 +1,173 @@
+"""Builds Drift's icon picker assets from Ionicons (MIT) and gemoji (MIT).
+
+Usage: python -I build_icons.py <ionicons svg dir> <gemoji emoji.json> <Drift project dir>
+Writes Assets/DriftIcons.ttf, Assets/emoji.txt and Core/PickerIcons.cs.
+"""
+import json
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+from fontTools.fontBuilder import FontBuilder
+from fontTools.pens.cu2quPen import Cu2QuPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.pens.ttGlyphPen import TTGlyphPen
+from fontTools.svgLib.path import parse_path
+
+svg_dir, gemoji_path, project = sys.argv[1:4]
+
+# (Ionicons name, words to find it by). Arc's own set first, in its order, then the rest.
+ICONS = [
+    ("star", "star favourite favorite"),
+    ("bookmark", "bookmark save"),
+    ("heart", "heart love like"),
+    ("flash", "flash lightning bolt power"),
+    ("triangle", "triangle shape"),
+    ("medical", "asterisk medical star"),
+    ("notifications", "bell notifications alert"),
+    ("bulb", "bulb idea light"),
+    ("chatbubble", "chat message bubble talk"),
+    ("people", "people team group friends"),
+    ("hammer", "hammer build tool"),
+    ("water", "drop water"),
+    ("ellipse", "circle dot"),
+    ("moon", "moon night"),
+    ("planet", "planet space"),
+    ("leaf", "leaf nature plant"),
+    ("cloud", "cloud weather"),
+    ("paw", "paw pet animal"),
+    ("construct", "tools wrench construct"),
+    ("airplane", "plane airplane travel flight"),
+    ("musical-note", "music note song"),
+    ("videocam", "video camera film"),
+    ("code-slash", "code developer programming"),
+    ("skull", "skull"),
+    ("home", "home house"),
+    ("briefcase", "briefcase work job"),
+    ("folder", "folder files"),
+    ("book", "book reading"),
+    ("school", "school learning education"),
+    ("mail", "mail email inbox"),
+    ("calendar", "calendar date schedule"),
+    ("cart", "cart shopping"),
+    ("bag-handle", "bag shopping"),
+    ("wallet", "wallet money finance"),
+    ("game-controller", "game controller gaming play"),
+    ("color-palette", "palette art paint design"),
+    ("camera", "camera photo"),
+    ("globe", "globe world web"),
+    ("rocket", "rocket launch"),
+    ("trophy", "trophy award win"),
+    ("flag", "flag"),
+    ("pin", "pin location map"),
+    ("lock-closed", "lock private secure"),
+    ("flask", "flask science lab"),
+    ("bug", "bug debug"),
+    ("cafe", "coffee cafe"),
+    ("pizza", "pizza food"),
+    ("fitness", "fitness gym health"),
+    ("football", "football sport ball"),
+]
+FIRST = 0xF0000  # Supplementary private use: apart from Segoe Fluent Icons' characters.
+UPM, ASCENT = 512, 448
+
+
+def shape_paths(svg_path):
+    """Each shape's path data; circles and rects as paths."""
+    root = ET.parse(svg_path).getroot()
+    out = []
+    for el in root.iter():
+        tag = el.tag.split('}')[-1]
+        if tag == 'path':
+            out.append(el.get('d'))
+        elif tag == 'circle':
+            cx, cy, r = (float(el.get(k)) for k in ('cx', 'cy', 'r'))
+            out.append(f"M{cx - r} {cy}a{r} {r} 0 1 0 {2 * r} 0a{r} {r} 0 1 0 {-2 * r} 0z")
+        elif tag == 'ellipse':
+            cx, cy, rx, ry = (float(el.get(k)) for k in ('cx', 'cy', 'rx', 'ry'))
+            out.append(f"M{cx - rx} {cy}a{rx} {ry} 0 1 0 {2 * rx} 0a{rx} {ry} 0 1 0 {-2 * rx} 0z")
+        elif tag == 'rect':
+            x, y, w, h = (float(el.get(k, 0)) for k in ('x', 'y', 'width', 'height'))
+            out.append(f"M{x} {y}h{w}v{h}h{-w}z")
+        elif tag not in ('svg', 'title', 'g', 'defs'):
+            raise SystemExit(f"{svg_path}: unhandled <{tag}>")
+    return out
+
+
+glyph_order = ['.notdef']
+cmap, glyphs, advances = {}, {}, {}
+empty = TTGlyphPen(None)
+glyphs['.notdef'] = empty.glyph()
+advances['.notdef'] = (UPM, 0)
+for i, (name, _) in enumerate(ICONS):
+    gname = 'ion_' + name.replace('-', '_')
+    pen = TTGlyphPen(None)
+    flip = TransformPen(Cu2QuPen(pen, max_err=0.5, reverse_direction=True), (1, 0, 0, -1, 0, ASCENT))
+    for d in shape_paths(f"{svg_dir}/{name}.svg"):
+        parse_path(d, flip)
+    glyphs[gname] = pen.glyph()
+    advances[gname] = (UPM, 0)
+    glyph_order.append(gname)
+    cmap[FIRST + i] = gname
+
+fb = FontBuilder(UPM, isTTF=True)
+fb.setupGlyphOrder(glyph_order)
+fb.setupCharacterMap(cmap)
+fb.setupGlyf(glyphs)
+fb.setupHorizontalMetrics(advances)
+fb.setupHorizontalHeader(ascent=ASCENT, descent=-(UPM - ASCENT))
+fb.setupNameTable({
+    'familyName': 'Drift Icons',
+    'styleName': 'Regular',
+    'version': 'Version 1.0',
+    'licenseDescription': 'Glyphs from Ionicons (https://ionic.io/ionicons), MIT License, Copyright (c) 2015-present Ionic.',
+})
+fb.setupOS2(sTypoAscender=ASCENT, sTypoDescender=-(UPM - ASCENT), usWinAscent=ASCENT, usWinDescent=UPM - ASCENT)
+fb.setupPost()
+fb.save(f"{project}/Assets/DriftIcons.ttf")
+
+# The symbols' table, for the picker and its search.
+lines = [
+    "namespace Drift;",
+    "",
+    "// Generated by build_icons.py from Ionicons (MIT): don't edit by hand.",
+    "public static partial class PickerIcons",
+    "{",
+    "    /// <summary>The picker's symbols, in Drift Icons (Assets/DriftIcons.ttf), with the words they're found by.</summary>",
+    "    public static readonly (string Icon, string Words)[] Symbols =",
+    "    [",
+]
+for i, (name, words) in enumerate(ICONS):
+    lines.append(f'        ("\\U{FIRST + i:08X}", "{words}"),')
+lines += ["    ];", "}", ""]
+open(f"{project}/Core/PickerIcons.Symbols.cs", 'w', encoding='utf-8', newline='\r\n').write('\n'.join(lines))
+
+# Emoji: gemoji's, by category, up to Emoji 15.0 (what Windows 11 draws), without country flags
+# (Windows draws those as letters) or skin tone variants (gemoji lists those as one).
+CATEGORY = {
+    'Smileys & Emotion': 'Smileys',
+    'People & Body': 'People',
+    'Animals & Nature': 'Animals & nature',
+    'Food & Drink': 'Food & drink',
+    'Travel & Places': 'Travel & places',
+    'Activities': 'Activities',
+    'Objects': 'Objects',
+    'Symbols': 'Signs',
+    'Flags': 'Flags',
+}
+out = []
+for e in json.load(open(gemoji_path, encoding='utf-8')):
+    emoji = e['emoji']
+    try:
+        version = float(e.get('unicode_version') or 0)
+    except ValueError:
+        version = 0
+    if version > 15.0:
+        continue
+    if any(0x1F1E6 <= ord(c) <= 0x1F1FF or 0xE0020 <= ord(c) <= 0xE007F for c in emoji):
+        continue
+    words = [e['description']] + e.get('aliases', []) + e.get('tags', [])
+    text = ' '.join(dict.fromkeys(w for w in re.split(r'[\s_:]+', ' '.join(words).lower()) if w))
+    out.append(f"{CATEGORY.get(e['category'], e['category'])}\t{emoji}\t{text}")
+open(f"{project}/Assets/emoji.txt", 'w', encoding='utf-8', newline='\n').write('\n'.join(out) + '\n')
+print(f"icons {len(ICONS)}, emoji {len(out)}")

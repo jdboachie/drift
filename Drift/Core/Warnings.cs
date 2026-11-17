@@ -26,6 +26,19 @@ public static class Warnings
         return new(isPrivate ? "Close this private window?" : "Close Drift?", string.Join("\n", lines), "Close");
     }
 
+    /// <summary>Restarting Drift (to apply a setting), if anything would be lost; null if nothing would. Tabs all come back.</summary>
+    public static Warning? Restart(int downloads, int privateWindows, int unsavedPages)
+    {
+        var lines = new List<string>();
+        if (downloads > 0) lines.Add($"{Count(downloads, "download")} will stop.");
+        if (privateWindows == 1) lines.Add("Your private window will close.");
+        else if (privateWindows > 1) lines.Add($"Your {privateWindows} private windows will close.");
+        if (unsavedPages > 0)
+            lines.Add($"{Count(unsavedPages, "page")} {(unsavedPages == 1 ? "has" : "have")} changes that may not be saved.");
+        if (lines.Count == 0) return null;
+        return new("Restart Drift?", string.Join("\n", lines.Prepend("Your tabs come back.")), "Restart");
+    }
+
     /// <summary>Closing pages whose sites say they have unsaved changes; null if none do.</summary>
     public static Warning? LeavePages(IReadOnlyList<string> sites) => sites.Count switch
     {

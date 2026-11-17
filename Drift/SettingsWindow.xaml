@@ -23,6 +23,12 @@
                     <TextBlock Text="General" />
                 </StackPanel>
             </ListViewItem>
+            <ListViewItem Tag="accounts" AutomationProperties.Name="Accounts">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <FontIcon Glyph="&#xE77B;" FontSize="16" />
+                    <TextBlock Text="Accounts" />
+                </StackPanel>
+            </ListViewItem>
             <ListViewItem Tag="tabs" AutomationProperties.Name="Tabs">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <FontIcon Glyph="&#xE737;" FontSize="16" />
@@ -108,6 +114,58 @@
                         </Border>
                     </StackPanel>
 
+                    <!-- Accounts (MicrosoftSignIn.cs): the Windows account, with what you can do about the
+                         Microsoft sites it signs you in to right under it; then the switch, a setting of its own. -->
+                    <StackPanel x:Name="AccountsPage" Spacing="8" Visibility="Collapsed">
+                        <TextBlock Text="Accounts" Style="{StaticResource SettingsTitleStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <Grid Padding="16" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <PersonPicture x:Name="AccountPicture" Width="56" Height="56" VerticalAlignment="Top" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock x:Name="AccountName" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="AccountEmail" Style="{StaticResource SettingsDescriptionStyle}"
+                                               TextTrimming="CharacterEllipsis" Text="Your Windows account" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                                        <Button Content="Use another account"
+                                                AutomationProperties.Name="Sign in with a different Microsoft account"
+                                                ToolTipService.ToolTip="Sign in to Microsoft sites with a different account"
+                                                Click="DifferentAccount_Click" />
+                                        <Button x:Name="SignOutButton" Content="Sign out"
+                                                AutomationProperties.Name="Sign out of Microsoft sites"
+                                                ToolTipService.ToolTip="Sign out of Outlook, Office and other Microsoft sites"
+                                                Click="SignOut_Click" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="SignOutText" Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
+                                               Margin="0,8,0,0" Visibility="Collapsed" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Sign in to Microsoft sites automatically" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="SignInText" Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
+                                               Text="With your Windows account" />
+                                </StackPanel>
+                                <Button x:Name="SignInRestartButton" Grid.Column="1" VerticalAlignment="Center"
+                                        Content="Restart now" Visibility="Collapsed" Click="SignInRestart_Click" />
+                                <ToggleSwitch x:Name="SignInToggle" Grid.Column="2" VerticalAlignment="Center"
+                                              MinWidth="0" OnContent="" OffContent=""
+                                              AutomationProperties.Name="Sign in to Microsoft sites automatically"
+                                              Toggled="SignInToggle_Toggled" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
                     <!-- Tabs -->
                     <StackPanel x:Name="TabsPage" Spacing="8" Visibility="Collapsed">
                         <TextBlock Text="Tabs" Style="{StaticResource SettingsTitleStyle}" />
@@ -128,6 +186,18 @@
                                         <ComboBoxItem Content="Keep all tabs" />
                                         <ComboBoxItem Content="Keep Essentials and pinned" />
                                     </ComboBox>
+                                </Grid>
+                                <Border Style="{StaticResource SettingsDividerStyle}" />
+                                <Grid Style="{StaticResource SettingsRowStyle}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Load Essentials when Drift starts" VerticalAlignment="Center" />
+                                    <ToggleSwitch x:Name="LoadEssentialsToggle" Grid.Column="1" VerticalAlignment="Center"
+                                                  MinWidth="0" OnContent="" OffContent=""
+                                                  AutomationProperties.Name="Load Essentials when Drift starts"
+                                                  Toggled="LoadEssentialsToggle_Toggled" />
                                 </Grid>
                                 <Border Style="{StaticResource SettingsDividerStyle}" />
                                 <Grid Style="{StaticResource SettingsRowStyle}">

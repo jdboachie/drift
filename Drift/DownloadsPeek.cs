@@ -49,9 +49,12 @@ public sealed partial class MainWindow
 
     private void DownloadPeek_PointerEntered(object sender, PointerRoutedEventArgs e) => StopDownloadPeekTimer();
 
+    // A download's menu is open, from the peek: it stays while the menu does (the pointer's on the menu).
+    private bool _downloadMenuOpen;
+
     private void DownloadPeek_PointerExited(object sender, PointerRoutedEventArgs e)
     {
-        if (_downloadDragging) return;
+        if (_downloadDragging || _downloadMenuOpen) return;
         if (_downloadPeekShown) RunDownloadPeekTimer(DownloadPeekLinger, HideDownloadPeek);
         else StopDownloadPeekTimer();
     }
@@ -515,43 +518,50 @@ public sealed partial class MainWindow
     {
         if ((sender as FrameworkElement)?.Tag is not DownloadItem download) return;
         e.Handled = true;
-        var menu = new MenuFlyout();
-        void Add(string text, string glyph, Action click, bool enabled = true)
-        {
-            var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph }, IsEnabled = enabled };
-            item.Click += (_, _) => click();
-            menu.Items.Add(item);
-        }
-        if (download.IsRunning)
-        {
-            Add(download.PauseLabel, download.PauseGlyph, () => Downloads.PauseOrResume(download));
-            Add("Cancel", "", () => Downloads.Cancel(download));
-        }
-        else
-        {
-            Add("Open", "", () => Downloads.Open(download), download.IsOnDisk);
-            Add("Show in folder", "", () => Downloads.ShowInFolder(download), download.IsOnDisk);
-        }
-        if (Uri.TryCreate(download.Url, UriKind.Absolute, out var link) && link.Scheme is "http" or "https")
-            Add("Copy download link", "", () =>
+        var menu = NewMenu();
+        var copy = Uri.TryCreate(download.Url, UriKind.Absolute, out var link) && link.Scheme is "http" or "https"
+            ? Command("Copy download link", () =>
             {
                 var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
                 data.SetText(link.AbsoluteUri);
                 Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
-            });
-        if (!download.IsRunning)
-        {
-            menu.Items.Add(new MenuFlyoutSeparator());
-            Add("Remove from list", "", () =>
-            {
-                Downloads.Remove(download);
-                RefreshDownloads();
-            });
-            if (download.IsOnDisk)
-                Add("Move to Recycle Bin", "", () =>
+            })
+            : null;
+        if (download.IsFinishing) FillMenu(menu, [copy]);
+        else if (download.IsRunning)
+            FillMenu(menu,
+                [Command(download.PauseLabel, () => Downloads.PauseOrResume(download)), Command("Cancel", () => Downloads.Cancel(download))],
+                [copy]);
+        else
+            FillMenu(menu,
+            [
+                Command("Open", () => Downloads.Open(download), download.IsOnDisk),
+                Command("Show in folder", () => Downloads.ShowInFolder(download), download.IsOnDisk),
+            ],
+            [copy],
+            [
+                download.IsOnDisk ? Command("Move to Recycle Bin", () =>
                 {
                     if (Downloads.Recycle(download)) RefreshDownloads();
-                });
+                }) : null,
+                Command("Remove from list", () =>
+                {
+                    Downloads.Remove(download);
+                    RefreshDownloads();
+                }),
+            ]);
+        if (_downloadPeekShown)
+        {
+            menu.Opened += (_, _) =>
+            {
+                _downloadMenuOpen = true;
+                StopDownloadPeekTimer();
+            };
+            menu.Closed += (_, _) =>
+            {
+                _downloadMenuOpen = false;
+                if (_downloadPeekShown) RunDownloadPeekTimer(DownloadPeekLinger, HideDownloadPeek);
+            };
         }
         var options = new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions();
         if (e.TryGetPosition(sender, out var at)) options.Position = at;

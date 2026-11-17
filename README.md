@@ -85,6 +85,15 @@ Same split as Arc: an unmodified engine with your own UI on top.
   the download list and saved passwords, for the last hour, day, week, 4 weeks or all time. Switch
   saving passwords and filling forms on or off (both on: Drift offers to save a password after you
   sign in). The sites you've allowed or blocked something for, with a button to reset each.
+- **Microsoft sign-in**, as in Edge: Outlook, Office, SharePoint and other Microsoft sites sign in
+  with the account you're signed in to Windows with (work or school, or a personal Microsoft
+  account), without a sign-in page. Asked about the first time Drift runs; the first time it
+  happens, a notice says so, with Use a different account and Turn off. Settings › Accounts shows
+  your Windows account (name, email, picture), the switch (it applies when Drift restarts, with
+  Restart now, which keeps every tab), Sign in with a different Microsoft account (Microsoft's
+  account picker) and Sign out of Microsoft sites (their cookies and storage; open Microsoft tabs
+  are unloaded, and you can turn automatic sign-in off at the same time). Private windows aren't
+  signed in.
 - **Address pill**, like Arc's: a padlock at the start on secure pages (a warning on plain `http`
   pages and on a site whose certificate was rejected that you went on to anyway); its tooltip says
   which. While the pointer is in the sidebar, copy link and site settings show at the end (taking
@@ -290,6 +299,7 @@ Under `Drift/`:
 | `PlayerWindow.cs` | The always-on-top window a page floating itself (a Meet call) lives in |
 | `SiteAdBlock.cs` | The site settings panel's ad blocking switch, and the hidden view on uBlock Origin Lite's dashboard that changes a site's filtering level |
 | `Zoom.cs` | The address pill's zoom level, and resetting it |
+| `MicrosoftSignIn.cs` | Signing in to Microsoft sites with the Windows account: the first-run card, noticing the first time (Core/MicrosoftSignIn.cs), another account, signing out, restarting, the Windows account's details |
 | `Split.cs` | Split view: putting two tabs side by side and back, the divider, dropping a tab on the page |
 | `Slides.cs`, `RowDrag.cs` | Rows sliding to their new places, and while a tab's dragged |
 | `Core/` | What can be tested without the UI (folders, slides, drag landings, the library's spring and swipe, history search, which video floats, how an opened Peek grows, the zoom level from a page's pixel ratio); tests in `Drift.Tests` |
@@ -298,6 +308,8 @@ The Peek logic is in `WireTab()`: `NavigationStarting` catches same-tab clicks t
 the site, and `NewWindowRequested` catches `target="_blank"` links.
 
 ## Known gaps (next steps)
+
+Bugs seen in use, with what's known of their cause, are in `Drift/KNOWN-ISSUES.md`.
 
 - The same-site check is approximate (see `SameSite()`); a public-suffix list fixes it.
 - Shortcuts inside pages come from an injected script, so a page that blocks

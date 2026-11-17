@@ -16,4 +16,16 @@ public static class TabCloses
 {
     public static TabClose First(bool hasPeek, bool pinned) =>
         hasPeek ? TabClose.ClosePeek : pinned ? TabClose.Unload : TabClose.Remove;
+
+    /// <summary>
+    /// The row button's name (its tooltip): what pressing it does now. An unloaded pinned tab's
+    /// button takes it out of the sidebar.
+    /// </summary>
+    public static string Name(bool hasPeek, bool pinned, bool unloaded) =>
+        First(hasPeek, pinned && !unloaded) switch
+        {
+            TabClose.ClosePeek => "Close Peek",
+            TabClose.Unload => "Unload tab",
+            _ => "Close tab",
+        };
 }

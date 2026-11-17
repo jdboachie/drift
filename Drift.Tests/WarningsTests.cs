@@ -37,6 +37,19 @@ public class WarningsTests
     }
 
     [Fact]
+    public void Restarting_with_nothing_to_lose_asks_nothing() =>
+        Assert.Null(Warnings.Restart(downloads: 0, privateWindows: 0, unsavedPages: 0));
+
+    [Fact]
+    public void Restarting_says_what_would_be_lost_and_that_tabs_stay()
+    {
+        var ask = Warnings.Restart(downloads: 1, privateWindows: 2, unsavedPages: 1)!;
+        Assert.Equal("Restart Drift?", ask.Title);
+        Assert.Equal("Your tabs come back.\n1 download will stop.\nYour 2 private windows will close.\n1 page has changes that may not be saved.", ask.Body);
+        Assert.Equal("Restart", ask.Action);
+    }
+
+    [Fact]
     public void Leaving_one_page_names_its_site()
     {
         var ask = Warnings.LeavePages(["mail.google.com"])!;

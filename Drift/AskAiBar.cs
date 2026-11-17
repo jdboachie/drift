@@ -311,9 +311,9 @@ public sealed partial class MainWindow
     /// <summary>No taller than the suggestions get in this window: eight rows, or as many as fit.</summary>
     private double AskMaxHeight()
     {
-        var room = Root.ActualHeight - CommandCard.Margin.Top - 52 - 1 - 12 - 16;
-        var fit = Math.Max(3, (int)(room / CommandRowHeight));
-        return Math.Min(CommandRowsMax, fit) * CommandRowHeight + 12;
+        var room = Root.ActualHeight - CommandCard.Margin.Top - CommandFieldHeight - 1 - 2 * CommandResultsPadding - 16;
+        var fit = Math.Max(3, (int)((room + CommandRowGap) / (CommandRowHeight + CommandRowGap)));
+        return Math.Min(CommandRowsMax, fit) * (CommandRowHeight + CommandRowGap) - CommandRowGap + 2 * CommandResultsPadding;
     }
 
     private void UpdateAskModelLabel()

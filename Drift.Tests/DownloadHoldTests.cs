@@ -35,6 +35,16 @@ public class DownloadHoldTests
     }
 
     [Fact]
+    public void Every_byte_in_is_the_last_stage_it_cant_be_stopped_in()
+    {
+        // The engine refuses to cancel then: it's checking the file and saving it under its name.
+        Assert.True(DownloadHold.AllIn(received: 100, total: 100));
+        Assert.False(DownloadHold.AllIn(received: 99, total: 100));
+        Assert.False(DownloadHold.AllIn(received: 100, total: null));
+        Assert.False(DownloadHold.AllIn(received: 0, total: 0));
+    }
+
+    [Fact]
     public void Without_a_known_size_it_waits_for_the_engine()
     {
         Assert.Equal(DownloadSettle.Running, DownloadHold.Check(engineDone: false, received: 100, total: null, fileOnDisk: 100));

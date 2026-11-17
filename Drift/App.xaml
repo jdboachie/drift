@@ -28,6 +28,19 @@
                     <!-- The selected tab or tile: see-through, so the acrylic carries on under it. -->
                     <SolidColorBrush x:Key="DriftSelectedBrush" Color="#B3FFFFFF" />
                     <SolidColorBrush x:Key="DriftActiveBorderBrush" Color="#14000000" />
+                    <!-- The selected tab's edge, as Arc's: faint along the top, darker along the bottom, and
+                         a hairline of shadow under it, so it sits a little above the sidebar. -->
+                    <LinearGradientBrush x:Key="DriftSelectedEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Offset="0" Color="#08000000" />
+                        <GradientStop Offset="0.5" Color="#0A000000" />
+                        <GradientStop Offset="1" Color="#14000000" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="DriftSelectedShadowBrush" Color="#05000000" />
+                    <!-- A folder's card (FolderCard.cs), as Dia's groups: a light frost the sidebar shows through,
+                         with a hairline round it. Translucent rather than acrylic: the sidebar's colour is the window's
+                         own backdrop, which an in-app acrylic can't see through to (it comes out solid). -->
+                    <SolidColorBrush x:Key="DriftFolderCardBrush" Color="#59FFFFFF" />
+                    <SolidColorBrush x:Key="DriftFolderCardBorderBrush" Color="#0F000000" />
                     <SolidColorBrush x:Key="DriftDividerBrush" Color="#1A000000" />
                     <!-- Where a dragged tab will land beside the page (split view). -->
                     <SolidColorBrush x:Key="DriftDropOutlineBrush" Color="#33000000" />
@@ -62,6 +75,14 @@
                     <SolidColorBrush x:Key="DriftActiveBrush" Color="#3A3A3A" />
                     <SolidColorBrush x:Key="DriftSelectedBrush" Color="#2EFFFFFF" />
                     <SolidColorBrush x:Key="DriftActiveBorderBrush" Color="#1FFFFFFF" />
+                    <LinearGradientBrush x:Key="DriftSelectedEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Offset="0" Color="#24FFFFFF" />
+                        <GradientStop Offset="0.5" Color="#14FFFFFF" />
+                        <GradientStop Offset="1" Color="#0AFFFFFF" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="DriftSelectedShadowBrush" Color="#1F000000" />
+                    <SolidColorBrush x:Key="DriftFolderCardBrush" Color="#0EFFFFFF" />
+                    <SolidColorBrush x:Key="DriftFolderCardBorderBrush" Color="#14FFFFFF" />
                     <SolidColorBrush x:Key="DriftDividerBrush" Color="#1FFFFFFF" />
                     <SolidColorBrush x:Key="DriftDropOutlineBrush" Color="#40FFFFFF" />
                     <SolidColorBrush x:Key="DriftIconBrush" Color="#D3D3D3" />
@@ -219,7 +240,8 @@
             <!-- Pinned tab tile. A plain template: the chip and the content are siblings,
                  so the Peek badge in the item template can overhang the corner. -->
             <Style x:Key="PinnedTileStyle" TargetType="GridViewItem">
-                <Setter Property="Margin" Value="4" />
+                <!-- 10 between tiles, as Arc's. -->
+                <Setter Property="Margin" Value="5" />
                 <Setter Property="MinWidth" Value="0" />
                 <Setter Property="MinHeight" Value="0" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -262,7 +284,7 @@
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>
                                 <Border x:Name="Chip"
-                                        CornerRadius="8"
+                                        CornerRadius="6"
                                         BorderThickness="1"
                                         BorderBrush="Transparent"
                                         Background="{ThemeResource DriftTileBrush}" />
@@ -274,21 +296,17 @@
                 </Setter>
             </Style>
 
-            <!-- Regular tab row: transparent until hovered, near-white when active. -->
+            <!-- Regular tab row: transparent until hovered, near-white when active. Arc's measures: 38 tall,
+                 44 apart. -->
             <Style x:Key="TabRowStyle" TargetType="ListViewItem">
-                <Setter Property="Margin" Value="0,1" />
-                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="Margin" Value="0,3" />
+                <Setter Property="MinHeight" Value="38" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="UseSystemFocusVisuals" Value="True" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ListViewItem">
-                            <Grid x:Name="Chip"
-                                  CornerRadius="8"
-                                  BorderThickness="1"
-                                  BorderBrush="Transparent"
-                                  Background="Transparent"
-                                  Padding="10,0,4,0">
+                            <Grid>
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
                                         <VisualState x:Name="Normal" />
@@ -305,27 +323,81 @@
                                         <VisualState x:Name="Selected">
                                             <VisualState.Setters>
                                                 <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
-                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftSelectedEdgeBrush}" />
+                                                <Setter Target="Lift.Opacity" Value="1" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="PointerOverSelected">
                                             <VisualState.Setters>
                                                 <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
-                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftSelectedEdgeBrush}" />
+                                                <Setter Target="Lift.Opacity" Value="1" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="PressedSelected">
                                             <VisualState.Setters>
                                                 <Setter Target="Chip.Background" Value="{ThemeResource DriftSelectedBrush}" />
-                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftActiveBorderBrush}" />
+                                                <Setter Target="Chip.BorderBrush" Value="{ThemeResource DriftSelectedEdgeBrush}" />
+                                                <Setter Target="Lift.Opacity" Value="1" />
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>
-                                <ContentPresenter Content="{TemplateBinding Content}"
-                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  VerticalContentAlignment="Center" />
+                                <!-- The selected tab's shadow: a pixel of it below the card, as Arc's. -->
+                                <Border x:Name="Lift"
+                                        CornerRadius="8"
+                                        Margin="0,1,0,-1"
+                                        Background="{ThemeResource DriftSelectedShadowBrush}"
+                                        IsHitTestVisible="False"
+                                        Opacity="0" />
+                                <Grid x:Name="Chip"
+                                      CornerRadius="8"
+                                      BorderThickness="1"
+                                      BorderBrush="Transparent"
+                                      Background="Transparent"
+                                      Padding="10,0,4,0">
+                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalContentAlignment="Center" />
+                                </Grid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- The half you're on of a split's row, on the row's card (Split.cs): a selected tab's card. -->
+            <Style x:Key="SplitFrontCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource DriftSelectedBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource DriftSelectedEdgeBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+
+            <!-- A piece of a folder's card, made for each row in code (Folders.cs, IndentFolderRow). -->
+            <Style x:Key="FolderCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource DriftFolderCardBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource DriftFolderCardBorderBrush}" />
+            </Style>
+
+            <!-- A folder's header in the folder list (FolderRowStyleSelector): a tab row's layout, without the
+                 hover fill or selection (a closed one shows its card on hover, Folders.cs). -->
+            <Style x:Key="FolderHeaderRowStyle" TargetType="ListViewItem">
+                <Setter Property="Margin" Value="0,3" />
+                <Setter Property="MinHeight" Value="38" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <Grid>
+                                <Grid x:Name="Chip" Background="Transparent" Padding="10,0,4,0">
+                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalContentAlignment="Center" />
+                                </Grid>
                             </Grid>
                         </ControlTemplate>
                     </Setter.Value>
@@ -342,7 +414,7 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
-                            <Grid Background="Transparent" CornerRadius="9">
+                            <Grid Background="Transparent">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </ControlTemplate>
@@ -353,8 +425,8 @@
             <!-- A split's row (Split.cs): no card or padding of its own. Its two halves fill it edge to edge, each
                  with its own hover, and the selected-tab card sits on the half you're on. -->
             <Style x:Key="SplitRowStyle" TargetType="ListViewItem">
-                <Setter Property="Margin" Value="0,1" />
-                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="Margin" Value="0,3" />
+                <Setter Property="MinHeight" Value="38" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="UseSystemFocusVisuals" Value="True" />
                 <Setter Property="Template">

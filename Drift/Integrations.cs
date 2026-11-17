@@ -136,6 +136,15 @@ public sealed partial class MainWindow
         }
     }
 
+    /// <summary>Why a card has nothing to show, with a button to do something about it (Try again, Sign in), if there is one.</summary>
+    private static void ShowCardMessage(FrameworkElement panel, TextBlock text, Button button, string? message, string? action)
+    {
+        text.Text = message ?? "";
+        panel.Visibility = Ui.Shown(message is not null);
+        button.Content = action;
+        button.Visibility = Ui.Shown(message is not null && action is not null);
+    }
+
     // ---- The hover card ----
 
     /// <summary>The card hovering this tab shows, if it's one an integration is following.</summary>

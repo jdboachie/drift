@@ -366,6 +366,49 @@ public class FolderTreeTests
     }
 
     [Fact]
+    public void A_folder_s_icon_and_a_live_folder_s_options_come_back_from_the_session()
+    {
+        var work = _tree.NewFolder("Work");
+        work.Icon = "🚀";
+        var pulls = _tree.NewFolder("Pull Requests");
+        pulls.Live = new LiveSource { Drafts = false };
+        pulls.Live.Off.Add("mentions:@me");
+        pulls.Live.HiddenRepos.Add("jd/old");
+
+        var byId = new FolderTree().Load(_tree.Save());
+
+        Assert.Equal("🚀", byId[work.Id].Icon);
+        var live = byId[pulls.Id].Live!;
+        Assert.False(live.Drafts);
+        Assert.Equal(["mentions:@me"], live.Off);
+        Assert.Equal(["jd/old"], live.HiddenRepos);
+    }
+
+    [Fact]
+    public void A_symbol_chosen_for_an_empty_folder_comes_back_from_the_session_file()
+    {
+        var work = _tree.NewFolder("Work");
+        work.Icon = "";
+        var json = System.Text.Json.JsonSerializer.Serialize(_tree.Save());
+        var saved = System.Text.Json.JsonSerializer.Deserialize<List<SessionFolder>>(json)!;
+        var tree = new FolderTree();
+        var byId = tree.Load(saved);
+        tree.Arrange();
+        Assert.Equal("", byId[work.Id].Icon);
+        Assert.Equal("", tree.Save().Single().Icon);
+    }
+
+    [Fact]
+    public void A_live_folder_shows_drafts_and_every_search_unless_told_otherwise()
+    {
+        var pulls = _tree.NewFolder("Pull Requests");
+        pulls.Live = new LiveSource();
+        var live = new FolderTree().Load(_tree.Save())[pulls.Id].Live!;
+        Assert.True(live.Drafts);
+        Assert.Empty(live.Off);
+    }
+
+    [Fact]
     public void A_folder_cant_be_dropped_into_itself()
     {
         var s = DropScene();

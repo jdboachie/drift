@@ -22,12 +22,24 @@ public sealed partial class ResizeGrip : Grid
 }
 
 /// <summary>
+/// A page's handle (SplitHandles.cs): while it's being dragged to swap the pages, the move pointer,
+/// arrowheads on all four points (the cursor's only settable from inside the element).
+/// </summary>
+public sealed partial class PageHandleButton : Button
+{
+    public void ShowMoving(bool moving) =>
+        ProtectedCursor = moving ? InputSystemCursor.Create(InputSystemCursorShape.SizeAll) : null;
+}
+
+/// <summary>
 /// Split view, like Arc's: two tabs side by side, each its own card, a divider between them to
 /// share the width differently (double-click for half and half). In the sidebar it's a row of its
 /// own in the tab list with both pages, the one you're on brighter; click a half to go to it, or into
 /// a page. Start one by dragging a tab onto a half of the page, or a tab's "Split with current tab".
-/// Any two tabs: a regular tab is only in the split's row (TabSplit.Row) while it's split; an
-/// Essential, pinned or folder tab keeps its own place too. The right page's view is in the
+/// Any two tabs, and a tab is in one place in the sidebar, never two (as in Arc): a regular tab is only
+/// in the split's row (TabSplit.Row) while it's split; with a pinned tab in it, the row is in the pinned
+/// list where that tab was, and the tab comes back there when they part; an Essential or folder tab
+/// keeps its own place, and the row is in the tab list. The right page's view is in the
 /// right-hand card (SplitHost). Moving either tab elsewhere, or closing one, separates them first.
 /// </summary>
 public sealed partial class MainWindow
@@ -47,17 +59,26 @@ public sealed partial class MainWindow
     private int? TabListIndex(BrowserTab tab) =>
         tab.Place == TabPlace.Regular && Tabs.IndexOf(tab) is >= 0 and var at ? at : null;
 
+    /// <summary>A tab's row in the pinned list, if it has one there.</summary>
+    private int? PinnedListIndex(BrowserTab tab) =>
+        tab.Place == TabPlace.Pinned && PinnedTabs.IndexOf(tab) is >= 0 and var at ? at : null;
+
     /// <summary>The page of a split you were last on (its brighter half).</summary>
     private static BrowserTab FrontOf(TabSplit split) => split.Right.IsFront && !split.Left.IsFront ? split.Right : split.Left;
 
     /// <summary>
-    /// Puts two tabs side by side. The split's row goes where the higher of their rows in the tab list
-    /// was, or, at <paramref name="row"/> (a saved split), or at the end when neither has one there.
+    /// Puts two tabs side by side. With a pinned tab in it, the split's row takes that tab's place in
+    /// the pinned list (the higher one's, for two). Otherwise it goes where the higher of their rows in
+    /// the tab list was, or at <paramref name="row"/> (a saved split), or at the end when neither has one there.
     /// </summary>
     private void SplitTabs(BrowserTab left, BrowserTab right, double ratio = 0.5, BrowserTab? front = null, int? row = null)
     {
         if (!CanSplit(left, right)) return;
-        var at = row ?? SplitLayout.RowIndex(TabListIndex(left), TabListIndex(right), Tabs.Count);
+        var pinned = new[] { left, right }.Where(p => p.Place == TabPlace.Pinned).ToList();
+        var host = pinned.Count > 0 ? PinnedTabs : Tabs;
+        var at = pinned.Count > 0
+            ? SplitLayout.RowIndex(PinnedListIndex(left), PinnedListIndex(right), PinnedTabs.Count)
+            : row ?? SplitLayout.RowIndex(TabListIndex(left), TabListIndex(right), Tabs.Count);
         var split = new TabSplit(left, right) { Ratio = ratio };
         // The row: a stand-in tab with no page of its own (its view is never started or shown).
         var standIn = BrowserTab.SplitRow(split);
@@ -65,7 +86,8 @@ public sealed partial class MainWindow
         _syncingSelection = true;
         Tabs.Remove(left);
         Tabs.Remove(right);
-        Tabs.Insert(System.Math.Clamp(at, 0, Tabs.Count), standIn);
+        foreach (var page in pinned) PinnedTabs.Remove(page);
+        host.Insert(System.Math.Clamp(at, 0, host.Count), standIn);
         _syncingSelection = false;
 
         left.Split = right.Split = split;
@@ -90,8 +112,9 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Two tabs again: regular ones come back to the tab list where the split's row was, left first;
-    /// the others were in their places all along.
+    /// Two tabs again, left first where the split's row was: in the tab list, its regular tabs; in the
+    /// pinned list, its pinned tabs, and a regular one at the end of the tab list. Essentials and folder
+    /// tabs were in their places all along.
     /// </summary>
     private void SeparateTabs(TabSplit split)
     {
@@ -102,11 +125,16 @@ public sealed partial class MainWindow
         right.PropertyChanged -= SplitPage_PropertyChanged;
         MoveView(right.View, WebHost);
         _syncingSelection = true;
-        var at = split.Row is { } row && Tabs.IndexOf(row) is >= 0 and var index ? index : Tabs.Count;
-        if (split.Row is { } standIn) Tabs.Remove(standIn);
+        var host = split.Row is { } kept && PinnedTabs.Contains(kept) ? PinnedTabs : Tabs;
+        var at = split.Row is { } row && host.IndexOf(row) is >= 0 and var index ? index : host.Count;
+        if (split.Row is { } standIn) host.Remove(standIn);
         split.Row = null;
-        foreach (var page in new[] { left, right }.Where(p => p.Place == TabPlace.Regular))
-            Tabs.Insert(System.Math.Min(at++, Tabs.Count), page);
+        foreach (var page in new[] { left, right })
+        {
+            if (page.Place == TabPlace.Pinned) PinnedTabs.Insert(System.Math.Min(at++, PinnedTabs.Count), page);
+            else if (page.Place == TabPlace.Regular && host == PinnedTabs) Tabs.Add(page);
+            else if (page.Place == TabPlace.Regular) Tabs.Insert(System.Math.Min(at++, Tabs.Count), page);
+        }
         _syncingSelection = false;
         SaveSessionSoon();
         if (_shownSplit == split)
@@ -152,6 +180,7 @@ public sealed partial class MainWindow
             split.Right.IsFront = split.Right == tab;
         }
         _shownSplit = split;
+        HidePageControls();
         LayoutPages();
         PlaceSplitCards();
     }
@@ -182,6 +211,41 @@ public sealed partial class MainWindow
 
     // ── The sidebar ──
 
+    /// <summary>Marks the pill on a split row's half in front (PlaceSplitCard).</summary>
+    private sealed class FrontHalf;
+
+    /// <summary>Marks the hover on a split row's half (ShowHalfHover).</summary>
+    private sealed class HoverHalf;
+
+    /// <summary>
+    /// A split row's pill of one kind, made the first time: the selected card on the half you're on, or
+    /// the hover on another; a couple of pixels in from the half, on the row's card, under the halves.
+    /// </summary>
+    private static Border HalfPill(Grid row, System.Type kind)
+    {
+        if (row.Children.OfType<Border>().FirstOrDefault(b => b.Tag?.GetType() == kind) is { } made) return made;
+        var front = kind == typeof(FrontHalf);
+        var pill = new Border
+        {
+            Tag = front ? new FrontHalf() : new HoverHalf(),
+            Margin = new Thickness(0, 3, 0, 3),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsHitTestVisible = false,
+            Opacity = 0,
+            OpacityTransition = new ScalarTransition { Duration = System.TimeSpan.FromMilliseconds(front ? 150 : 100) },
+        };
+        if (front) pill.Style = (Style)Application.Current.Resources["SplitFrontCardStyle"];
+        else
+        {
+            pill.CornerRadius = new CornerRadius(8);
+            pill.Background = (Brush)Application.Current.Resources["DriftHoverBrush"];
+        }
+        Grid.SetColumnSpan(pill, 3);
+        // Just above the row's card (its first child), under the halves.
+        row.Children.Insert(1, pill);
+        return pill;
+    }
+
     /// <summary>A half of a split's row: that page.</summary>
     private void SplitHalf_Tapped(object sender, TappedRoutedEventArgs e)
     {
@@ -202,37 +266,51 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Hovered, a half lights up as a row does (unless the card's on it), and its favicon gives its spot
-    /// to its ×: the title keeps all its room.
+    /// Hovered, a half lights up as a tab in a folder does (not the one with the selected card on it), and
+    /// each half's × shows at its end, as Arc's do (before its Peek badge, if it has one), the title
+    /// stopping short of it. Not on a half narrower than Zen allows one.
     /// </summary>
     private void SplitHalf_PointerEntered(object sender, PointerRoutedEventArgs e) => ShowHalfHover(sender, true);
     private void SplitHalf_PointerExited(object sender, PointerRoutedEventArgs e) => ShowHalfHover(sender, false);
 
+    // A half narrower than this has no × (Zen's limit).
+    private const double HalfCloseWidth = 70;
+
     private void ShowHalfHover(object sender, bool over)
     {
-        if (sender is not Grid half) return;
-        var carded = half.Tag is BrowserTab { Split: { } split } page && split == _shownSplit && FrontOf(split) == page;
-        half.Background = over && !carded
-            ? (Brush)Application.Current.Resources["DriftHoverBrush"]
-            : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        if (half.Children.OfType<Button>().FirstOrDefault() is { } close)
+        if (sender is not Grid { Tag: BrowserTab page, Parent: Grid row } hovered) return;
+        var carded = page.Split is { } split && split == _shownSplit && FrontOf(split) == page;
+        // The hover's the size of the selected card on a half (a couple of pixels in), not the whole half.
+        var fill = HalfPill(row, typeof(HoverHalf));
+        if (over && !carded && hovered.ActualWidth > 0)
         {
-            close.Opacity = over ? 1 : 0;
-            close.IsHitTestVisible = over;
+            fill.Width = System.Math.Max(0, hovered.ActualWidth - 4);
+            Spring.Jump(fill, "Translation", new Vector3((float)hovered.ActualOffset.X + 2, 0, 0));
+            fill.Opacity = 1;
         }
-        if (half.Children.OfType<Grid>().FirstOrDefault() is { } icon) icon.Visibility = over ? Visibility.Collapsed : Visibility.Visible;
+        else if (!over) fill.Opacity = 0;
+        foreach (var half in row.Children.OfType<Grid>().Where(h => h.Tag is BrowserTab))
+        {
+            if (half.Children.OfType<Button>().FirstOrDefault() is not { } close
+                || half.Children.OfType<TextBlock>().FirstOrDefault() is not { } title) continue;
+            // As in Zen: on any half wide enough, even if the title has to give up all its room to it.
+            var shown = over && half.ActualWidth >= HalfCloseWidth;
+            close.Opacity = shown ? 1 : 0;
+            close.IsHitTestVisible = shown;
+            title.Padding = shown ? new Thickness(0, 0, close.Width + 4, 0) : default;
+        }
     }
 
     // ── The card on the half you're on ──
 
     private void SplitCard_Loaded(object sender, RoutedEventArgs e)
     {
-        if (sender is Border card) PlaceSplitCard(card, animate: false);
+        if (sender is Border card) PlaceSplitCard(card);
     }
 
     private void SplitRow_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (sender is Grid row && row.Children.OfType<Border>().FirstOrDefault() is { } card) PlaceSplitCard(card, animate: false);
+        if (sender is Grid row && row.Children.OfType<Border>().FirstOrDefault() is { } card) PlaceSplitCard(card);
     }
 
     /// <summary>Every split row's card, after the page you're on changed: across to it, or away.</summary>
@@ -240,7 +318,10 @@ public sealed partial class MainWindow
     {
         foreach (var row in Tabs.Where(t => t.IsSplitRow))
             if (TabList.ContainerFromItem(row) is ListViewItem item && FindSplitCard(item) is { } card)
-                PlaceSplitCard(card, animate: true);
+                PlaceSplitCard(card);
+        foreach (var row in PinnedTabs.Where(t => t.IsSplitRow))
+            if (PinnedList.ContainerFromItem(row) is ListViewItem item && FindSplitCard(item) is { } card)
+                PlaceSplitCard(card);
     }
 
     private static Border? FindSplitCard(DependencyObject parent)
@@ -255,25 +336,28 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The selected-tab card sits on the half you're on while the split is the tab you're on, and is
-    /// gone otherwise. Switching halves, it springs across from wherever it is (no bounce: a click throws
-    /// nothing); coming or going, it fades where it is. Between them, the hairline gives way to it.
+    /// While the split's the tab you're on, it's on a card of its own, the folders' (their colour and
+    /// border), and the half you're on has a selected tab's card on it, a couple of pixels in, there at
+    /// once when you switch halves. Otherwise it's a row as any tab's is: both cards fade away. No line
+    /// between the halves.
     /// </summary>
-    private void PlaceSplitCard(Border card, bool animate)
+    private void PlaceSplitCard(Border card)
     {
-        if (card.Tag is not BrowserTab { Split: { } split } || card.Parent is not Grid row) return;
-        var front = FrontOf(split);
-        if (row.Children.OfType<Grid>().FirstOrDefault(h => h.Tag == front) is not { ActualWidth: > 0 } half) return;
+        if (card.Tag is not BrowserTab { Split: { } split } || card.Parent is not Grid row || row.ActualWidth <= 0) return;
         var shown = split == _shownSplit;
-        var at = new Vector3(half.ActualOffset.X, 0, 0);
-        card.Width = half.ActualWidth;
-        if (animate && shown && card.Opacity > 0) Spring.To(card, "Translation", at, duration: 0.3, bounce: 0);
-        else Spring.Jump(card, "Translation", at);
+        card.Width = row.ActualWidth;
+        Spring.Jump(card, "Translation", Vector3.Zero);
         card.Opacity = shown ? 1 : 0;
-        if (row.Children.OfType<Border>().Skip(1).FirstOrDefault() is { } hairline) hairline.Opacity = shown ? 0 : 1;
-        // The half it's arrived on stops showing hover underneath it.
-        foreach (var each in row.Children.OfType<Grid>())
-            if (each == half && shown) each.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        if (row.Children.OfType<Grid>().FirstOrDefault(h => h.Tag == FrontOf(split)) is { ActualWidth: > 0 } half)
+        {
+            var pill = HalfPill(row, typeof(FrontHalf));
+            pill.Width = System.Math.Max(0, half.ActualWidth - 4);
+            Spring.Jump(pill, "Translation", new Vector3((float)half.ActualOffset.X + 2, 0, 0));
+            pill.Opacity = shown ? 1 : 0;
+        }
+        if (row.Children.OfType<Border>().FirstOrDefault(b => Grid.GetColumn(b) == 1) is { } hairline) hairline.Opacity = 0;
+        // The selected card's arrived (you've just picked a half): its hover goes.
+        if (shown && row.Children.OfType<Border>().FirstOrDefault(b => b.Tag is HoverHalf) is { } hover) hover.Opacity = 0;
     }
 
     /// <summary>
@@ -282,7 +366,11 @@ public sealed partial class MainWindow
     /// </summary>
     private void CloseSplitHalf_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is BrowserTab tab) CloseSplitPage(tab);
+        if ((sender as FrameworkElement)?.Tag is not BrowserTab tab) return;
+        CloseSplitPage(tab);
+        // Its Peek gone and the pointer still on the half: the title takes back the badge's room.
+        if ((sender as FrameworkElement)?.Parent is Grid half && tab.Split is not null)
+            DispatcherQueue.TryEnqueue(() => ShowHalfHover(half, true));
     }
 
     /// <summary>A page of a split closes (from its half's × or its handle's menu); the other stays on its own.</summary>
@@ -329,27 +417,6 @@ public sealed partial class MainWindow
         if (rightShown) AnimateSeparate(rightStart);
     }
 
-    /// <summary>
-    /// A tab's menu: split it with the tab you're on. A split's row has only Separate tabs and Close
-    /// tabs: it can't be pinned or moved into a folder as one.
-    /// </summary>
-    private void ShowSplitMenuItems(MenuFlyout menu)
-    {
-        foreach (var item in menu.Items.OfType<MenuFlyoutItemBase>())
-        {
-            if (item.Tag is not BrowserTab tab) continue;
-            var text = (item as MenuFlyoutItem)?.Text ?? (item as MenuFlyoutSubItem)?.Text;
-            if (text == "Split with current tab")
-                item.Visibility = _active is { } current && CanSplit(current, tab) ? Visibility.Visible : Visibility.Collapsed;
-            else if (text == "Separate tabs")
-                item.Visibility = tab.IsSplitRow ? Visibility.Visible : Visibility.Collapsed;
-            else if (text is "Close tab" or "Close tabs")
-                ((MenuFlyoutItem)item).Text = tab.IsSplitRow ? "Close tabs" : "Close tab";
-            else if (text is "Pin tab" or "Add to Essentials" or "Add to folder")
-                item.Visibility = tab.IsSplitRow ? Visibility.Collapsed : Visibility.Visible;
-        }
-    }
-
     // ── The divider ──
 
     private bool _overDivider;
@@ -366,7 +433,8 @@ public sealed partial class MainWindow
         ShowGrip();
     }
 
-    private void ShowGrip() => ShowGrip(SplitGrip, SplitGripAccent, _overDivider, _draggingDivider, atRest: 0.3);
+    // Out of sight until the pointer's on the gap (where the pointer turns to the resize arrows).
+    private void ShowGrip() => ShowGrip(SplitGrip, SplitGripAccent, _overDivider, _draggingDivider, atRest: 0);
 
     /// <summary>
     /// A resize grip (the split divider's, the sidebar edge's): at rest faint (the divider's) or out of

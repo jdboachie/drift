@@ -21,4 +21,20 @@ public class TabCloseTests
     {
         Assert.Equal(TabClose.Unload, TabCloses.First(hasPeek: false, pinned: true));
     }
+
+    [Fact]
+    public void The_button_says_it_closes_the_peek_while_there_is_one()
+    {
+        Assert.Equal("Close Peek", TabCloses.Name(hasPeek: true, pinned: false, unloaded: false));
+        Assert.Equal("Close Peek", TabCloses.Name(hasPeek: true, pinned: true, unloaded: false));
+    }
+
+    [Fact]
+    public void Otherwise_what_it_does_to_the_tab()
+    {
+        Assert.Equal("Close tab", TabCloses.Name(hasPeek: false, pinned: false, unloaded: false));
+        Assert.Equal("Unload tab", TabCloses.Name(hasPeek: false, pinned: true, unloaded: false));
+        // An unloaded pinned tab's button takes it out of the sidebar.
+        Assert.Equal("Close tab", TabCloses.Name(hasPeek: false, pinned: true, unloaded: true));
+    }
 }

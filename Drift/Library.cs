@@ -955,7 +955,7 @@ public sealed partial class MainWindow
         var host = HistoryView.Site(item.Url);
         parts.Item = item;
         parts.Uri = uri;
-        parts.Title.Text = title;
+        parts.Title.Text = DisplayText.Clip(title);
         parts.HostText = host;
         var closed = item.Closed is not null;
         ToolTipService.SetToolTip(parts.Remove, closed ? "Remove from list" : "Remove from history");
@@ -967,7 +967,7 @@ public sealed partial class MainWindow
         parts.Icon.Source = null;
         parts.Glyph.Visibility = Visibility.Visible;
         if (uri is not null) LoadHistoryIcon(uri.Authority, parts, item);
-        ToolTipService.SetToolTip(row, item.Url);
+        ToolTipService.SetToolTip(row, DisplayText.Clip(item.Url));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, $"{title}, {host}");
     }
 
@@ -996,7 +996,7 @@ public sealed partial class MainWindow
     private MenuFlyout HistoryMenu => _historyMenu ??= CreateHistoryMenu();
     private MenuFlyout? _historyMenu;
     private HistoryLine? _historyMenuItem;
-    private MenuFlyoutItem HistoryMenuRemove => _historyMenuRemove ??= new MenuFlyoutItem { Text = "Remove from history", Icon = new FontIcon { Glyph = "" } };
+    private MenuFlyoutItem HistoryMenuRemove => _historyMenuRemove ??= new MenuFlyoutItem { Text = "Remove from history" };
     private MenuFlyoutItem? _historyMenuRemove;
 
     private MenuFlyout CreateHistoryMenu()

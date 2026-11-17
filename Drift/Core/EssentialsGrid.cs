@@ -7,8 +7,8 @@ namespace Drift;
 /// </summary>
 public static class EssentialsGrid
 {
-    /// <summary>A tile is 46 tall with 4 around it: its cell is square at this width.</summary>
-    public const double MinCell = 54;
+    /// <summary>A tile is 43 tall with 5 around it (Arc's measures): its cell is square at this width.</summary>
+    public const double MinCell = 53;
 
     /// <summary>The most a row can hold.</summary>
     public const int MostColumns = 6;

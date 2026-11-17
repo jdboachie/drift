@@ -106,9 +106,11 @@ public sealed partial class SettingsWindow : Window
         AdBlockToggle.IsOn = settings.BlockAds;
         PipToggle.IsOn = settings.AutoPictureInPicture;
         CloseTwiceToggle.IsOn = settings.CloseTwice;
+        LoadEssentialsToggle.IsOn = settings.LoadEssentialsAtStart;
         RecentTabsToggle.IsOn = settings.CtrlTabRecentOrder;
         PasswordsToggle.IsOn = settings.SavePasswords;
         AutofillToggle.IsOn = settings.Autofill;
+        SignInToggle.IsOn = settings.MicrosoftSignIn;
         AskTabToggle.IsOn = settings.AskAiWithTab;
         AskFirstCombo.SelectedIndex = settings.AskFirst == AiProvider.Claude ? 0 : 1;
         ClearRangeCombo.SelectedIndex = 1;
@@ -118,6 +120,9 @@ public sealed partial class SettingsWindow : Window
         _loading = false;
         ShowDefaultBrowser();
         ShowAdBlockStatus();
+        ShowSignInRestart();
+        // Loaded already, it's filled in here, before the window is shown.
+        _ = ShowAccountAsync();
 
         BuildShortcuts();
     }
@@ -139,6 +144,8 @@ public sealed partial class SettingsWindow : Window
         StopRecording();
         var page = (Nav.SelectedItem as ListViewItem)?.Tag as string ?? "general";
         GeneralPage.Visibility = page == "general" ? Visibility.Visible : Visibility.Collapsed;
+        AccountsPage.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
+        if (page == "accounts") _ = ShowAccountAsync();
         TabsPage.Visibility = page == "tabs" ? Visibility.Visible : Visibility.Collapsed;
         DownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
         AiPage.Visibility = page == "ai" ? Visibility.Visible : Visibility.Collapsed;
@@ -219,6 +226,13 @@ public sealed partial class SettingsWindow : Window
         Settings.Update(s => s.CloseTwice = on);
     }
 
+    private void LoadEssentialsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || LoadEssentialsToggle.IsOn == Settings.Current.LoadEssentialsAtStart) return;
+        var on = LoadEssentialsToggle.IsOn;
+        Settings.Update(s => s.LoadEssentialsAtStart = on);
+    }
+
     private void PipToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading || PipToggle.IsOn == Settings.Current.AutoPictureInPicture) return;
@@ -231,6 +245,69 @@ public sealed partial class SettingsWindow : Window
         if (_loading || RecentTabsToggle.IsOn == Settings.Current.CtrlTabRecentOrder) return;
         var on = RecentTabsToggle.IsOn;
         Settings.Update(s => s.CtrlTabRecentOrder = on);
+    }
+
+    // ---- Accounts ----
+
+    private bool _accountShown;
+
+    /// <summary>
+    /// The Windows account's name, email and picture, filled in as the window is made: Drift loads
+    /// them when it starts (WindowsAccount.PreloadAsync), so they're there before the page shows,
+    /// all at once. Only if Settings opens before that has finished do they arrive a moment later.
+    /// </summary>
+    private async System.Threading.Tasks.Task ShowAccountAsync()
+    {
+        if (_accountShown) return;
+        _accountShown = true;
+        if (WindowsAccount.Loaded is null) await WindowsAccount.PreloadAsync();
+        if (WindowsAccount.Loaded is not { } account) return;
+        AccountName.Text = account.Name ?? "";
+        AccountPicture.DisplayName = account.Name ?? "";
+        if (account.Email is { } email) AccountEmail.Text = email;
+        if (WindowsAccount.Picture is { } picture) AccountPicture.ProfilePicture = picture;
+    }
+
+    private void SignInToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || SignInToggle.IsOn == Settings.Current.MicrosoftSignIn) return;
+        var on = SignInToggle.IsOn;
+        Settings.Update(s => s.MicrosoftSignIn = on);
+        ShowSignInRestart();
+    }
+
+    /// <summary>A change that waits for the engine to restart says so, with a button to do it.</summary>
+    private void ShowSignInRestart()
+    {
+        var pending = MainWindow.SignInRestartPending;
+        SignInText.Text = pending
+            ? $"Turns {(Settings.Current.MicrosoftSignIn ? "on" : "off")} when Drift restarts"
+            : "With your Windows account";
+        SignInRestartButton.Visibility = pending && App.Main is not null ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SignInRestart_Click(object sender, RoutedEventArgs e) => _ = App.Main?.RestartAsync(Content.XamlRoot);
+
+    private void DifferentAccount_Click(object sender, RoutedEventArgs e) => App.Main?.UseDifferentMicrosoftAccount();
+
+    private async void SignOut_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Main is not { } main) return;
+        SignOutButton.IsEnabled = false;
+        try
+        {
+            if (await main.SignOutOfMicrosoftAsync(Content.XamlRoot) is not { } result) return;
+            SignOutText.Text = result;
+            SignOutText.Visibility = Visibility.Visible;
+            _loading = true;
+            SignInToggle.IsOn = Settings.Current.MicrosoftSignIn;
+            _loading = false;
+            ShowSignInRestart();
+        }
+        finally
+        {
+            SignOutButton.IsEnabled = true;
+        }
     }
 
     private void AdBlockToggle_Toggled(object sender, RoutedEventArgs e)

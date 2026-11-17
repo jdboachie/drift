@@ -154,12 +154,75 @@ public sealed partial class MainWindow : Window
     // view must come from the same environment as the page that opened it.
     private static Task<CoreWebView2Environment>? _environment;
 
-    internal static Task<CoreWebView2Environment> EnvironmentAsync() =>
-        _environment ??= CoreWebView2Environment.CreateWithOptionsAsync(null, ProfileFolder(), new CoreWebView2EnvironmentOptions
+    internal static Task<CoreWebView2Environment> EnvironmentAsync() => _environment ??= StartEngineAsync();
+
+    /// <summary>
+    /// The engine, on Drift's profile. The first time Drift runs, it waits for your answer about
+    /// Microsoft sign-in (MicrosoftSignIn.cs), which can't be changed once the engine is going.
+    /// </summary>
+    private static async Task<CoreWebView2Environment> StartEngineAsync()
+    {
+        await SignInAnswered;
+        var signIn = Settings.Current.MicrosoftSignIn;
+        try { EngineRuntime = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+        catch { EngineRuntime = null; }
+        var videoOnCpu = VideoDecode.Choose(DisplayAdapters(), Settings.Current.VideoOnCpuFor, EngineRuntime) != VideoDecoding.Gpu;
+        var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, ProfileFolder(), EngineOptions(signIn, videoOnCpu));
+        EngineSignsIn = signIn;
+        EngineVideoOnCpu = videoOnCpu;
+        return environment;
+    }
+
+    /// <summary>The PC's display adapters, as Windows lists them (readable without admin rights).</summary>
+    private static List<Gpu> DisplayAdapters()
+    {
+        var gpus = new List<Gpu>();
+        try
         {
-            AdditionalBrowserArguments = "--enable-features=OverlayScrollbar",
-            AreBrowserExtensionsEnabled = true,
-        }).AsTask();
+            using var display = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+            if (display is null) return gpus;
+            foreach (var name in display.GetSubKeyNames())
+            {
+                try
+                {
+                    using var adapter = display.OpenSubKey(name);
+                    if (VideoDecode.Parse(adapter?.GetValue("MatchingDeviceId") as string, adapter?.GetValue("DriverVersion") as string) is { } gpu)
+                        gpus.Add(gpu);
+                }
+                catch
+                {
+                    // One we can't read ("Properties"): skip it.
+                }
+            }
+        }
+        catch
+        {
+            // None readable: the GPU, as normal.
+        }
+        return gpus;
+    }
+
+    /// <summary>The WebView2 runtime the engine runs on.</summary>
+    private static string? EngineRuntime;
+    /// <summary>Whether the running engine decodes video on the CPU (GpuProcessFailed).</summary>
+    private static bool EngineVideoOnCpu;
+
+    /// <summary>
+    /// What the engine starts with. Every engine on one profile folder must start with the same
+    /// options, or its pages fail to open (ERROR_INVALID_STATE): a setting here applies to the whole
+    /// folder, and a space with its own would need a folder of its own.
+    /// </summary>
+    private static CoreWebView2EnvironmentOptions EngineOptions(bool signInWithWindows, bool videoOnCpu) => new()
+    {
+        // Video on the CPU only on graphics known to hang decoding it (VideoDecode), or where the GPU
+        // kept failing (GpuFailures). The HEVC-only feature switch,
+        // PlatformHEVCDecoderSupport, no longer does anything in runtime 157.
+        AdditionalBrowserArguments = "--enable-features=OverlayScrollbar" + (videoOnCpu ? " --disable-accelerated-video-decode" : ""),
+        AreBrowserExtensionsEnabled = true,
+        // Outlook, Office, SharePoint… sign in with the Windows account, as in Edge.
+        AllowSingleSignOnUsingOSPrimaryAccount = signInWithWindows,
+    };
 
     /// <summary>
     /// The web profile (logins, cookies, site data, cache) lives with the rest of Drift's data in
@@ -197,11 +260,9 @@ public sealed partial class MainWindow : Window
     private int _openSidebarMenus;
     // Elements already wired by AddPressFeedback (list containers are recycled, so they come round again).
     private readonly HashSet<UIElement> _pressFeedback = new();
-    // Where the Peek card grows from and shrinks back to (AimPeekCard).
     // Where Peek's card grows from and goes back to (AimPeekCard): its scale and shift.
-    private Vector3 _cardFromScale = new(0.5f, 0.5f, 1), _cardFromShift, _cardToScale = new(0.6f, 0.6f, 1), _cardToShift;
+    private Vector3 _cardFromScale = new(PeekGrowFrom, PeekGrowFrom, 1), _cardFromShift, _cardToScale = new(PeekShrinkTo, PeekShrinkTo, 1), _cardToShift;
     private double _cardToBounce;
-    private double _cardGrowKick = PeekGrowKick, _cardGrowSeconds = PeekGrowSeconds;
     private readonly DispatcherQueueTimer _sidebarDismissTimer;
     private readonly DispatcherQueueTimer _sidebarWatch;
     private readonly DispatcherQueueTimer _sessionTimer;
@@ -214,14 +275,18 @@ public sealed partial class MainWindow : Window
     public ObservableCollection<BrowserTab> Tabs { get; } = new();
 
     /// <summary>Every tab, top of the sidebar to bottom.</summary>
-    private IEnumerable<BrowserTab> AllTabs => EssentialTabs.Concat(FolderTabs).Concat(PinnedTabs).Concat(Tabs.SelectMany(RegularTabsOf));
+    private IEnumerable<BrowserTab> AllTabs => EssentialTabs.Concat(FolderTabs).Concat(PinnedTabs.SelectMany(RegularTabsOf)).Concat(Tabs.SelectMany(RegularTabsOf));
+
+    /// <summary>The pinned tabs, those in a split too (its row is in their place in the pinned list).</summary>
+    private IEnumerable<BrowserTab> PinnedPages => PinnedTabs.SelectMany(RegularTabsOf).Where(t => t.Place == TabPlace.Pinned);
 
     /// <summary>
-    /// A row of the tab list: its tab, or for a split's row (Split.cs), the split's regular tabs, left
-    /// first (its Essentials, pinned and folder tabs are in their own places).
+    /// A row of the tab list or the pinned list: its tab, or for a split's row (Split.cs), the split's
+    /// tabs that are in that row, left first: its regular and pinned tabs (Essentials and folder tabs
+    /// are in their own places).
     /// </summary>
     private static IEnumerable<BrowserTab> RegularTabsOf(BrowserTab row) =>
-        row is { IsSplitRow: true, Split: { } split } ? new[] { split.Left, split.Right }.Where(t => t.Place == TabPlace.Regular) : [row];
+        row is { IsSplitRow: true, Split: { } split } ? new[] { split.Left, split.Right }.Where(t => t.Place is TabPlace.Regular or TabPlace.Pinned) : [row];
 
     /// <summary>The list a group's tabs are in. Folder tabs are in their folders instead (TabFolder.Children).</summary>
     private ObservableCollection<BrowserTab> CollectionFor(TabPlace place) => place switch
@@ -313,9 +378,11 @@ public sealed partial class MainWindow : Window
         _sessionTimer.IsRepeating = false;
         _sessionTimer.Tick += (_, _) => SaveSession(wait: false);
         Settings.Changed += Settings_Changed;
+        Root.Loaded += (_, _) => AskAboutSignInOnce();
         ApplyShortcuts();
         ShowNewTabHint();
         PeekExitAnimation.Completed += (_, _) => FinishPeekExit();
+        PageArea.SizeChanged += (_, _) => PlacePeekCard();
         PeekFadeOutAnimation.Completed += (_, _) => FinishPeekExit();
         _sidebarDismissTimer = DispatcherQueue.CreateTimer();
         _sidebarDismissTimer.Interval = TimeSpan.FromMilliseconds(300);
@@ -348,6 +415,7 @@ public sealed partial class MainWindow : Window
         WatchForSlides();
         SetUpLibrary();
         SetUpPageHandles();
+        WarmIconPickerSoon();
     }
 
     private void EssentialList_SizeChanged(object sender, SizeChangedEventArgs e) => LayoutEssentials();
@@ -438,7 +506,7 @@ public sealed partial class MainWindow : Window
                     if (place == TabPlace.Folder && (saved.Folder is null || !folders.TryGetValue(saved.Folder, out folder)))
                         place = TabPlace.Pinned;
                     opening.Add(restoring[i] = CreateTabAsync(uri, place, activate: i == session.Active,
-                        deferLoad: true, title: saved.Title, home: home, folder: folder));
+                        deferLoad: true, title: saved.Title, home: home, folder: folder, name: saved.Name, icon: saved.Icon));
                     // It's in its folder already (added before the first await): note where it goes.
                     if (folder is not null) _folderTree.AddSaved((IFolderTab)folder.Children[^1], folder, saved.Position);
                 }
@@ -454,10 +522,13 @@ public sealed partial class MainWindow : Window
             if (_active is not null) NoteRecentTab(_active);
             // The first Peek starts loading at once too, once the tabs have had their start.
             PrepareSparePeekViewSoon(5000);
+            LoadEssentialsSoon();
             StartCalendar();
             StartMail();
             StartOutlook();
             StartLiveFolders();
+            // Settings › Accounts shows the Windows account straight away when it's opened.
+            _ = WindowsAccount.PreloadAsync();
             // Started to open a link: that's what's in front, not the start page.
             if (_launchUris.Count > 0)
             {
@@ -499,13 +570,13 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// The tabs to bring back next time. With "keep pinned tabs" only those, on their pinned pages;
-    /// otherwise every tab where it is now.
+    /// otherwise every tab where it is now. <paramref name="everything"/>: every tab regardless, for a restart.
     /// </summary>
-    private void SaveSession(bool wait)
+    private void SaveSession(bool wait, bool everything = false)
     {
         _sessionTimer.Stop();
         if (_private) return;
-        var keepAll = Settings.Current.OnClose == CloseBehavior.KeepTabs;
+        var keepAll = everything || Settings.Current.OnClose == CloseBehavior.KeepTabs;
         var data = new SessionData { SidebarWidth = _sidebarWidth, PullsFolderMade = _pullsFolderMade };
         var savedAt = new Dictionary<BrowserTab, int>();
         foreach (var tab in AllTabs.Where(t => keepAll || t.IsPinned))
@@ -519,7 +590,9 @@ public sealed partial class MainWindow : Window
             data.Tabs.Add(new SessionTab
             {
                 Url = url,
-                Title = url == tab.Url ? tab.Title : new Uri(url).Host,
+                Title = url == tab.Url ? tab.PageTitle : new Uri(url).Host,
+                Name = tab.Name,
+                Icon = tab.Icon,
                 Pinned = tab.IsPinned,
                 Place = tab.Place.ToString(),
                 Home = home,
@@ -527,13 +600,15 @@ public sealed partial class MainWindow : Window
                 Position = _folderTree.PositionOf(tab),
             });
         }
-        // Splits whose tabs were both kept, with where their rows are in the tab list.
-        for (var row = 0; row < Tabs.Count; row++)
-        {
-            if (Tabs[row] is { IsSplitRow: true, Split: { } split }
-                && savedAt.TryGetValue(split.Left, out var left) && savedAt.TryGetValue(split.Right, out var right))
-                data.Splits.Add(new SessionSplit { Left = left, Right = right, Row = row, Ratio = split.Ratio });
-        }
+        // Splits whose tabs were both kept, with where their rows are in the tab list (one in the pinned
+        // list goes back to its pinned tab's place, whatever its row's number).
+        foreach (var (rows, pinned) in new[] { (PinnedTabs, true), (Tabs, false) })
+            for (var row = 0; row < rows.Count; row++)
+            {
+                if (rows[row] is { IsSplitRow: true, Split: { } split }
+                    && savedAt.TryGetValue(split.Left, out var left) && savedAt.TryGetValue(split.Right, out var right))
+                    data.Splits.Add(new SessionSplit { Left = left, Right = right, Row = pinned ? -1 : row, Ratio = split.Ratio });
+            }
         data.Folders = _folderTree.Save();
         data.Closed = _closedTabs.TakeLast(MaxClosedTabs).ToList();
         Session.Save(data, wait);
@@ -546,8 +621,11 @@ public sealed partial class MainWindow : Window
     /// <param name="home">For pinned tabs, the page they're pinned to, when it isn't <paramref name="uri"/>.</param>
     /// <param name="index">Where in its group (reopening a closed tab); by default, last.</param>
     /// <param name="folder">For a tab in a folder (Place Folder), the folder.</param>
+    /// <param name="name">The name you gave it (Rename…).</param>
+    /// <param name="icon">The icon you chose for it (Change icon…).</param>
     private async Task<BrowserTab> CreateTabAsync(Uri uri, TabPlace place, bool activate,
-        bool deferLoad = false, string? title = null, Uri? home = null, int? index = null, TabFolder? folder = null)
+        bool deferLoad = false, string? title = null, Uri? home = null, int? index = null, TabFolder? folder = null,
+        string? name = null, string? icon = null)
     {
         if (place == TabPlace.Folder && folder is null) place = TabPlace.Pinned;
         var view = NewTabView();
@@ -560,7 +638,9 @@ public sealed partial class MainWindow : Window
             HomeUri = place == TabPlace.Regular ? null : (home ?? uri),
             PendingUri = uri,
             IsUnloaded = deferLoad,
+            Name = name,
         };
+        if (icon is not null) _ = SetTabIconAsync(tab, icon);
         if (folder is not null && place == TabPlace.Folder)
         {
             _folderTree.Add(tab, folder, index);
@@ -624,6 +704,22 @@ public sealed partial class MainWindow : Window
         tab.PendingUri = null;
         tab.IsUnloaded = false;
         Navigate(tab, uri);
+    }
+
+    /// <summary>
+    /// Essentials are there to be ready: put back asleep like every tab, they load just after the
+    /// tab in front has had its start, a little apart. One you unload later stays unloaded till opened.
+    /// </summary>
+    private async void LoadEssentialsSoon()
+    {
+        if (!Settings.Current.LoadEssentialsAtStart) return;
+        await Task.Delay(1500);
+        foreach (var tab in EssentialTabs.ToList())
+        {
+            if (!tab.IsUnloaded || tab.PendingUri is null || !EssentialTabs.Contains(tab)) continue;
+            LoadShown(tab);
+            await Task.Delay(250);
+        }
     }
 
     /// <summary>A restored tab that hasn't loaded shows its site's icon from last time.</summary>
@@ -754,7 +850,7 @@ public sealed partial class MainWindow : Window
         };
         core.HistoryChanged += (_, _) => { if (tab == _active) UpdateChrome(); };
         core.WebMessageReceived += (_, e) => OnWebMessage(e, tab);
-        core.ContextMenuRequested += (_, e) => OpenLinkInNewTabItem(core, e);
+        core.ContextMenuRequested += (_, e) => OpenLinkInNewTabItem(core, e, tab);
         WireAudio(tab, core);
         WirePicture(tab, core);
         WireSplitFocus(tab, tab.View);
@@ -827,9 +923,11 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// The right-click menu's "Open link in new window" opens a new tab instead (Drift has one window,
     /// and tabs in its sidebar), and says so. Left to the engine it would go wherever the page's own
-    /// new-window links go: in Peek, Peek itself; from a pinned tab, Peek.
+    /// new-window links go: in Peek, Peek itself; from a pinned tab, Peek. A tab's page also gets Open
+    /// link in Peek and Open link in split view after it, as Zen and Arc have (<paramref name="tab"/>,
+    /// null in Peek).
     /// </summary>
-    private void OpenLinkInNewTabItem(CoreWebView2 core, CoreWebView2ContextMenuRequestedEventArgs e)
+    private void OpenLinkInNewTabItem(CoreWebView2 core, CoreWebView2ContextMenuRequestedEventArgs e, BrowserTab? tab = null)
     {
         var items = e.MenuItems;
         for (var i = 0; i < items.Count; i++)
@@ -840,6 +938,15 @@ public sealed partial class MainWindow : Window
             item.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenInNewTab(link));
             items.RemoveAt(i);
             items.Insert(i, item);
+            if (tab is null || link.Scheme is not ("http" or "https")) return;
+            var peek = core.Environment.CreateContextMenuItem("Open link in Peek", null, CoreWebView2ContextMenuItemKind.Command);
+            peek.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenPeek(link, tab));
+            items.Insert(i + 1, peek);
+            // A page already beside another has no room for a third.
+            if (tab.Split is not null) return;
+            var split = core.Environment.CreateContextMenuItem("Open link in split view", null, CoreWebView2ContextMenuItemKind.Command);
+            split.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => _ = OpenLinkInSplitAsync(link, tab));
+            items.Insert(i + 2, split);
             return;
         }
     }
@@ -881,12 +988,7 @@ public sealed partial class MainWindow : Window
 
         // A tab in a closed folder shows under its header while it's in front, and after.
         NoteFolderTabShown(tab);
-        _syncingSelection = true;
-        // A split is its own row (as in Arc): that's the one marked, wherever its pages are kept.
-        EssentialList.SelectedItem = tab is { Place: TabPlace.Essential, Split: null } ? tab : null;
-        PinnedList.SelectedItem = tab is { Place: TabPlace.Pinned, Split: null } ? tab : null;
-        TabList.SelectedItem = tab.Split?.Row ?? (tab.Place == TabPlace.Regular ? tab : null);
-        _syncingSelection = false;
+        MarkInSidebar(tab);
 
         // Peek belongs to the tab that opened it: it steps aside while another tab is showing
         // and comes back, without animating, when its tab does.
@@ -1127,7 +1229,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        RoundCorners(view, 7);
+        RoundCorners(view, 5);
         var revealNow = RevealWhenLoaded(view, PeekCover);
         var core = view.CoreWebView2;
         // Shown as soon as the page has drawn something, rather than once its whole document has parsed.
@@ -1295,12 +1397,13 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// Sets where the card grows from and shrinks back to. From a link, it starts as the link itself:
     /// covering the link's box (Core/PeekOrigin.cs), each edge then springs out to its place, so it's
-    /// plain which link opened; closing, it goes back into that box. With only the press point, it
-    /// scales about it from a speck (PeekGrowFrom). With no link (a window a script opened), it rises
-    /// from just below centre like a modal.
+    /// plain which link opened; closing, it springs back into that box. With only the press point, it
+    /// scales about it from a quarter of its size, as Arc's does, and back to a speck there. With no link
+    /// (a window a script opened), it grows about its middle and sinks back a little as it fades.
     /// </summary>
     private void AimPeekCard(BrowserTab owner, Point? press, Area? box)
     {
+        PlacePeekCard();
         // The card frame and the page share the page column; the card is inset by its margin.
         // The page isn't transformed yet, since Peek is only now opening.
         var page = PageArea.TransformToVisual(Root).TransformPoint(new Point(0, 0));
@@ -1323,86 +1426,64 @@ public sealed partial class MainWindow : Window
                 var scale = new Vector3((float)start.ScaleX, (float)start.ScaleY, 1);
                 var shift = new Vector3((float)start.OffsetX, (float)start.OffsetY, 0);
                 (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) = (scale, shift, scale, shift, PeekShrinkToLinkBounce);
-                // Eases out of the link rather than leaving it at speed, so it's seen there first.
-                (_cardGrowKick, _cardGrowSeconds) = (PeekGrowFromLinkKick, PeekGrowFromLinkSeconds);
+                return;
             }
-            else
-            {
-                var inRoot = toRoot.TransformPoint(point);
-                PeekCardFrame.CenterPoint = new Vector3((float)(inRoot.X - cardLeft), (float)(inRoot.Y - cardTop), 0);
-                (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) =
-                    (new(PeekGrowFrom, PeekGrowFrom, 1), Vector3.Zero, new(PeekShrinkTo, PeekShrinkTo, 1), Vector3.Zero, PeekShrinkToLinkBounce);
-                (_cardGrowKick, _cardGrowSeconds) = (PeekGrowKick, PeekGrowSeconds);
-            }
-        }
-        else
-        {
-            PeekCardFrame.CenterPoint = new Vector3((float)width / 2, (float)height / 2, 0);
+            var inRoot = toRoot.TransformPoint(point);
+            PeekCardFrame.CenterPoint = new Vector3((float)(inRoot.X - cardLeft), (float)(inRoot.Y - cardTop), 0);
             (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) =
-                (new(0.96f, 0.96f, 1), new(0, 16, 0), new(0.98f, 0.98f, 1), new(0, 8, 0), PeekShrinkBounce);
-            (_cardGrowKick, _cardGrowSeconds) = (PeekGrowKick, PeekGrowSeconds);
+                (new(PeekGrowFrom, PeekGrowFrom, 1), Vector3.Zero, new(PeekShrinkTo, PeekShrinkTo, 1), Vector3.Zero, PeekShrinkToLinkBounce);
+            return;
         }
+        PeekCardFrame.CenterPoint = new Vector3((float)width / 2, (float)height / 2, 0);
+        (_cardFromScale, _cardFromShift, _cardToScale, _cardToShift, _cardToBounce) =
+            (new(PeekGrowFrom, PeekGrowFrom, 1), Vector3.Zero, new(0.98f, 0.98f, 1), new(0, 8, 0), PeekShrinkBounce);
     }
 
-    /// <summary>
-    /// The card springs out of the link with a little bounce and settles in about half a second;
-    /// the buttons beside it come in once it's mostly there.
-    /// </summary>
-    // Peek motion, tuned by eye. The storyboards in MainWindow.xaml are timed to match.
-    // With no box for the link (AimPeekCard), from and back to a speck at the press, so it's still plain where it came from.
-    private const float PeekGrowFrom = 0.02f;     // card's scale on its first frame, about the press
+    /// <summary>The card's place over the page (PeekLayout): about three quarters of its width, centred.</summary>
+    private void PlacePeekCard()
+    {
+        // Opening as a tab or split, the card's margin is the move's.
+        if (_peekExpanding) return;
+        var page = PageArea.Margin;
+        var side = PeekLayout.CardSide(PageArea.ActualWidth);
+        PeekCardFrame.Margin = new Thickness(page.Left + side, page.Top + PeekCardTop, page.Right + side, page.Bottom + PeekCardBottom);
+    }
+
+    // Peek's opening and place, measured from Arc's at 60fps; its close is Drift's own. The storyboards in
+    // MainWindow.xaml are timed to match.
+    private const double PeekCardTop = 3;         // the card a little in from the page's top and bottom
+    private const double PeekCardBottom = 4;
+    private const float PeekGrowFrom = 0.28f;     // with only the press: its scale on the first frame, about the press
     private const double PeekGrowSeconds = 0.32;
-    private const double PeekGrowBounce = 0.25;   // overshoots ~3% of the way, then settles
-    private const double PeekGrowKick = 0.6;     // leaves the press point at speed instead of easing out of it
-    private const double PeekGrowFromLinkSeconds = 0.36; // and takes a little longer over it, as there's further to go
-    private const double PeekGrowFromLinkKick = 0; // from the link's box: eases out of it, so the link is seen turning into the card
-    private const float PeekShrinkTo = 0.02f;     // where it heads back to on close
+    private const double PeekGrowBounce = 0.36;   // overshoots about 5% and settles, by 0.45s
+    private const float PeekShrinkTo = 0.02f;     // with only the press: closing, back to a speck there
     private const double PeekShrinkSeconds = 0.22;
-    // No dip past the end on the way back to a speck: past zero, the card would turn inside out.
+    // No dip past the end on the way back into the link: past it, the card would turn inside out.
     private const double PeekShrinkToLinkBounce = 0;
     private const double PeekShrinkBounce = 0.25; // with no link: dips just past its end before it fades
-    private const int PeekControlsDelayMs = 120;  // the buttons come out as the card settles (with its fade, PeekEnterAnimation)
-    private const double PeekControlsSeconds = 0.25;
-    private const double PeekControlsBounce = 0.15; // the card's family, lighter: they're smaller and follow it
-    private static readonly Vector3 PeekControlsTucked = new(-16, 0, 0); // toward the card, its edge 12px away
 
+    /// <summary>The card, its buttons on it, springs up out of the link (or the press) and settles.</summary>
     private void SpringPeekIn()
     {
         // Starting points go in as `from`, never as the elements' own Scale: XAML draws them at that,
         // and a card drawn at half size then stretched up has soft borders the whole way.
         // Scale and shift on the same spring, so each edge travels straight from the link's to its place.
-        Spring.To(PeekCardFrame, "Scale", Vector3.One, duration: _cardGrowSeconds, bounce: PeekGrowBounce,
-            from: _cardFromScale, kick: _cardGrowKick);
-        Spring.To(PeekCardFrame, "Translation", Vector3.Zero, duration: _cardGrowSeconds, bounce: PeekGrowBounce,
-            from: _cardFromShift, kick: _cardGrowKick);
-
-        // The buttons, all at once (Peek opens many times a day: no stagger), out from the card's edge
-        // as it lands, so they read as coming from it. About their middle when pulled away (PeekGrab).
-        PeekControls.CenterPoint = new Vector3((float)PeekCloseButton.Width / 2, (float)PeekControls.ActualHeight / 2, 0);
-        Spring.Jump(PeekControls, "Scale", Vector3.One);
-        Spring.To(PeekControls, "Translation", Vector3.Zero, duration: PeekControlsSeconds, bounce: PeekControlsBounce,
-            delay: TimeSpan.FromMilliseconds(PeekControlsDelayMs), from: PeekControlsTucked);
+        Spring.To(PeekCardFrame, "Scale", Vector3.One, duration: PeekGrowSeconds, bounce: PeekGrowBounce, from: _cardFromScale);
+        Spring.To(PeekCardFrame, "Translation", Vector3.Zero, duration: PeekGrowSeconds, bounce: PeekGrowBounce, from: _cardFromShift);
     }
 
-    /// <summary>Back toward the link on a spring, with a little bounce as it gets there; the buttons back toward the card.</summary>
+    /// <summary>Back into the link it came from on a spring (PeekExitAnimation fades it as it gets there).</summary>
     private void SpringPeekOut()
     {
         Spring.To(PeekCardFrame, "Scale", _cardToScale, duration: PeekShrinkSeconds, bounce: _cardToBounce);
         Spring.To(PeekCardFrame, "Translation", _cardToShift, duration: PeekShrinkSeconds, bounce: _cardToBounce);
-        TuckPeekControls();
     }
 
-    /// <summary>The buttons go the way they came, at once and quicker (they fade with PeekExitAnimation, or FadePeekControls).</summary>
-    private void TuckPeekControls() =>
-        Spring.To(PeekControls, "Translation", PeekControlsTucked, duration: 0.2, bounce: 0);
-
-    /// <summary>The card and buttons at rest, with no spring running.</summary>
+    /// <summary>The card at rest, with no spring running.</summary>
     private void SettlePeekMotion()
     {
         Spring.Jump(PeekCardFrame, "Scale", Vector3.One);
         Spring.Jump(PeekCardFrame, "Translation", Vector3.Zero);
-        Spring.Jump(PeekControls, "Scale", Vector3.One);
-        Spring.Jump(PeekControls, "Translation", Vector3.Zero);
     }
 
     /// <param name="animate">
@@ -1459,26 +1540,15 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Picks the page's Peek scale and shift so all four edges land on whole device pixels.
-    /// A flat 0.97 about the centre leaves edges between pixels and the 1px border goes soft;
-    /// the page's laid-out size can also be fractional (at rest XAML snaps it, under a transform
-    /// it doesn't). So: scale from the corner to a whole-pixel size, shifted by a whole-pixel offset.
+    /// The page's Peek scale and shift (PeekLayout.PageShrink): 8px in on every side, each edge on a whole
+    /// device pixel so its 1px border stays sharp. The page's laid-out size can be fractional (at rest XAML
+    /// snaps it, under a transform it doesn't), so it's scaled from its corner and shifted by whole pixels.
     /// </summary>
     private void SnapPageShrink()
     {
         var pixels = PageArea.XamlRoot?.RasterizationScale ?? 1;
-        static (double Scale, double Shift) Fit(double size, double pixels)
-        {
-            // The element is drawn at its layout-rounded size, which can be half a pixel
-            // larger than ActualWidth/ActualHeight report.
-            var sizePx = Math.Round(size * pixels, MidpointRounding.AwayFromZero);
-            if (sizePx < 1) return (1, 0);
-            var shrunkPx = Math.Round(sizePx * 0.97);
-            var shiftPx = Math.Round((sizePx - shrunkPx) / 2);
-            return (shrunkPx / sizePx, shiftPx / pixels);
-        }
-        (PageShrinkX.Value, PageShiftX.Value) = Fit(PageArea.ActualWidth, pixels);
-        (PageShrinkY.Value, PageShiftY.Value) = Fit(PageArea.ActualHeight, pixels);
+        (PageShrinkX.Value, PageShiftX.Value) = PeekLayout.PageShrink(PageArea.ActualWidth, pixels);
+        (PageShrinkY.Value, PageShiftY.Value) = PeekLayout.PageShrink(PageArea.ActualHeight, pixels);
 
         // The frame that draws the shrunk page's border and scrim sits exactly on those bounds.
         var margin = PageArea.Margin;
@@ -1494,7 +1564,7 @@ public sealed partial class MainWindow : Window
         PeekToSplitButton.Visibility = CanSplitWithPeek(_peekOwner) ? Visibility.Visible : Visibility.Collapsed;
         // The frame draws the border while the page is shrunk; the page's own would be soft.
         // This local value hides the style's border until HidePeekLayer clears it.
-        MainCard.BorderBrush = SplitCard.BorderBrush = null;
+        MainCardFace.BorderBrush = SplitCardFace.BorderBrush = null;
         SnapPageShrink();
         if (!animate)
         {
@@ -1525,8 +1595,8 @@ public sealed partial class MainWindow : Window
         if (!_peekExpanding) UnstagePicture();
         PeekPageFrame.Visibility = Visibility.Collapsed;
         // Back to the style's border, which follows light/dark mode as it changes.
-        MainCard.ClearValue(Border.BorderBrushProperty);
-        SplitCard.ClearValue(Border.BorderBrushProperty);
+        MainCardFace.ClearValue(Border.BorderBrushProperty);
+        SplitCardFace.ClearValue(Border.BorderBrushProperty);
         // Stopping returns every animated value (page scale, opacity) to its base.
         SettlePeekMotion();
         PeekEnterAnimation.Stop();
@@ -1575,9 +1645,8 @@ public sealed partial class MainWindow : Window
         try
         {
             SettlePeekMotion();
-            // The buttons go at once, the way they came, as the card starts to move.
+            // The buttons go at once, as the card starts to move.
             PeekControls.IsHitTestVisible = false;
-            TuckPeekControls();
             FadePeekControls();
             // 1. The picture over the page, exactly where it is: nothing on screen changes.
             var held = revealed && await Deadline.Within(FreezeAsync(picture), TimeSpan.FromMilliseconds(400), fallback: false);
@@ -1662,7 +1731,7 @@ public sealed partial class MainWindow : Window
             cardVisual.Clip = null;
             cardVisual.StopAnimation("Scale");
             cardVisual.Scale = Vector3.One;
-            PeekCardFrame.Margin = floating;
+            PlacePeekCard();
             UnstagePicture();
             PeekCardTint.Background = null;
             PeekControls.IsHitTestVisible = true;
@@ -1727,8 +1796,8 @@ public sealed partial class MainWindow : Window
         PeekEnterAnimation.Stop();
         PeekFadeInAnimation.Stop();
         PeekPageFrame.Visibility = Visibility.Collapsed;
-        MainCard.ClearValue(Border.BorderBrushProperty);
-        SplitCard.ClearValue(Border.BorderBrushProperty);
+        MainCardFace.ClearValue(Border.BorderBrushProperty);
+        SplitCardFace.ClearValue(Border.BorderBrushProperty);
         if (!_uiSettings.AnimationsEnabled) return;
 
         // On what's inside it, which fills it exactly: PageArea has a RenderTransform (the opening's), and
@@ -1798,7 +1867,7 @@ public sealed partial class MainWindow : Window
         const string top = "Clamp(t0 + (t1 - t0) * p.T, 0, h)";
         const string right = "Clamp(w - r0 - (r1 - r0) * p.T, 0, w)";
         const string bottom = "Clamp(h - b0 - (b1 - b0) * p.T, 0, h)";
-        const string round = "8 - 2 * Clamp(p.T, 0, 1)";
+        const string round = "6";
 
         var shape = compositor.CreateRoundedRectangleGeometry();
         shape.StartAnimation("Offset", Bind($"Vector2({left}, {top})"));
@@ -1940,7 +2009,7 @@ public sealed partial class MainWindow : Window
 
         var compositor = cardVisual.Compositor;
         var shape = compositor.CreateRoundedRectangleGeometry();
-        shape.CornerRadius = new Vector2(8);
+        shape.CornerRadius = new Vector2(6);
         shape.Offset = new Vector2((float)start.Left, (float)start.Top);
         shape.Size = new Vector2(width - (float)(start.Left + start.Right), height - (float)(start.Top + start.Bottom));
         cardVisual.Clip = compositor.CreateGeometricClip(shape);
@@ -1970,8 +2039,6 @@ public sealed partial class MainWindow : Window
         const string bottom = "Clamp(h - b0 - (b1 - b0) * p.T, 0, h)";
         shape.StartAnimation("Offset", Bind($"Vector2({left}, {top})"));
         shape.StartAnimation("Size", Bind($"Vector2({right} - {left}, {bottom} - {top})"));
-        // From the card's rounding to the page's.
-        shape.StartAnimation("CornerRadius", Bind("Vector2(8 - 2 * Min(p.T, 1), 8 - 2 * Min(p.T, 1))"));
 
         // Growing to fill the card (opening as a tab), past its edges (T over 1) the clip has nothing more
         // to show, so the card swells a touch instead, each edge out by its own inset × the overshoot
@@ -2459,7 +2526,9 @@ public sealed partial class MainWindow : Window
         return new SessionTab
         {
             Url = url,
-            Title = tab.Title,
+            Title = tab.PageTitle,
+            Name = tab.Name,
+            Icon = tab.Icon,
             Pinned = tab.IsPinned,
             Place = tab.Place.ToString(),
             Home = tab.HomeUri?.ToString(),
@@ -2488,7 +2557,8 @@ public sealed partial class MainWindow : Window
         var folder = saved.Folder is { } id ? _folderTree.AllFolders.FirstOrDefault(f => f.Id == id) : null;
         var index = saved.Index;
         if (place == TabPlace.Folder && folder is null) (place, index) = (TabPlace.Pinned, null);
-        _ = CreateTabAsync(uri, place, activate: true, title: saved.Title, home: home, index: index, folder: folder);
+        _ = CreateTabAsync(uri, place, activate: true, title: saved.Title, home: home, index: index, folder: folder,
+            name: saved.Name, icon: saved.Icon);
     }
 
     // ───────────────────────── Crashed pages ─────────────────────────
@@ -2510,6 +2580,7 @@ public sealed partial class MainWindow : Window
                 break;
             case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
                 tab.Crash = TabCrash.Unresponsive;
+                WatchForRecovery(tab);
                 break;
             case CoreWebView2ProcessFailedKind.BrowserProcessExited:
                 EngineStopped();
@@ -2520,10 +2591,81 @@ public sealed partial class MainWindow : Window
                 }
                 tab.Crash = TabCrash.EngineStopped;
                 break;
+            case CoreWebView2ProcessFailedKind.GpuProcessExited:
+                GpuProcessFailed(e);
+                return;
             default:
                 return;
         }
         if (tab == _active) UpdateChrome();
+    }
+
+    private static readonly GpuFailures GpuFailures = new();
+
+    /// <summary>
+    /// The engine's GPU process exited (every page froze until it came back). Failing again and
+    /// again, it's usually its driver hanging on video, so video decodes on the CPU from the next start.
+    /// </summary>
+    private void GpuProcessFailed(CoreWebView2ProcessFailedEventArgs e)
+    {
+        var failure = GpuFailures.Report(DateTime.Now);
+        if (failure == GpuFailure.Repeat) return;
+        App.LogCrash(new InvalidOperationException($"GPU process exited: {e.Reason}, exit code {e.ExitCode}"));
+        if (failure != GpuFailure.TooMany || EngineVideoOnCpu || EngineRuntime is null) return;
+        var runtime = EngineRuntime;
+        Settings.Update(s => s.VideoOnCpuFor = runtime);
+        ShowNotice(new FontIcon { Glyph = "", FontSize = 20 }, "Video was freezing pages",
+            "It plays without the graphics card from when Drift restarts", TimeSpan.FromSeconds(12),
+            ("Restart now", () => _ = RestartAsync()));
+    }
+
+    private readonly HashSet<BrowserTab> _hungTabs = [];
+
+    /// <summary>
+    /// A hung page that starts answering again comes back by itself, as if Wait had been pressed
+    /// (often a page catching up after the PC wakes). WebView2 reports the hang, but not its end.
+    /// </summary>
+    private async void WatchForRecovery(BrowserTab tab)
+    {
+        if (!_hungTabs.Add(tab)) return;
+        try
+        {
+            var core = tab.View.CoreWebView2;
+            Task<bool?>? asking = null;
+            while (tab.Crash == TabCrash.Unresponsive)
+            {
+                // One question at a time: a hung page answers them all at once when it's back.
+                asking ??= AnswersAsync(core);
+                var answer = await Deadline.Within(asking, TimeSpan.FromSeconds(2), fallback: false);
+                if (answer is null) return; // the view is gone
+                if (answer == true)
+                {
+                    if (tab.Crash != TabCrash.Unresponsive || tab.View.CoreWebView2 != core) return;
+                    tab.Crash = TabCrash.None;
+                    tab.View.Visibility = Visibility.Visible;
+                    if (tab == _active) UpdateChrome();
+                    return;
+                }
+                if (asking.IsCompleted) asking = null;
+            }
+        }
+        finally
+        {
+            _hungTabs.Remove(tab);
+        }
+
+        static async Task<bool?> AnswersAsync(CoreWebView2 core)
+        {
+            try
+            {
+                await core.ExecuteScriptAsync("1");
+                return true;
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 
     /// <summary>The engine is gone: the next page to start brings up a new one.</summary>
@@ -2533,24 +2675,74 @@ public sealed partial class MainWindow : Window
         Extensions.Detach();
     }
 
+    private bool _crashShown;
+
+    /// <summary>
+    /// The card over a page that's hung, crashed, or lost its engine. A hung page stays in view, dimmed
+    /// behind it, so it's clear which page it is and that it may yet come back; a crashed one has nothing
+    /// left to show. The card settles in from a touch smaller, and fades out the way it came.
+    /// </summary>
     private void ShowCrash()
     {
         var crash = _active?.Crash ?? TabCrash.None;
-        CrashPanel.Visibility = crash == TabCrash.None ? Visibility.Collapsed : Visibility.Visible;
-        if (crash == TabCrash.None) return;
-        _active!.View.Visibility = Visibility.Collapsed;
-        var host = DisplayUrl(_active.Url);
+        if (crash == TabCrash.None)
+        {
+            HideCrash();
+            return;
+        }
+        var tab = _active!;
+        var hung = crash == TabCrash.Unresponsive;
+        tab.View.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
+        // Which page it is shows in its icon (and, hung, the page itself), so the title stays one short line.
         (CrashTitle.Text, CrashText.Text) = crash switch
         {
-            TabCrash.Unresponsive => ("This page isn't responding",
-                "You can wait for it, or reload it."),
-            TabCrash.EngineStopped => ("Drift's web engine stopped",
-                "Your tabs are all still here. Reload to open this one again."),
-            _ => ("This page crashed",
-                host.Length > 0 ? $"Something on {host} made it stop. Reloading usually brings it back." : "Reloading usually brings it back."),
+            TabCrash.Unresponsive => ("This page isn't responding", ""),
+            TabCrash.EngineStopped => ("Pages stopped working", "Your tabs are all still here."),
+            _ => ("This page crashed", ""),
         };
-        CrashWaitButton.Visibility = crash == TabCrash.Unresponsive ? Visibility.Visible : Visibility.Collapsed;
+        CrashText.Visibility = CrashText.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var favicon = crash == TabCrash.EngineStopped ? null : tab.Favicon;
+        CrashFavicon.Source = favicon;
+        CrashFavicon.Visibility = favicon is null ? Visibility.Collapsed : Visibility.Visible;
+        CrashGlyph.Glyph = crash == TabCrash.EngineStopped ? "" : "";
+        CrashGlyph.Visibility = favicon is null ? Visibility.Visible : Visibility.Collapsed;
+        // Wait only means something for a hung page; otherwise Reload takes the whole row.
+        CrashWaitButton.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetColumn(CrashReloadButton, hung ? 1 : 0);
+        Grid.SetColumnSpan(CrashReloadButton, hung ? 1 : 2);
+        CrashScrim.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
+
+        if (_crashShown) return;
+        _crashShown = true;
+        CrashPanel.Visibility = Visibility.Visible;
+        CrashPanel.IsHitTestVisible = true;
+        CrashScrim.Opacity = 0.8;
+        CrashCard.Opacity = 1;
+        Spring.To(CrashCard, "Scale", Vector3.One, 0.35, 0, from: new Vector3(0.96f, 0.96f, 1));
     }
+
+    private void HideCrash()
+    {
+        if (!_crashShown) return;
+        _crashShown = false;
+        CrashPanel.IsHitTestVisible = false;
+        CrashScrim.Opacity = 0;
+        CrashCard.Opacity = 0;
+        Spring.To(CrashCard, "Scale", new Vector3(0.96f, 0.96f, 1), 0.35, 0);
+        var gone = DispatcherQueue.CreateTimer();
+        gone.Interval = TimeSpan.FromMilliseconds(200);
+        gone.IsRepeating = false;
+        gone.Tick += (_, _) =>
+        {
+            gone.Stop();
+            if (!_crashShown) CrashPanel.Visibility = Visibility.Collapsed;
+        };
+        gone.Start();
+    }
+
+    // Scales about its middle, whatever its text makes its height.
+    private void CrashCard_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        CrashCard.CenterPoint = new Vector3((float)e.NewSize.Width / 2, (float)e.NewSize.Height / 2, 0);
 
     private void CrashReload_Click(object sender, RoutedEventArgs e)
     {
@@ -3063,7 +3255,25 @@ public sealed partial class MainWindow : Window
     private void TabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_syncingSelection) return;
-        if (((ListViewBase)sender).SelectedItem is BrowserTab tab && tab != _active) Activate(tab);
+        if (((ListViewBase)sender).SelectedItem is not BrowserTab tab) return;
+        if (tab != _active) Activate(tab);
+        // The tab in front already, clicked where it's kept (an Essential in a split): the split's row
+        // stays the one marked, not this one as well.
+        else MarkInSidebar(tab);
+    }
+
+    /// <summary>
+    /// The row of the tab in front marked, and no other. A split is its own row (as in Arc): that's
+    /// the one marked, in whichever list it's in.
+    /// </summary>
+    private void MarkInSidebar(BrowserTab tab)
+    {
+        _syncingSelection = true;
+        var row = tab.Split?.Row;
+        EssentialList.SelectedItem = tab is { Place: TabPlace.Essential, Split: null } ? tab : null;
+        PinnedList.SelectedItem = row is not null ? (PinnedTabs.Contains(row) ? row : null) : tab.Place == TabPlace.Pinned ? tab : null;
+        TabList.SelectedItem = row is not null ? (Tabs.Contains(row) ? row : null) : tab.Place == TabPlace.Regular ? tab : null;
+        _syncingSelection = false;
     }
 
     private void Back_Click(object sender, RoutedEventArgs e) => _active?.View.GoBack();
@@ -3087,7 +3297,9 @@ public sealed partial class MainWindow : Window
             if (e.Cancel) return;
             tab.Load.Started(e.NavigationId);
             if (tab == _active) ShowLoadButton();
+            WatchSignIn(tab, e);
         };
+        WatchSignInRequests(tab, core);
         core.NavigationCompleted += (_, e) =>
         {
             tab.Load.Finished(e.NavigationId);
@@ -3160,6 +3372,12 @@ public sealed partial class MainWindow : Window
             _dragFolder = folder;
             e.Data.RequestedOperation = DataPackageOperation.Move;
             _ = RenderFolderGhostAsync(folder);
+            return;
+        }
+        // A split's row in the pinned list stays in its pinned tab's place (Split.cs); its halves move by their own menus.
+        if (sender == PinnedList && e.Items.FirstOrDefault() is BrowserTab { IsSplitRow: true })
+        {
+            e.Cancel = true;
             return;
         }
         if (e.Items.FirstOrDefault() is not BrowserTab tab) { e.Cancel = true; return; }
@@ -3394,7 +3612,7 @@ public sealed partial class MainWindow : Window
     // ── Essentials preview: the tiles move to the order a drop would give ──
 
     // Tiles are 46 high with 4 around them.
-    private const double EssentialCellHeight = 54;
+    private const double EssentialCellHeight = 53; // a 43-tall tile and 10 between, as Arc's
     private int _essentialsArriving;            // 1 while a tab from another group is over Essentials
     private int? _essentialLanding;             // where the dragged tab would land, while over them
     private (int Land, int Columns, double Width)? _essentialPreview;
@@ -3821,6 +4039,8 @@ public sealed partial class MainWindow : Window
             if (!_uiSettings.AnimationsEnabled) return;
             // A split's row: the half pressed shrinks instead (SplitHalf_Loaded).
             if (element is ListViewItem { Content: BrowserTab { IsSplitRow: true } }) return;
+            // A folder's own row only opens or closes it, and its tabs slide in or out below: that's the response.
+            if (element is ListViewItem { Content: TabFolder }) return;
             element.CenterPoint = new Vector3(element.ActualSize / 2, 0);
             // Down fast, so the press shows at once.
             Spring.To(element, "Scale", new Vector3(pressedScale, pressedScale, 1), duration: 0.15, bounce: 0);
@@ -3843,7 +4063,7 @@ public sealed partial class MainWindow : Window
     {
         if (sender == FolderList && !args.InRecycleQueue) IndentFolderRow(args.ItemContainer, args.Item);
         // A split's row has no card or padding of its own (SplitRowStyle); a recycled container may have held either kind.
-        if (sender == TabList && !args.InRecycleQueue && args.ItemContainer is ListViewItem row)
+        if ((sender == TabList || sender == PinnedList) && !args.InRecycleQueue && args.ItemContainer is ListViewItem row)
         {
             var style = (Style)Application.Current.Resources[args.Item is BrowserTab { IsSplitRow: true } ? "SplitRowStyle" : "TabRowStyle"];
             if (row.Style != style) row.Style = style;
@@ -3867,6 +4087,23 @@ public sealed partial class MainWindow : Window
         HistoryMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("history");
         SidebarMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("sidebar");
         SettingsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("settings");
+    }
+
+    /// <summary>The + menu, across from the Library button: a tab, a folder, or a live folder.</summary>
+    private void PlusMenu_Opening(object? sender, object e)
+    {
+        PlusNewTabItem.KeyboardAcceleratorTextOverride = ShortcutText("newtab");
+        PlusNewFolderItem.KeyboardAcceleratorTextOverride = ShortcutText("folder");
+        // Not in a private window; and one pull requests folder is enough (LiveFolders.cs).
+        PlusLiveFolderItem.Visibility = Ui.Shown(!_private);
+        PlusGitHubItem.IsEnabled = !LiveFolders.Any();
+    }
+
+    private void PlusMenu_Closed(object? sender, object e)
+    {
+        SidebarMenu_Closed(sender, e);
+        // Its submenu's window can be left at the window's corner (GhostPopups).
+        _ghostPopups.MenuClosed(PlusGitHubItem);
     }
 
     // As the system minimizes (GhostPopups), so any menu open is closed first.

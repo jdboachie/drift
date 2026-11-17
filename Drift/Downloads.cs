@@ -51,6 +51,12 @@ public sealed class DownloadItem : INotifyPropertyChanged
 
     [JsonIgnore] public Visibility DoneVisibility => IsRunning ? Visibility.Collapsed : Visibility.Visible;
 
+    /// <summary>Every byte in, the file being checked and saved: it can't be paused or cancelled now.</summary>
+    [JsonIgnore] public bool IsFinishing => IsRunning && !IsPaused && DownloadHold.AllIn(Received, Total);
+
+    /// <summary>Pause and Cancel: while it runs, till it's finishing.</summary>
+    [JsonIgnore] public Visibility ControlsVisibility => IsRunning && !IsFinishing ? Visibility.Visible : Visibility.Collapsed;
+
     /// <summary>The folder button: there's something on disk to show.</summary>
     [JsonIgnore] public Visibility FolderVisibility => State == DownloadState.Completed && !IsMissing ? Visibility.Visible : Visibility.Collapsed;
 
@@ -78,6 +84,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
                 case DownloadState.InProgress:
                     var size = Total is > 0 ? $"{Size(Received)} of {Size(Total.Value)}" : Size(Received);
                     if (IsPaused) return "Paused · " + size;
+                    if (IsFinishing) return "Finishing · " + Size(Total!.Value);
                     if (EstimatedEnd is { } end && end > DateTime.Now)
                     {
                         var left = end - DateTime.Now;
@@ -358,7 +365,36 @@ internal static class Downloads
         Changed?.Invoke();
     }
 
-    public static void Cancel(DownloadItem item) => item.Operation?.Cancel();
+    /// <summary>
+    /// Stops a download. Once every byte is in, the engine won't: it's checking the file (an .exe is
+    /// scanned for safety) and saving it under its name, and it finishes on its own. Then nothing
+    /// happens here, rather than the error that used to close Drift. One it finished without saying
+    /// is shown as saved.
+    /// </summary>
+    public static void Cancel(DownloadItem item)
+    {
+        if (item.Operation is not { } operation) return;
+        try
+        {
+            operation.Cancel();
+            return;
+        }
+        catch
+        {
+            // Being finished, or already over.
+        }
+        try
+        {
+            if (operation.State != CoreWebView2DownloadState.Completed) return;
+            Complete(item, operation.BytesReceived);
+        }
+        catch
+        {
+            return;
+        }
+        item.Refresh();
+        Changed?.Invoke();
+    }
 
     /// <summary>Pauses a running download, or carries on with a paused one.</summary>
     public static void PauseOrResume(DownloadItem item)

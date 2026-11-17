@@ -57,7 +57,7 @@ public sealed partial class MainWindow
 
     private void MailTick()
     {
-        var tab = EssentialTabs.Concat(PinnedTabs).Concat(FolderTabs).FirstOrDefault(IsMailTab);
+        var tab = EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsMailTab);
         if (tab != _mailTab)
         {
             _mailTab = tab;
@@ -159,27 +159,26 @@ public sealed partial class MainWindow
         MailScroll.ChangeView(null, 0, null, disableAnimation: true);
     }
 
-    /// <summary>What the mail card shows for the tab it's for: its unread emails, or why there aren't any.</summary>
-    private (List<MailItem> Items, int Unread, string? Message) MailCardData()
+    /// <summary>What the mail card shows for the tab it's for: its unread emails, or why there aren't any and what to do about it.</summary>
+    private (List<MailItem> Items, int Unread, string? Message, string? Action) MailCardData()
     {
-        if (_hoverTab is { } tab && tab == _outlookMailTab) return (_outlookMail, _outlookUnread, OutlookMessage());
-        return (_mailItems, _mailUnread, _mailState switch
+        if (_hoverTab is { } tab && tab == _outlookMailTab) return (_outlookMail, _outlookUnread, OutlookMessage(), null);
+        return _mailState switch
         {
-            MailState.SignedOut => "Sign in to Gmail in its tab",
-            MailState.Failed => "Couldn't reach Gmail",
-            MailState.Loading => "Loading…",
-            _ => null,
-        });
+            MailState.SignedOut => (_mailItems, _mailUnread, "You're signed out of Gmail", "Sign in"),
+            MailState.Failed => (_mailItems, _mailUnread, "Couldn't reach Gmail", "Try again"),
+            MailState.Loading => (_mailItems, _mailUnread, "Loading…", null),
+            _ => (_mailItems, _mailUnread, null, null),
+        };
     }
 
     private void RenderMailCard()
     {
         MailList.Children.Clear();
-        var (items, unread, message) = MailCardData();
+        var (items, unread, message, action) = MailCardData();
         MailHeader.Text = message is null && unread > 0 ? $"{unread} unread" : "Inbox";
         if (message is null && items.Count == 0) message = "No unread email";
-        MailMessage.Text = message ?? "";
-        MailMessage.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+        ShowCardMessage(MailMessagePanel, MailMessage, MailActionButton, message, action);
         if (message is not null) return;
 
         var primary = ThemeBrush("TextFillColorPrimaryBrush");
@@ -247,6 +246,21 @@ public sealed partial class MainWindow
             else OpenInTab(tab, item.MessageId is { } id ? GmailFeed.Message(id, MailAccount) : GmailFeed.Inbox(MailAccount));
         };
         return row;
+    }
+
+    /// <summary>Signed out: Gmail in its tab, to sign in. Couldn't reach it: asked again, by a fresh view.</summary>
+    private void MailAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mailState == MailState.SignedOut)
+        {
+            OpenInTab(_mailTab, GmailFeed.Inbox(MailAccount));
+            return;
+        }
+        _mailState = MailState.Loading;
+        RenderMailCard();
+        if (_mailFetching) return;
+        CloseHiddenSite(GmailFeed.Host);
+        _ = FetchMailAsync();
     }
 
     private void MailCompose_Click(object sender, RoutedEventArgs e)

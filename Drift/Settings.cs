@@ -88,6 +88,8 @@ internal sealed class SettingsData
     public CloseBehavior OnClose { get; set; } = CloseBehavior.KeepTabs;
     /// <summary>Closing Drift takes a second click (or Alt+F4) soon after the first (Confirm.cs).</summary>
     public bool CloseTwice { get; set; } = true;
+    /// <summary>Essentials load just after Drift starts, rather than when first opened (MainWindow.LoadEssentialsSoon).</summary>
+    public bool LoadEssentialsAtStart { get; set; } = true;
     public StartupBehavior OnStartup { get; set; } = StartupBehavior.LastTab;
     public string StartupPage { get; set; } = "";
     /// <summary>Ad blocking, with uBlock Origin Lite (Extensions).</summary>
@@ -101,6 +103,20 @@ internal sealed class SettingsData
     public bool SavePasswords { get; set; } = true;
     /// <summary>Fill in addresses and other form data seen before.</summary>
     public bool Autofill { get; set; } = true;
+    /// <summary>
+    /// Sign in to Outlook, Office and other Microsoft sites with the Windows account (MicrosoftSignIn.cs).
+    /// The web engine reads it as it starts, so a change applies after a restart.
+    /// </summary>
+    public bool MicrosoftSignIn { get; set; } = true;
+    /// <summary>The first-run card about Microsoft sign-in has been answered.</summary>
+    public bool MicrosoftSignInAsked { get; set; }
+    /// <summary>The notice the first time a tab was signed in with the Windows account has been shown.</summary>
+    public bool MicrosoftSignInNoticeShown { get; set; }
+    /// <summary>
+    /// The WebView2 runtime on which the GPU kept failing, so video decodes on the CPU (GpuFailures);
+    /// a newer runtime tries the GPU again.
+    /// </summary>
+    public string? VideoOnCpuFor { get; set; }
     /// <summary>The installed uBlock Origin Lite, to find it again.</summary>
     public string? AdBlockExtensionId { get; set; }
     /// <summary>Tab in the command bar sends what's typed to AI (AskAiBar.cs); off, it takes the completion.</summary>
