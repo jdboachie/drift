@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A card an integration hangs from its pinned tab while you hover it, as Arc's (Integrations.cs): the site's icon,
+     what it shows, and + to make a new one, on a tint of the accent; under that, the card's own content (Body).
+     It grows out of the tab's corner and fades (its own scale and opacity transitions, driven by Integrations.cs). -->
+<UserControl
+    x:Class="Drift.HoverCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalAlignment="Left"
+    VerticalAlignment="Top"
+    Visibility="Collapsed"
+    Opacity="0">
+    <UserControl.OpacityTransition>
+        <ScalarTransition Duration="0:0:0.12" />
+    </UserControl.OpacityTransition>
+    <UserControl.ScaleTransition>
+        <Vector3Transition Duration="0:0:0.15" />
+    </UserControl.ScaleTransition>
+
+    <Border CornerRadius="12"
+            Style="{StaticResource FloatingPanelStyle}"
+            Background="{ThemeResource DriftCommandBarBrush}"
+            Translation="0,0,48">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid Background="{ThemeResource DriftCardHeaderBrush}" Padding="12,8,8,8" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Image Source="{x:Bind Icon, Mode=OneWay}" Width="16" Height="16" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{x:Bind Title, Mode=OneWay}" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}"
+                        Width="28" Height="28" CornerRadius="6"
+                        Background="{ThemeResource DriftCardHeaderButtonBrush}"
+                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                        Click="Action_Click"
+                        AutomationProperties.Name="{x:Bind ActionName, Mode=OneWay}"
+                        ToolTipService.ToolTip="{x:Bind ActionName, Mode=OneWay}">
+                    <FontIcon Glyph="&#xE710;" FontSize="12" />
+                </Button>
+            </Grid>
+            <ContentPresenter Grid.Row="1" Content="{x:Bind Body, Mode=OneWay}" />
+        </Grid>
+    </Border>
+</UserControl>

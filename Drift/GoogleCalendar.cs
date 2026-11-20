@@ -71,7 +71,8 @@ public sealed partial class MainWindow
     private static bool IsCalendarTab(BrowserTab tab) =>
         tab.IsPinned && GoogleCalendarLinks.IsCalendar(tab.HomeUri ?? (Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) ? u : null));
 
-    private BrowserTab? FindCalendarTab() => EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsCalendarTab);
+    private BrowserTab? FindCalendarTab() =>
+        Settings.Current.PreviewGoogleCalendar ? EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsCalendarTab) : null;
 
     private int CalendarAccount => GoogleCalendarLinks.Account(_calendarTab?.HomeUri);
 
@@ -127,6 +128,7 @@ public sealed partial class MainWindow
             next is not null && MeetingClock.CanJoin(next, now) ? next.JoinUrl : null);
         foreach (var due in MeetingClock.DueReminders(events, now, _remindedMeetings))
         {
+            if (!Settings.Current.MeetingReminders) break;
             _remindedMeetings.Add(MeetingClock.Key(due));
             ShowMeetingNotice(due, tab);
         }
@@ -138,7 +140,7 @@ public sealed partial class MainWindow
         if (_noticeMeeting is { } shown)
         {
             if (now >= shown.Start + MeetingClock.JoinEarly || now >= shown.End) HideMeetingNotice();
-            else MeetingNoticeWhen.Text = MeetingClock.Countdown(shown, now);
+            else MeetingNotice.When.Text = MeetingClock.Countdown(shown, now);
         }
         if (_hoverCard == CalendarCard) RenderCalendarCard(scroll: false);
     }
@@ -207,7 +209,7 @@ public sealed partial class MainWindow
 
     // ---- Join, open ----
 
-    private void MeetingJoin_Click(object sender, RoutedEventArgs e)
+    internal void MeetingJoin_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is BrowserTab { MeetingJoinUrl: { } url }) JoinMeeting(url);
     }
@@ -240,11 +242,11 @@ public sealed partial class MainWindow
     /// <summary>What the calendar card shows for the tab it's for: its meetings, or why there aren't any and what to do about it.</summary>
     private (List<CalendarEvent> Events, string? Message, string? Action) CalendarCardData()
     {
-        if (_hoverTab is { } tab && tab == _outlookCalendarTab) return (_outlookEvents, OutlookMessage(), null);
+        if (_hoverTab is { } tab && tab == _outlookCalendarTab) return (_outlookEvents, OutlookMessage(), OutlookAction());
         return _calendarState switch
         {
             CalendarState.SignedOut => (_calendarEvents, "You're signed out of Google Calendar", "Sign in"),
-            CalendarState.Failed when _calendarFiles.Count == 0 => (_calendarEvents, "Couldn't reach Google Calendar", "Try again"),
+            CalendarState.Failed when _calendarFiles.Count == 0 => (_calendarEvents, "We couldn't reach Google Calendar", "Try again"),
             CalendarState.Loading => (_calendarEvents, "Loading…", null),
             _ => (_calendarEvents, null, null),
         };
@@ -253,6 +255,7 @@ public sealed partial class MainWindow
     /// <summary>Signed out: the calendar's tab, to sign in. Couldn't reach it: asked again, by a fresh view.</summary>
     private void CalendarAction_Click(object sender, RoutedEventArgs e)
     {
+        if (RetryOutlook()) return;
         if (_calendarState == CalendarState.SignedOut)
         {
             HideHoverCard();
@@ -271,24 +274,24 @@ public sealed partial class MainWindow
         var now = DateTimeOffset.Now;
         var dayStart = new DateTimeOffset(DateTime.Today, TimeZoneInfo.Local.GetUtcOffset(DateTime.Today));
         var dayEnd = dayStart.AddDays(1);
-        CalendarDay.Text = now.ToString("dddd, MMMM d", CultureInfo.CurrentCulture);
+        CalendarCard.Title = now.ToString("dddd, MMMM d", CultureInfo.CurrentCulture);
+        CalendarCard.Icon = _hoverTab?.Favicon;
         CalendarAllDay.Children.Clear();
         CalendarTimeline.Children.Clear();
 
         var (events, message, action) = CalendarCardData();
         var today = events.Where(e => e.Start < dayEnd && e.End > dayStart).ToList();
-        ShowCardMessage(CalendarMessagePanel, CalendarMessage, CalendarActionButton, message, action);
+        CalendarMessage.Show(message, action);
         CalendarScroll.Visibility = message is null ? Visibility.Visible : Visibility.Collapsed;
         if (message is not null) return;
 
         var primary = ThemeBrush("TextFillColorPrimaryBrush");
         var secondary = ThemeBrush("DriftSecondaryTextBrush");
-        var fill = ThemeBrush("DriftSelectedBrush");
         var divider = ThemeBrush("DriftDividerBrush");
         var accent = ThemeBrush("AccentFillColorDefaultBrush");
 
         foreach (var e in today.Where(e => e.AllDay))
-            CalendarAllDay.Children.Add(EventBlock(e, now, fill, primary, secondary, height: 24, showTime: false));
+            CalendarAllDay.Children.Add(EventBlock(e, now, primary, secondary, height: 24, showTime: false));
 
         // The hours, each with its line.
         var width = CalendarCard.Width - 2;
@@ -324,7 +327,7 @@ public sealed partial class MainWindow
             var to = e.End > dayEnd ? dayEnd : e.End;
             var top = (from - dayStart).TotalHours * HourHeight + 4;
             var height = Math.Max(22, (to - from).TotalHours * HourHeight - 2);
-            var block = EventBlock(e, now, fill, primary, secondary, height, showTime: height >= 38);
+            var block = EventBlock(e, now, primary, secondary, height, showTime: height >= 38);
             block.Width = area / count - 2;
             Canvas.SetLeft(block, TimeColumn + 2 + lane * area / count);
             Canvas.SetTop(block, top + 1);
@@ -344,16 +347,19 @@ public sealed partial class MainWindow
 
         if (timed.Count == 0 && today.Count == 0)
         {
-            ShowCardMessage(CalendarMessagePanel, CalendarMessage, CalendarActionButton, "Nothing today", null);
+            CalendarMessage.Show("Nothing today", null);
         }
         // Opens on the hour before now.
         if (scroll) CalendarScroll.ChangeView(null, Math.Max(0, nowY - HourHeight), null, disableAnimation: true);
     }
 
-    /// <summary>A meeting on the card: its name, its time if there's room, and Join when it can be joined.</summary>
-    private Border EventBlock(CalendarEvent e, DateTimeOffset now, Brush fill, Brush primary, Brush secondary, double height, bool showTime)
+    /// <summary>
+    /// A meeting on the card: its name, its time if there's room, and Join when it can be joined. The
+    /// whole block is a button that opens the meeting's page; Join sits over it, not inside it.
+    /// </summary>
+    private Grid EventBlock(CalendarEvent e, DateTimeOffset now, Brush primary, Brush secondary, double height, bool showTime)
     {
-        var text = new StackPanel { VerticalAlignment = height < 30 ? VerticalAlignment.Center : VerticalAlignment.Top };
+        var text = new StackPanel { VerticalAlignment = height < 30 ? VerticalAlignment.Center : VerticalAlignment.Top, IsHitTestVisible = false };
         text.Children.Add(new TextBlock
         {
             Text = e.Title,
@@ -370,6 +376,8 @@ public sealed partial class MainWindow
                 Foreground = secondary,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
+        var top = height >= 30 ? 4 : 1;
+        text.Margin = new Thickness(8, top, 0, 1);
         var row = new Grid { ColumnSpacing = 6 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -386,36 +394,36 @@ public sealed partial class MainWindow
                 MinWidth = 0,
                 CornerRadius = new CornerRadius(9),
                 VerticalAlignment = height < 30 ? VerticalAlignment.Center : VerticalAlignment.Top,
+                Margin = new Thickness(0, top, 4, 1),
                 Style = (Style)Application.Current.Resources["AccentButtonStyle"],
             };
             join.Click += (_, _) => JoinMeeting(url);
             Grid.SetColumn(join, 1);
             row.Children.Add(join);
         }
-        var block = new Border
+        var open = new Button
         {
-            Height = height,
-            Padding = new Thickness(8, height >= 30 ? 4 : 1, 4, 1),
-            CornerRadius = new CornerRadius(6),
-            Background = fill,
-            Child = row,
-            Opacity = !e.AllDay && e.End <= now ? 0.5 : 1,
+            Style = (Style)Application.Current.Resources["CalendarEventButtonStyle"],
         };
-        AutomationProperties.SetName(block, e.Title);
+        Grid.SetColumnSpan(open, 2);
+        AutomationProperties.SetName(open, e.Title);
+        ToolTipService.SetToolTip(open, e.Title);
         var tab = _hoverTab;
         if (e.WebLink is { } link && Uri.TryCreate(link, UriKind.Absolute, out var page))
-            block.Tapped += (_, args) =>
-            {
-                if (args.OriginalSource is DependencyObject source && IsInsideButton(source)) return;
-                OpenInTab(tab, page);
-            };
+            open.Click += (_, _) => OpenInTab(tab, page);
         else if (e.GoogleEid is { } eid)
-            block.Tapped += (_, args) =>
-            {
-                if (args.OriginalSource is DependencyObject source && IsInsideButton(source)) return;
-                OpenInCalendarTab(GoogleCalendarLinks.Event(eid, CalendarAccount));
-            };
-        return block;
+            open.Click += (_, _) => OpenInCalendarTab(GoogleCalendarLinks.Event(eid, CalendarAccount));
+        else
+        {
+            // Nowhere to open it: just the card, not a button.
+            open.IsHitTestVisible = false;
+            open.IsTabStop = false;
+        }
+        // Under the text and Join.
+        row.Children.Insert(0, open);
+        row.Height = height;
+        row.Opacity = !e.AllDay && e.End <= now ? 0.5 : 1;
+        return row;
     }
 
     // ---- The reminder ----
@@ -423,27 +431,27 @@ public sealed partial class MainWindow
     private void ShowMeetingNotice(CalendarEvent meeting, BrowserTab tab)
     {
         _noticeMeeting = meeting;
-        MeetingNoticeTitle.Text = meeting.Title;
-        MeetingNoticeWhen.Text = MeetingClock.Countdown(meeting, DateTimeOffset.Now);
-        MeetingNoticeIcon.Source = tab.Favicon;
-        MeetingNoticeJoin.Visibility = meeting.JoinUrl is null ? Visibility.Collapsed : Visibility.Visible;
-        MeetingNotice.Visibility = Visibility.Visible;
-        MeetingNotice.Opacity = 1;
+        MeetingNotice.Title.Text = meeting.Title;
+        MeetingNotice.When.Text = MeetingClock.Countdown(meeting, DateTimeOffset.Now);
+        MeetingNotice.Icon.Source = tab.Favicon;
+        MeetingNotice.Join.Visibility = meeting.JoinUrl is null ? Visibility.Collapsed : Visibility.Visible;
+        MeetingNotice.Panel.Visibility = Visibility.Visible;
+        MeetingNotice.Panel.Opacity = 1;
     }
 
     private void HideMeetingNotice()
     {
         _noticeMeeting = null;
-        MeetingNotice.Opacity = 0;
-        MeetingNotice.Visibility = Visibility.Collapsed;
+        MeetingNotice.Panel.Opacity = 0;
+        MeetingNotice.Panel.Visibility = Visibility.Collapsed;
     }
 
-    private void MeetingNoticeJoin_Click(object sender, RoutedEventArgs e)
+    internal void MeetingNoticeJoin_Click(object sender, RoutedEventArgs e)
     {
         var url = _noticeMeeting?.JoinUrl;
         HideMeetingNotice();
         if (url is not null) JoinMeeting(url);
     }
 
-    private void MeetingNoticeClose_Click(object sender, RoutedEventArgs e) => HideMeetingNotice();
+    internal void MeetingNoticeClose_Click(object sender, RoutedEventArgs e) => HideMeetingNotice();
 }

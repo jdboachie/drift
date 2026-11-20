@@ -52,7 +52,7 @@ public sealed partial class MainWindow
     {
         if (_private || _askingSignIn || Settings.Current.MicrosoftSignInAsked) return;
         _askingSignIn = true;
-        const string choice = "Use your Windows account to sign in to Outlook, Office and other Microsoft sites automatically.";
+        const string choice = "Use your Windows account to sign in to Outlook, Office and other Microsoft sites automatically";
         var toggle = new ToggleSwitch
         {
             IsOn = Settings.Current.MicrosoftSignIn,
@@ -200,7 +200,7 @@ public sealed partial class MainWindow
     private void TurnOffSignIn()
     {
         Settings.Update(s => s.MicrosoftSignIn = false);
-        ShowNotice(MicrosoftLogo(20), "Automatic sign-in is off", "From when Drift restarts", SignInNoticeTime,
+        ShowNotice(MicrosoftLogo(20), "Automatic sign-in is off", "It takes effect when Drift restarts", SignInNoticeTime,
             ("Restart now", () => _ = RestartAsync()));
     }
 
@@ -252,7 +252,7 @@ public sealed partial class MainWindow
         {
             return null;
         }
-        if (!await ClearMicrosoftSignInAsync()) return "Couldn't sign out. Try again.";
+        if (!await ClearMicrosoftSignInAsync()) return "We couldn't sign you out. Please try again.";
         if (turnOff.IsChecked != true) return "Signed out";
         Settings.Update(s => s.MicrosoftSignIn = false);
         return "Signed out. Automatic sign-in turns off when Drift restarts.";

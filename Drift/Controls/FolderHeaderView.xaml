@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A folder's row in the sidebar (FolderList, Folders.cs): its icon (or emoji, or a live folder's badge), its name and
+     a chevron that turns as it opens, a spinner while a live folder is asked again, and on hover its ×. What's done in
+     it is the window's (MainWindow.Of). -->
+<UserControl
+    x:Class="Drift.FolderHeaderView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
+
+    <Grid ColumnSpacing="8" Background="Transparent"
+          Tag="{x:Bind Folder, Mode=OneWay}"
+          DoubleTapped="FolderHeader_DoubleTapped"
+          PointerEntered="FolderHeader_PointerEntered"
+          PointerExited="FolderHeader_PointerExited"
+          SizeChanged="FolderHeader_SizeChanged">
+        <Grid.ContextFlyout>
+            <!-- Filled as it opens (FolderMenu_Opening, Folders.cs): quick actions on top, the rest below. -->
+            <MenuFlyout ShouldConstrainToRootBounds="False" Opening="FolderMenu_Opening" Opened="SidebarMenu_Opened" Closed="SidebarMenu_Closed" />
+        </Grid.ContextFlyout>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="18" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <FontIcon Glyph="{x:Bind Folder.Glyph, Mode=OneWay}" FontFamily="{x:Bind local:Ui.IconFont(Folder.Glyph), Mode=OneWay}" FontSize="18"
+                  Foreground="{ThemeResource DriftIconBrush}"
+                  Visibility="{x:Bind local:Ui.Shown(Folder.ShowsGlyph), Mode=OneWay}" />
+        <!-- An emoji chosen for it (Change icon…). -->
+        <!-- Room either side: an emoji is wider than its size (IconPicker.cs, DrawIconAsync). -->
+        <TextBlock Text="{x:Bind Folder.Emoji, Mode=OneWay}" FontSize="16" FontFamily="Segoe UI Emoji"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-4,0"
+                   Visibility="{x:Bind local:Ui.Shown(Folder.HasEmoji), Mode=OneWay}" />
+        <!-- A live folder (LiveFolders.cs): still a folder, with where its tabs come from as a badge on its
+             corner, GitHub's mark (Octicons, MIT). The folder is drawn twice, each clipped, so its corner
+             under the badge is cut away: the sidebar's see-through, so nothing behind the badge could hide it. -->
+        <Grid Width="18" Height="18" VerticalAlignment="Center"
+              Visibility="{x:Bind local:Ui.Shown(Folder.IsLive), Mode=OneWay}">
+            <FontIcon Glyph="{x:Bind Folder.Glyph, Mode=OneWay}" FontFamily="{x:Bind local:Ui.IconFont(Folder.Glyph), Mode=OneWay}" FontSize="18" Width="18" Height="18"
+                      Foreground="{ThemeResource DriftIconBrush}">
+                <FontIcon.Clip>
+                    <RectangleGeometry Rect="0,0,8.5,18" />
+                </FontIcon.Clip>
+            </FontIcon>
+            <FontIcon Glyph="{x:Bind Folder.Glyph, Mode=OneWay}" FontFamily="{x:Bind local:Ui.IconFont(Folder.Glyph), Mode=OneWay}" FontSize="18" Width="18" Height="18"
+                      Foreground="{ThemeResource DriftIconBrush}">
+                <FontIcon.Clip>
+                    <RectangleGeometry Rect="8.5,0,9.5,8" />
+                </FontIcon.Clip>
+            </FontIcon>
+            <!-- Off the corner a little, as a badge sits. -->
+            <Viewbox Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                <Viewbox.RenderTransform>
+                    <TranslateTransform X="1.5" Y="1" />
+                </Viewbox.RenderTransform>
+            <Path Fill="{ThemeResource DriftIconBrush}"
+                  Data="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
+            </Viewbox>
+        </Grid>
+        <!-- Its name, then a chevron that turns as it opens and closes, as Dia's groups. The
+             name stops short of the chevron and the × (FolderHeader_SizeChanged). -->
+        <TextBlock Grid.Column="1"
+                   Text="{x:Bind Folder.Name, Mode=OneWay}"
+                   Visibility="{x:Bind local:Ui.Hidden(Folder.IsRenaming), Mode=OneWay}"
+                   FontSize="14" FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center" />
+        <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="10" Width="10" Height="10"
+                  Margin="-2,1,0,0" CenterPoint="5,5,0"
+                  Rotation="{x:Bind Folder.ChevronAngle, Mode=OneWay}"
+                  Foreground="{ThemeResource DriftSecondaryTextBrush}"
+                  Visibility="{x:Bind local:Ui.Hidden(Folder.IsRenaming), Mode=OneWay}">
+            <FontIcon.RotationTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </FontIcon.RotationTransition>
+        </FontIcon>
+        <TextBox Grid.Column="1" Grid.ColumnSpan="3"
+                 Tag="{x:Bind Folder, Mode=OneWay}"
+                 Visibility="{x:Bind local:Ui.Shown(Folder.IsRenaming), Mode=OneWay}"
+                 Margin="-6,0,4,0"
+                 Padding="5,4,5,4"
+                 MinHeight="28"
+                 FontSize="14"
+                 VerticalAlignment="Center"
+                 AutomationProperties.Name="Folder name"
+                 KeyDown="FolderName_KeyDown"
+                 LostFocus="FolderName_LostFocus" />
+        <!-- A live folder being asked again: a small spinner. At rest it sits where the × shows
+             (moved over by its Translation); with the pointer on the header it slides left to
+             make room for the ×, and can be pointed at for what it's doing
+             (FolderHeader_PointerEntered). -->
+        <ProgressRing Grid.Column="3" Width="14" Height="14" MinWidth="0" MinHeight="0"
+                      HorizontalAlignment="Right"
+                      Loaded="FolderSpinner_Loaded"
+                      IsActive="{x:Bind Folder.IsFetching, Mode=OneWay}"
+                      Visibility="{x:Bind local:Ui.Shown(Folder.IsFetching), Mode=OneWay}"
+                      Foreground="{ThemeResource DriftSecondaryTextBrush}"
+                      ToolTipService.ToolTip="Checking GitHub for pull requests"
+                      AutomationProperties.Name="Checking GitHub for pull requests" />
+        <!-- On hover: deletes the folder, with Undo (FolderDelete_Click). -->
+        <Button Grid.Column="4"
+                Opacity="0"
+                Tag="{x:Bind Folder, Mode=OneWay}"
+                Click="FolderDelete_Click"
+                Style="{StaticResource TabCloseButtonStyle}"
+                AutomationProperties.Name="Delete folder"
+                ToolTipService.ToolTip="Delete folder">
+            <FontIcon Glyph="&#xE711;" FontSize="10" />
+        </Button>
+    </Grid>
+</UserControl>

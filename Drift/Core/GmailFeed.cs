@@ -12,6 +12,9 @@ public sealed record MailItem(string Sender, string Subject, string Snippet, Dat
 {
     /// <summary>Its page, where the mail service gives one (Outlook).</summary>
     public string? Link { get; init; }
+
+    /// <summary>Text as one line: previews keep the email's line breaks, which a card row shouldn't.</summary>
+    public static string OneLine(string? text) => text is null ? "" : Regex.Replace(text, @"\s+", " ").Trim();
 }
 
 /// <summary>
@@ -55,7 +58,7 @@ public static class GmailFeed
                 CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var t) ? t : DateTimeOffset.MinValue;
             var link = e.Elements(Atom + "link").FirstOrDefault()?.Attribute("href")?.Value ?? "";
             var id = Regex.Match(link, @"[?&]message_id=([0-9a-fA-F]+)") is { Success: true } m ? m.Groups[1].Value : null;
-            return new MailItem(sender, subject, snippet, when, id);
+            return new MailItem(MailItem.OneLine(sender), MailItem.OneLine(subject), MailItem.OneLine(snippet), when, id);
         }).OrderByDescending(i => i.Received).ToList();
         return (unread, items);
     }

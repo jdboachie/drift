@@ -61,7 +61,9 @@ public static class Warnings
         };
         var when = range.ToLowerInvariant();
         if (when.StartsWith("last ")) when = "the " + when;
-        return new("Clear browsing data?", $"{list}, from {when}.", "Clear");
+        // The one that costs you something: said here, where you decide, rather than under the checkbox.
+        var signsOut = kinds.Contains("Cookies and site data") ? " You'll be signed out of most sites." : "";
+        return new("Clear browsing data?", $"{list}, from {when}.{signsOut}", "Clear");
     }
 
     /// <summary>Resetting every shortcut; null if none were changed.</summary>

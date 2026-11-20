@@ -56,7 +56,6 @@ public sealed partial class MainWindow
     private bool _closeConfirmed;
     private bool _closeAsking;
     private readonly CloseAgain _closeAgain = new();
-    private DispatcherQueueTimer? _closeAgainTimer;
 
     private async Task<bool> AskAsync(Warning warning)
     {
@@ -105,7 +104,7 @@ public sealed partial class MainWindow
                 ShowCloseAgain(again);
                 return;
             }
-            CloseAgainHint.Opacity = 0;
+            CloseAgainHint.Hide();
             _closeConfirmed = true;
             Close();
         }
@@ -116,22 +115,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>"Click again to close", under the window buttons, while a second press would close.</summary>
-    private void ShowCloseAgain(string text)
-    {
-        CloseAgainText.Text = text;
-        CloseAgainHint.Visibility = Visibility.Visible;
-        CloseAgainHint.Opacity = 1;
-        Spring.To(CloseAgainHint, "Translation", new Vector3(0, 0, 32), 0.25, 0, from: new Vector3(0, -6, 32));
-        if (_closeAgainTimer is null)
-        {
-            _closeAgainTimer = DispatcherQueue.CreateTimer();
-            _closeAgainTimer.IsRepeating = false;
-            _closeAgainTimer.Interval = TimeSpan.FromMilliseconds(CloseAgain.WindowMs);
-            _closeAgainTimer.Tick += (_, _) => CloseAgainHint.Opacity = 0;
-        }
-        _closeAgainTimer.Stop();
-        _closeAgainTimer.Start();
-    }
+    private void ShowCloseAgain(string text) => CloseAgainHint.Show(text, TimeSpan.FromMilliseconds(CloseAgain.WindowMs));
 
     private async Task<Warning?> CloseWarningAsync()
     {
@@ -208,97 +192,65 @@ public sealed partial class MainWindow
 
     // ---- Undo, and other notices with a button or two ----
 
-    private (string Label, Action Act)[] _toastActions = [];
-    private DispatcherQueueTimer? _toastTimer;
+    private bool _toastWired;
 
-    /// <summary>"Deleted …" or "Cleared …" at the foot of the page, with Undo, for a few seconds (longer while the pointer's on it).</summary>
-    private void ShowUndo(string text, Action undo) => ShowToast(text, TimeSpan.FromSeconds(6), choices: false, ("Undo", undo));
+    // What to finish once an Undo toast has gone without Undo (timed out, closed, or another took its place).
+    private Action? _toastGone;
+
+    /// <summary>
+    /// "Deleted …" or "Cleared …" at the foot of the page, with Undo, for a few seconds (longer while
+    /// the pointer's on it). <paramref name="gone"/>, if any, finishes the job once it's gone without Undo.
+    /// </summary>
+    private void ShowUndo(string text, Action undo, Action? gone = null)
+    {
+        ShowToast(text, TimeSpan.FromSeconds(6), choices: false, ("Undo", undo));
+        _toastGone = gone;
+    }
+
+    /// <summary>A toast's leaving without Undo: whatever it held back is done now.</summary>
+    private void ToastGone()
+    {
+        var gone = _toastGone;
+        _toastGone = null;
+        gone?.Invoke();
+    }
 
     private void HideUndo() => HideToast();
 
     /// <summary>
     /// A notice at the foot of the page with up to two buttons, for <paramref name="time"/> or longer
-    /// while the pointer's on it. A button closes it. Undo is a plain text button; a notice's
-    /// <paramref name="choices"/> are buttons, the first the coloured one.
+    /// while the pointer's on it. A button closes it, the first in the accent colour: Undo, or a
+    /// notice's first choice (<paramref name="choices"/>).
     /// </summary>
-    private void ShowToast(string text, TimeSpan time, bool choices, params (string Label, Action Act)[] actions)
-    {
-        var plain = new Thickness(8, 3, 8, 3);
-        ToastAction1.Style = (Style)Application.Current.Resources[choices ? "AccentButtonStyle" : "SubtleButtonStyle"];
-        ToastAction2.Style = (Style)Application.Current.Resources[choices ? "DefaultButtonStyle" : "SubtleButtonStyle"];
-        foreach (var button in new[] { ToastAction1, ToastAction2 })
-        {
-            if (choices) button.ClearValue(Control.PaddingProperty);
-            else button.Padding = plain;
-        }
-        UndoToast.Padding = choices ? new Thickness(14, 10, 10, 10) : new Thickness(14, 4, 6, 4);
-        UndoToast.CornerRadius = new CornerRadius(choices ? 12 : 10);
-        // Room between what it says and what you can do about it.
-        ToastTexts.Margin = new Thickness(0, 0, choices ? 12 : 0, 0);
-        UndoToastText.FontWeight = choices ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
-        ToastIcon.Content = null;
-        ToastIcon.Visibility = Visibility.Collapsed;
-        ToastDetail.Visibility = Visibility.Collapsed;
-        _toastActions = actions;
-        HideBookmarkToast();
-        CopiedToast.Opacity = 0;
-        UndoToastText.Text = text;
-        Button[] buttons = [ToastAction1, ToastAction2];
-        for (var i = 0; i < buttons.Length; i++)
-        {
-            buttons[i].Visibility = i < actions.Length ? Visibility.Visible : Visibility.Collapsed;
-            if (i < actions.Length) buttons[i].Content = actions[i].Label;
-        }
-        UndoToast.Visibility = Visibility.Visible;
-        UndoToast.Opacity = 1;
-        UndoToast.IsHitTestVisible = true;
-        Spring.To(UndoToast, "Translation", new Vector3(0, 0, 32), 0.25, 0, from: new Vector3(0, 8, 32));
-        if (_toastTimer is null)
-        {
-            _toastTimer = DispatcherQueue.CreateTimer();
-            _toastTimer.IsRepeating = false;
-            _toastTimer.Tick += (_, _) => HideToast();
-        }
-        _toastTimer.Interval = time;
-        _toastTimer.Stop();
-        _toastTimer.Start();
-    }
+    private void ShowToast(string text, TimeSpan time, bool choices, params (string Label, Action Act)[] actions) =>
+        ShowFootToast(text, time, choices, null, null, actions);
 
     /// <summary>
     /// A notice: <paramref name="icon"/>, <paramref name="title"/> over <paramref name="detail"/>, and
     /// its choices as buttons, the first coloured.
     /// </summary>
-    private void ShowNotice(FrameworkElement icon, string title, string detail, TimeSpan time, params (string Label, Action Act)[] actions)
+    private void ShowNotice(FrameworkElement icon, string title, string detail, TimeSpan time, params (string Label, Action Act)[] actions) =>
+        ShowFootToast(title, time, choices: true, icon, detail, actions);
+
+    private void ShowFootToast(string text, TimeSpan time, bool choices, FrameworkElement? icon, string? detail, (string Label, Action Act)[] actions)
     {
-        ShowToast(title, time, choices: true, actions);
-        ToastIcon.Content = icon;
-        ToastIcon.Visibility = Visibility.Visible;
-        ToastDetail.Text = detail;
-        ToastDetail.Visibility = Visibility.Visible;
+        // Another in its place: the one before is done with.
+        ToastGone();
+        if (!_toastWired)
+        {
+            _toastWired = true;
+            UndoToast.Expired += ToastGone;
+        }
+        HideBookmarkToast();
+        CopiedToast.Hide();
+        // Undo (or a notice's choice) takes it from here: nothing's to be finished.
+        var buttons = actions.Select(a => new ToastAction(a.Label, () => { _toastGone = null; a.Act(); })).ToArray();
+        UndoToast.Show(text, time, buttons, notice: choices, icon: icon, detail: detail);
     }
 
     private void HideToast()
     {
-        _toastActions = [];
-        _toastTimer?.Stop();
-        UndoToast.Opacity = 0;
-        UndoToast.IsHitTestVisible = false;
-        // Out the way it came in: down a little as it fades.
-        Spring.To(UndoToast, "Translation", new Vector3(0, 8, 32), 0.25, 0);
-    }
-
-    private void ToastAction_Click(object sender, RoutedEventArgs e)
-    {
-        var index = sender == ToastAction2 ? 1 : 0;
-        var act = index < _toastActions.Length ? _toastActions[index].Act : null;
-        HideToast();
-        act?.Invoke();
-    }
-
-    private void UndoToast_PointerEntered(object sender, PointerRoutedEventArgs e) => _toastTimer?.Stop();
-
-    private void UndoToast_PointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (_toastActions.Length > 0) _toastTimer?.Start();
+        ToastGone();
+        UndoToast.Hide();
     }
 }

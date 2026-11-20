@@ -142,11 +142,11 @@ public sealed partial class MainWindow
         if (!_switcherShown)
         {
             _switcherShown = true;
-            SwitcherCard.MaxWidth = Math.Max(200, Root.ActualWidth - 48);
-            SwitcherLayer.Visibility = Visibility.Visible;
-            SwitcherLayer.UpdateLayout();
+            SwitcherLayer.Card.MaxWidth = Math.Max(200, Root.ActualWidth - 48);
+            SwitcherLayer.Backdrop.Visibility = Visibility.Visible;
+            SwitcherLayer.Backdrop.UpdateLayout();
         }
-        if (SwitcherList.ContainerFromIndex(_cycleAt) is UIElement picked)
+        if (SwitcherLayer.List.ContainerFromIndex(_cycleAt) is UIElement picked)
             picked.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, HorizontalAlignmentRatio = 0.5 });
     }
 
@@ -158,7 +158,7 @@ public sealed partial class MainWindow
         _cycling = false;
         _cyclePoll?.Stop();
         _switcherShown = false;
-        SwitcherLayer.Visibility = Visibility.Collapsed;
+        SwitcherLayer.Backdrop.Visibility = Visibility.Collapsed;
         SwitcherItems.Clear();
         if (go && tab is not null && tab != _active && AllTabs.Contains(tab)) ShowTab(tab);
     }
@@ -171,7 +171,7 @@ public sealed partial class MainWindow
         return true;
     }
 
-    private void SwitcherItem_PointerPressed(object sender, PointerRoutedEventArgs e)
+    internal void SwitcherItem_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not SwitcherItem item) return;
         _cycleAt = SwitcherItems.IndexOf(item);

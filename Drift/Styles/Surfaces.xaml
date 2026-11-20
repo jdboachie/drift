@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What floats over the window: panels and cards, the page controls' pill, and the command bar's field. -->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
+
+    <!-- The command bar's field: just text and its placeholder on the card. A template of its own
+         rather than the stock one with parts hidden: no fill, border, underline or clear button
+         (Esc clears and closes; Arc's field has none). ContentElement and
+         PlaceholderTextContentPresenter are the parts TextBox needs; the rest are optional. -->
+    <Style x:Key="CommandBoxStyle" TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Grid Background="Transparent">
+                        <ScrollViewer x:Name="ContentElement"
+                                      HorizontalScrollMode="{TemplateBinding ScrollViewer.HorizontalScrollMode}"
+                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                      VerticalScrollMode="{TemplateBinding ScrollViewer.VerticalScrollMode}"
+                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                      IsHorizontalRailEnabled="{TemplateBinding ScrollViewer.IsHorizontalRailEnabled}"
+                                      IsVerticalRailEnabled="{TemplateBinding ScrollViewer.IsVerticalRailEnabled}"
+                                      IsDeferredScrollingEnabled="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
+                                      Padding="{TemplateBinding Padding}"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      IsTabStop="False"
+                                      ZoomMode="Disabled"
+                                      AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock x:Name="PlaceholderTextContentPresenter"
+                                   Foreground="{ThemeResource DriftSecondaryTextBrush}"
+                                   Padding="{TemplateBinding Padding}"
+                                   Text="{TemplateBinding PlaceholderText}"
+                                   TextAlignment="{TemplateBinding TextAlignment}"
+                                   TextWrapping="{TemplateBinding TextWrapping}"
+                                   IsHitTestVisible="False" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- A panel floating over the window (the command bar, the switcher, toasts, cards, the window buttons):
+         one edge, fill and shadow for all. Each keeps its own corner radius and height (Translation, which
+         a style can't set). -->
+    <Style x:Key="FloatingPanelStyle" TargetType="Border">
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DriftPageBorderBrush}" />
+        <Setter Property="Background" Value="{ThemeResource DriftSwitcherBrush}" />
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <ThemeShadow />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The page controls' pill (PageControls.cs), made once in code: ThemeResource here, so it follows
+         light and dark mode as they change. Solid: in-app acrylic can't see the web page under it. -->
+    <Style x:Key="PageControlsPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource DriftPageControlsBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DriftFolderCardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="20" />
+        <Setter Property="Padding" Value="4" />
+        <!-- Its shadow: lifted in code (NewPageControls). -->
+        <Setter Property="Shadow">
+            <Setter.Value>
+                <ThemeShadow />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

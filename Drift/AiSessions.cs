@@ -135,7 +135,7 @@ internal abstract class AiSession : IDisposable
                 foreach (var e in Read(line)) Handle(e);
         }
         catch { }
-        if (Busy && !_disposed) Finish(new AiFailed(AiFailure.Other, $"{AskProviders.Name(Provider)} stopped unexpectedly."));
+        if (Busy && !_disposed) Finish(new AiFailed(AiFailure.Other, "it stopped unexpectedly"));
         Ended();
     }
 
@@ -285,7 +285,7 @@ internal sealed class CodexSession : AiSession
             ["config"] = config,
         });
         _thread = started.Result is { } r ? JsonNode.Parse(r)?["thread"]?["id"]?.GetValue<string>() : null;
-        if (_thread is null) throw new InvalidOperationException(started.Error ?? "Codex didn't start a conversation.");
+        if (_thread is null) throw new InvalidOperationException(started.Error ?? "it didn't start a conversation");
     }
 
     protected override async Task SendQuestionAsync(string question)
@@ -326,7 +326,7 @@ internal sealed class CodexSession : AiSession
 
     protected override void Ended()
     {
-        foreach (var (_, waiting) in _waiting) waiting.TrySetException(new InvalidOperationException("Codex stopped unexpectedly."));
+        foreach (var (_, waiting) in _waiting) waiting.TrySetException(new InvalidOperationException("it stopped unexpectedly"));
     }
 
     private async Task<CodexReply> RequestAsync(string method, JsonObject parameters)
@@ -339,7 +339,8 @@ internal sealed class CodexSession : AiSession
         if (done != waiting.Task)
         {
             _waiting.TryRemove(id, out _);
-            throw new TimeoutException($"Codex didn't answer {method}.");
+            // Shown as "Codex couldn't answer: it isn't responding." Which request it was is no one's business.
+            throw new TimeoutException("it isn't responding");
         }
         return await waiting.Task;
     }

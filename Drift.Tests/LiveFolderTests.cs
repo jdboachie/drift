@@ -57,6 +57,17 @@ public class LiveFolderTests
     }
 
     [Fact]
+    public void A_folder_with_nothing_in_it_believes_an_empty_answer_at_once()
+    {
+        // Nothing to lose by it, and its empty note shows straight away rather than a blank folder.
+        var live = new LiveSource();
+        Assert.True(LiveFolder.Believe(live, [], alreadyEmpty: true));
+        // One with pull requests in it still waits for a second empty answer.
+        var full = new LiveSource();
+        Assert.False(LiveFolder.Believe(full, [], alreadyEmpty: false));
+    }
+
+    [Fact]
     public void Titles_come_from_GitHub()
     {
         var plan = LiveFolder.Reconcile([Key(1)], [Pr(1, "Renamed")], new HashSet<string>(), _ => false);

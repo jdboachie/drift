@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The settings window (as Arc's): its pages along the top, and cards that group rows split by hairlines. -->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
+
+    <Style x:Key="SettingsTabStyle" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <!-- The keyboard focus ring follows the fill's rounded corners, just outside it. -->
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="FocusVisualMargin" Value="-2" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid MinWidth="64" CornerRadius="{TemplateBinding CornerRadius}">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="Hover.Opacity" Value="1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Hover.Opacity" Value="1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled" />
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates">
+                                <VisualState x:Name="Checked">
+                                    <VisualState.Setters>
+                                        <Setter Target="Selected.Opacity" Value="1" />
+                                        <Setter Target="Presenter.Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Unchecked" />
+                                <VisualState x:Name="Indeterminate" />
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <Border x:Name="Selected" CornerRadius="6" Background="{ThemeResource DriftHoverBrush}" Opacity="0" />
+                        <Border x:Name="Hover" CornerRadius="6" Background="{ThemeResource DriftHoverBrush}" Opacity="0" />
+                        <ContentPresenter x:Name="Presenter"
+                                          Content="{TemplateBinding Content}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          HorizontalAlignment="Center"
+                                          Margin="10,6,10,5" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- A feature explained once, above its group (the write-copy skill: section intros). -->
+    <Style x:Key="SettingsIntroStyle" TargetType="TextBlock" BasedOn="{StaticResource DriftTextStyle}">
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Margin" Value="4,0,4,0" />
+    </Style>
+
+    <!-- A small grey heading over a group of settings. -->
+    <Style x:Key="SettingsCaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource DriftTextStyle}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Margin" Value="4,0,0,-6" />
+    </Style>
+
+    <!-- A settings card (SettingsGroup) and its rows (SettingsRow). -->
+    <Style x:Key="SettingsGroupStyle" TargetType="local:SettingsGroup">
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style x:Key="SettingsRowStyle" TargetType="Grid">
+        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="MinHeight" Value="44" />
+        <Setter Property="ColumnSpacing" Value="12" />
+    </Style>
+
+    <Style x:Key="SettingsDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource DriftTextStyle}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Style>
+
+</ResourceDictionary>

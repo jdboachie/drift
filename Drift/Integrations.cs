@@ -37,8 +37,8 @@ public sealed partial class MainWindow
     private DispatcherQueueTimer? _hoverGoneTimer;
     private FrameworkElement? _hoverAnchor;
     private BrowserTab? _hoverTab;
-    private Border? _hoverCard;
-    private Border? _hoverWanted;
+    private HoverCard? _hoverCard;
+    private HoverCard? _hoverWanted;
 
     // ---- Hidden views ----
 
@@ -136,24 +136,15 @@ public sealed partial class MainWindow
         }
     }
 
-    /// <summary>Why a card has nothing to show, with a button to do something about it (Try again, Sign in), if there is one.</summary>
-    private static void ShowCardMessage(FrameworkElement panel, TextBlock text, Button button, string? message, string? action)
-    {
-        text.Text = message ?? "";
-        panel.Visibility = Ui.Shown(message is not null);
-        button.Content = action;
-        button.Visibility = Ui.Shown(message is not null && action is not null);
-    }
-
     // ---- The hover card ----
 
     /// <summary>The card hovering this tab shows, if it's one an integration is following.</summary>
-    private Border? HoverCardFor(BrowserTab tab) =>
+    private HoverCard? HoverCardFor(BrowserTab tab) =>
         tab == _calendarTab || tab == _outlookCalendarTab ? CalendarCard
         : tab == _mailTab || tab == _outlookMailTab ? MailCard
         : null;
 
-    private void IntegrationAnchor_PointerEntered(object sender, PointerRoutedEventArgs e)
+    internal void IntegrationAnchor_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: BrowserTab tab } anchor || HoverCardFor(tab) is not { } card) return;
         _hoverHideTimer?.Stop();
@@ -169,7 +160,7 @@ public sealed partial class MainWindow
         _hoverShowTimer.Start();
     }
 
-    private void IntegrationAnchor_PointerExited(object sender, PointerRoutedEventArgs e)
+    internal void IntegrationAnchor_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         _hoverShowTimer?.Stop();
         if (_hoverCard is not null) HideHoverCardSoon();
@@ -238,7 +229,7 @@ public sealed partial class MainWindow
     /// Hung from the tab, as in Arc: from an Essentials tile's bottom-right corner, or beside a row,
     /// level with it; kept inside the window. It grows out of that corner.
     /// </summary>
-    private void PlaceHoverCard(Border card)
+    private void PlaceHoverCard(HoverCard card)
     {
         if (_hoverAnchor is null) return;
         var bounds = _hoverAnchor.TransformToVisual(Root).TransformBounds(new Windows.Foundation.Rect(0, 0, _hoverAnchor.ActualWidth, _hoverAnchor.ActualHeight));
@@ -252,12 +243,5 @@ public sealed partial class MainWindow
         card.Margin = new Thickness(left, top, 0, 0);
         // Grows from the tab's corner: where that is on the card, if pushed up to fit.
         card.CenterPoint = new System.Numerics.Vector3(0, (float)Math.Clamp(wanted - top, 0, height), 0);
-    }
-
-    private static bool IsInsideButton(DependencyObject element)
-    {
-        for (var e = element; e is not null; e = VisualTreeHelper.GetParent(e))
-            if (e is Button) return true;
-        return false;
     }
 }

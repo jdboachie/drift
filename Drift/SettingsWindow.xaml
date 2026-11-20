@@ -3,122 +3,129 @@
     x:Class="Drift.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift"
     Title="Drift Settings">
 
-    <!-- Laid out like Dia's settings: pages listed down the left, the page on the right with
-         its settings grouped into cards (rows split by hairlines). Changes apply as they're made. -->
+    <!-- Laid out like Arc's settings (on Mac): the pages as a toolbar along the top, the page's name
+         in the title bar, and the page below in a centred column, its settings grouped into cards
+         (rows split by hairlines). Changes apply as they're made. -->
     <Grid Background="{ThemeResource DriftWindowBrush}">
-        <!-- No title bar: the page list and the page run to the top edge, and the close button floats
-             over the page's corner. The window drags from the empty top of the page (TitleBar, below). -->
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="200" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <!-- The pages. Windows 11's list marks the selected one with an accent bar, as Dia's does. -->
-        <ListView x:Name="Nav" Padding="0,8,0,0" SelectionMode="Single" SelectionChanged="Nav_SelectionChanged">
-            <ListViewItem Tag="general" AutomationProperties.Name="General">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE713;" FontSize="16" />
-                    <TextBlock Text="General" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="accounts" AutomationProperties.Name="Accounts">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE77B;" FontSize="16" />
-                    <TextBlock Text="Accounts" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="tabs" AutomationProperties.Name="Tabs">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE737;" FontSize="16" />
-                    <TextBlock Text="Tabs" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="downloads" AutomationProperties.Name="Downloads">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xEBD3;" FontSize="16" />
-                    <TextBlock Text="Downloads" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="ai" AutomationProperties.Name="AI">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE945;" FontSize="16" />
-                    <TextBlock Text="AI" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="shortcuts" AutomationProperties.Name="Shortcuts">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE765;" FontSize="16" />
-                    <TextBlock Text="Shortcuts" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="extensions" AutomationProperties.Name="Extensions">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xEA86;" FontSize="16" />
-                    <TextBlock Text="Extensions" />
-                </StackPanel>
-            </ListViewItem>
-            <ListViewItem Tag="privacy" AutomationProperties.Name="Privacy">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <FontIcon Glyph="&#xE72E;" FontSize="16" />
-                    <TextBlock Text="Privacy" />
-                </StackPanel>
-            </ListViewItem>
-        </ListView>
+        <!-- The title bar: drags the window; Windows' close button sits at its right end. -->
+        <Border x:Name="TitleBar" Background="Transparent" />
+        <TextBlock x:Name="PageTitle" Text="General" FontSize="13" FontWeight="SemiBold"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
 
-        <!-- The page: a lighter layer with a hairline down its left side. -->
-        <Border Grid.Column="1"
+        <!-- The pages. The one showing is filled, in the accent colour; it switches at once. -->
+        <StackPanel x:Name="Toolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                    Spacing="2" Padding="0,0,0,8">
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="general"
+                         AutomationProperties.Name="General" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xE713;" FontSize="18" />
+                    <TextBlock Text="General" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="accounts"
+                         AutomationProperties.Name="Account" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xE77B;" FontSize="18" />
+                    <TextBlock Text="Account" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="tabs"
+                         AutomationProperties.Name="Tabs" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xE737;" FontSize="18" />
+                    <TextBlock Text="Tabs" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="downloads"
+                         AutomationProperties.Name="Downloads" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xEBD3;" FontSize="18" />
+                    <TextBlock Text="Downloads" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="ai"
+                         AutomationProperties.Name="AI" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xF4A5;" FontSize="18" />
+                    <TextBlock Text="AI" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="shortcuts"
+                         AutomationProperties.Name="Shortcuts" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xE765;" FontSize="18" />
+                    <TextBlock Text="Shortcuts" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="extensions"
+                         AutomationProperties.Name="Extensions" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xEA86;" FontSize="18" />
+                    <TextBlock Text="Extensions" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="privacy"
+                         AutomationProperties.Name="Privacy" Checked="Page_Checked">
+                <StackPanel Spacing="3">
+                    <FontIcon Glyph="&#xE72E;" FontSize="18" />
+                    <TextBlock Text="Privacy" FontSize="12" HorizontalAlignment="Center" />
+                </StackPanel>
+            </RadioButton>
+        </StackPanel>
+
+        <!-- The page: a lighter layer under a hairline. -->
+        <Border Grid.Row="2"
                 Background="{ThemeResource LayerFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1,0,0,0">
+                BorderThickness="0,1,0,0">
             <!-- No sideways scrolling, so the page fits the window's width. -->
             <ScrollViewer HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
-                <Grid Padding="36,28,28,28">
+                <!-- The column is centred by this full-width grid: centred by the ScrollViewer itself, it
+                     kept the place it had at the window's first size. -->
+                <Grid>
+                <Grid MaxWidth="620" Padding="24,20,24,28">
 
                     <!-- General -->
-                    <StackPanel x:Name="GeneralPage" Spacing="8">
-                        <TextBlock Text="General" Style="{StaticResource SettingsTitleStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Default browser" />
-                                        <TextBlock x:Name="DefaultBrowserText" Style="{StaticResource SettingsDescriptionStyle}"
-                                                   TextWrapping="Wrap" Text="Open links from other apps in Drift" />
-                                    </StackPanel>
-                                    <Button x:Name="DefaultBrowserButton" Grid.Column="1" VerticalAlignment="Center"
-                                            Content="Make default" Click="DefaultBrowser_Click" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Block ads and trackers" />
-                                        <TextBlock x:Name="AdBlockText" Style="{StaticResource SettingsDescriptionStyle}"
-                                                   TextWrapping="Wrap" Text="With uBlock Origin Lite" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="AdBlockToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Block ads and trackers"
-                                                  Toggled="AdBlockToggle_Toggled" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                    <StackPanel x:Name="GeneralPage" Spacing="12">
+                        <local:SettingsGroup>
+                            <local:SettingsRow x:Name="DefaultBrowserRow" Header="Open links from other apps in Drift">
+                                <Button x:Name="DefaultBrowserButton" Content="Make default" Click="DefaultBrowser_Click" />
+                            </local:SettingsRow>
+                            <local:SettingsRow x:Name="AdBlockRow" Header="Block ads and trackers"
+                                               Description="Drift uses uBlock Origin Lite to block them">
+                                <ToggleSwitch x:Name="AdBlockToggle" Toggled="AdBlockToggle_Toggled" />
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
+                        <!-- Previews: what hovering a pinned tab or a folder shows, each on or off (ShowPreviews). -->
+                        <StackPanel x:Name="PreviewsSection" Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="Previews" Style="{StaticResource SettingsCaptionStyle}" />
+                            <TextBlock Style="{StaticResource SettingsIntroStyle}" Text="Hover a folder or a pinned tab to see what's in it, without opening it." />
+                            <local:SettingsGroup x:Name="PreviewList" />
+                            <!-- Not a preview (it comes by itself), so a group of its own. -->
+                            <local:SettingsGroup>
+                                <local:SettingsRow Header="Remind me a minute before a meeting"
+                                                   Description="Works with a pinned Google or Outlook calendar">
+                                    <ToggleSwitch x:Name="RemindersToggle" Toggled="RemindersToggle_Toggled" />
+                                </local:SettingsRow>
+                            </local:SettingsGroup>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Accounts (MicrosoftSignIn.cs): the Windows account, with what you can do about the
                          Microsoft sites it signs you in to right under it; then the switch, a setting of its own. -->
-                    <StackPanel x:Name="AccountsPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="Accounts" Style="{StaticResource SettingsTitleStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
+                    <StackPanel x:Name="AccountsPage" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsIntroStyle}"
+                                   Text="Drift signs you in to Outlook, Office and other Microsoft sites with your Windows account." />
+                        <local:SettingsGroup>
                             <Grid Padding="16" ColumnSpacing="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -132,140 +139,61 @@
                                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
                                         <Button Content="Use another account"
                                                 AutomationProperties.Name="Sign in with a different Microsoft account"
-                                                ToolTipService.ToolTip="Sign in to Microsoft sites with a different account"
                                                 Click="DifferentAccount_Click" />
                                         <Button x:Name="SignOutButton" Content="Sign out"
                                                 AutomationProperties.Name="Sign out of Microsoft sites"
-                                                ToolTipService.ToolTip="Sign out of Outlook, Office and other Microsoft sites"
                                                 Click="SignOut_Click" />
                                     </StackPanel>
                                     <TextBlock x:Name="SignOutText" Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
                                                Margin="0,8,0,0" Visibility="Collapsed" />
                                 </StackPanel>
                             </Grid>
-                        </Border>
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Sign in to Microsoft sites automatically" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="SignInText" Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
-                                               Text="With your Windows account" />
+                        </local:SettingsGroup>
+                        <local:SettingsGroup>
+                            <local:SettingsRow x:Name="SignInRow" Header="Sign me in to Microsoft sites automatically">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="SignInRestartButton" Content="Restart Drift" Visibility="Collapsed"
+                                            Click="SignInRestart_Click" />
+                                    <ToggleSwitch x:Name="SignInToggle" Toggled="SignInToggle_Toggled" />
                                 </StackPanel>
-                                <Button x:Name="SignInRestartButton" Grid.Column="1" VerticalAlignment="Center"
-                                        Content="Restart now" Visibility="Collapsed" Click="SignInRestart_Click" />
-                                <ToggleSwitch x:Name="SignInToggle" Grid.Column="2" VerticalAlignment="Center"
-                                              MinWidth="0" OnContent="" OffContent=""
-                                              AutomationProperties.Name="Sign in to Microsoft sites automatically"
-                                              Toggled="SignInToggle_Toggled" />
-                            </Grid>
-                        </Border>
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
                     </StackPanel>
 
                     <!-- Tabs -->
-                    <StackPanel x:Name="TabsPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="Tabs" Style="{StaticResource SettingsTitleStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="When Drift closes" />
-                                        <TextBlock Text="What happens to your tabs" Style="{StaticResource SettingsDescriptionStyle}" />
-                                    </StackPanel>
-                                    <ComboBox x:Name="CloseCombo" Grid.Column="1" Width="200" VerticalAlignment="Center"
-                                              AutomationProperties.Name="When Drift closes"
-                                              SelectionChanged="CloseCombo_SelectionChanged">
-                                        <ComboBoxItem Content="Keep all tabs" />
-                                        <ComboBoxItem Content="Keep Essentials and pinned" />
-                                    </ComboBox>
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Load Essentials when Drift starts" VerticalAlignment="Center" />
-                                    <ToggleSwitch x:Name="LoadEssentialsToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Load Essentials when Drift starts"
-                                                  Toggled="LoadEssentialsToggle_Toggled" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Close Drift on a second click" VerticalAlignment="Center" />
-                                    <ToggleSwitch x:Name="CloseTwiceToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Close Drift on a second click"
-                                                  Toggled="CloseTwiceToggle_Toggled" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Picture-in-picture when you leave a tab" />
-                                        <TextBlock Text="A video that's playing floats in its own window" TextWrapping="Wrap"
-                                                   Style="{StaticResource SettingsDescriptionStyle}" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="PipToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Picture-in-picture when you leave a tab"
-                                                  Toggled="PipToggle_Toggled" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Ctrl+Tab goes to recently used tabs" />
-                                        <TextBlock Text="Off, it goes down the sidebar" TextWrapping="Wrap"
-                                                   Style="{StaticResource SettingsDescriptionStyle}" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="RecentTabsToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Ctrl+Tab goes to recently used tabs"
-                                                  Toggled="RecentTabsToggle_Toggled" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}" RowSpacing="10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="When Drift opens" />
-                                        <TextBlock Text="What's in front when you start Drift" Style="{StaticResource SettingsDescriptionStyle}" />
-                                    </StackPanel>
-                                    <ComboBox x:Name="StartupCombo" Grid.Column="1" Width="200" VerticalAlignment="Center"
-                                              AutomationProperties.Name="When Drift opens"
-                                              SelectionChanged="StartupCombo_SelectionChanged">
-                                        <ComboBoxItem Content="The tab you were on" />
-                                        <ComboBoxItem Content="A new tab" />
-                                        <ComboBoxItem Content="A specific page" />
-                                    </ComboBox>
-                                    <StackPanel x:Name="StartupPagePanel" Grid.Row="1" Grid.ColumnSpan="2" Spacing="4"
-                                                Visibility="Collapsed">
+                    <StackPanel x:Name="TabsPage" Spacing="12" Visibility="Collapsed">
+                        <local:SettingsGroup>
+                            <local:SettingsRow Header="When Drift closes, keep">
+                                <ComboBox x:Name="CloseCombo" Width="220" SelectionChanged="CloseCombo_SelectionChanged">
+                                    <ComboBoxItem Content="All my tabs" />
+                                    <ComboBoxItem Content="Only Essentials and pinned tabs" />
+                                </ComboBox>
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Load Essentials as soon as Drift opens">
+                                <ToggleSwitch x:Name="LoadEssentialsToggle" Toggled="LoadEssentialsToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Warn before closing Drift">
+                                <ToggleSwitch x:Name="CloseTwiceToggle" Toggled="CloseTwiceToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Keep videos playing in a small window when you switch tabs">
+                                <ToggleSwitch x:Name="PipToggle" Toggled="PipToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Ctrl+Tab switches to recently used tabs"
+                                               Description="When off, it goes in sidebar order">
+                                <ToggleSwitch x:Name="RecentTabsToggle" Toggled="RecentTabsToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Switch to links you open in a new tab"
+                                               Description="This applies to Ctrl+click, middle-click and Open link in new tab">
+                                <ToggleSwitch x:Name="SwitchToNewTabsToggle" Toggled="SwitchToNewTabsToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="When Drift opens, show">
+                                <ComboBox x:Name="StartupCombo" Width="220" SelectionChanged="StartupCombo_SelectionChanged">
+                                    <ComboBoxItem Content="The tab I was on" />
+                                    <ComboBoxItem Content="A new tab" />
+                                    <ComboBoxItem Content="A page I choose" />
+                                </ComboBox>
+                                <local:SettingsRow.Below>
+                                    <StackPanel x:Name="StartupPagePanel" Spacing="4" Visibility="Collapsed">
                                         <TextBox x:Name="StartupPageBox"
                                                  PlaceholderText="https://example.com"
                                                  AutomationProperties.Name="Startup page"
@@ -276,269 +204,148 @@
                                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}" Visibility="Collapsed"
                                                    Text="Enter a web address, like example.com" />
                                     </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                                </local:SettingsRow.Below>
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
                     </StackPanel>
 
                     <!-- AI: Ask AI in the command bar (AskAiBar.cs), with the Claude Code or Codex you have. -->
                     <!-- Downloads -->
-                    <StackPanel x:Name="DownloadsPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="Downloads" Style="{StaticResource SettingsTitleStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Save files to" />
-                                        <TextBlock x:Name="DownloadFolderText" Style="{StaticResource SettingsDescriptionStyle}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
-                                    <Button x:Name="DownloadFolderReset" Grid.Column="1" VerticalAlignment="Center"
-                                            Content="Reset" Click="DownloadFolderReset_Click" />
-                                    <Button Grid.Column="2" VerticalAlignment="Center"
-                                            Content="Change" Click="DownloadFolder_Click" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Keep downloads in the list" />
-                                        <TextBlock Text="The files stay where they are" Style="{StaticResource SettingsDescriptionStyle}" />
-                                    </StackPanel>
-                                    <ComboBox x:Name="KeepDownloadsCombo" Grid.Column="1" Width="160" VerticalAlignment="Center"
-                                              AutomationProperties.Name="Keep downloads in the list"
-                                              SelectionChanged="KeepDownloadsCombo_SelectionChanged">
-                                        <ComboBoxItem Content="For a day" />
-                                        <ComboBoxItem Content="For a week" />
-                                        <ComboBoxItem Content="For a month" />
-                                        <ComboBoxItem Content="Forever" />
-                                    </ComboBox>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                    <StackPanel x:Name="DownloadsPage" Spacing="12" Visibility="Collapsed">
+                        <local:SettingsGroup>
+                            <local:SettingsRow Header="Save downloads to">
+                                <!-- Where they go now, on the right as every row's value is, and a button to change it. -->
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <TextBlock x:Name="DownloadFolderText" MaxWidth="320" Margin="0,0,12,0" VerticalAlignment="Center"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Button Content="Change…" Click="DownloadFolder_Click" />
+                                </StackPanel>
+                            </local:SettingsRow>
+                            <!-- Each choice finishes the sentence, so none dangles ("…after Never"), and "keep… in
+                                 the list" says the files aren't touched, with no line under it to take back "remove". -->
+                            <local:SettingsRow Header="Keep downloads in the list">
+                                <ComboBox x:Name="KeepDownloadsCombo" Width="200" SelectionChanged="KeepDownloadsCombo_SelectionChanged">
+                                    <ComboBoxItem Content="For a day" />
+                                    <ComboBoxItem Content="For a week" />
+                                    <ComboBoxItem Content="For a month" />
+                                    <ComboBoxItem Content="Forever" />
+                                </ComboBox>
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
                     </StackPanel>
 
-                    <StackPanel x:Name="AiPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="AI" Style="{StaticResource SettingsTitleStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Ask AI with Tab" />
-                                        <TextBlock Text="In the command bar" Style="{StaticResource SettingsDescriptionStyle}" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="AskTabToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Ask AI with Tab"
-                                                  Toggled="AskTabToggle_Toggled" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Preferred provider" VerticalAlignment="Center" />
-                                    <ComboBox x:Name="AskFirstCombo" Grid.Column="1" Width="160" VerticalAlignment="Center"
-                                              AutomationProperties.Name="Preferred provider"
-                                              SelectionChanged="AskFirstCombo_SelectionChanged">
-                                        <ComboBoxItem Content="Claude" />
-                                        <ComboBoxItem Content="Codex" />
-                                    </ComboBox>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Claude" />
-                                    <TextBlock x:Name="ClaudeStatus" Style="{StaticResource SettingsDescriptionStyle}" Text="Checking…" />
+                    <StackPanel x:Name="AiPage" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsIntroStyle}"
+                                   Text="Ask AI right from the command bar. Drift uses Claude Code or Codex, if you have them on this PC." />
+                        <local:SettingsGroup>
+                            <local:SettingsRow Header="Press Tab in the command bar to ask AI">
+                                <ToggleSwitch x:Name="AskTabToggle" Toggled="AskTabToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Ask first" Description="If it isn't ready, Drift asks the other">
+                                <ComboBox x:Name="AskFirstCombo" Width="160" SelectionChanged="AskFirstCombo_SelectionChanged">
+                                    <ComboBoxItem Content="Claude" />
+                                    <ComboBoxItem Content="Codex" />
+                                </ComboBox>
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
+                        <local:SettingsGroup>
+                            <local:SettingsRow x:Name="ClaudeRow" Header="Claude" Description="Checking…">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="ClaudeAction" Visibility="Collapsed" Click="AiAction_Click" Tag="Claude" />
+                                    <ComboBox x:Name="ClaudeModelCombo" Width="160" AutomationProperties.Name="Claude model"
+                                              SelectionChanged="AiModelCombo_SelectionChanged" />
                                 </StackPanel>
-                                <Button x:Name="ClaudeAction" Grid.Column="1" VerticalAlignment="Center" Visibility="Collapsed"
-                                        Click="AiAction_Click" Tag="Claude" />
-                                <ComboBox x:Name="ClaudeModelCombo" Grid.Column="2" Width="160" VerticalAlignment="Center"
-                                          AutomationProperties.Name="Claude model"
-                                          SelectionChanged="AiModelCombo_SelectionChanged" />
-                            </Grid>
-                        </Border>
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <Grid Style="{StaticResource SettingsRowStyle}" ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Codex" />
-                                    <TextBlock x:Name="CodexStatus" Style="{StaticResource SettingsDescriptionStyle}" Text="Checking…" />
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
+                        <local:SettingsGroup>
+                            <local:SettingsRow x:Name="CodexRow" Header="Codex" Description="Checking…">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="CodexAction" Visibility="Collapsed" Click="AiAction_Click" Tag="Codex" />
+                                    <ComboBox x:Name="CodexModelCombo" Width="160" AutomationProperties.Name="Codex model"
+                                              SelectionChanged="AiModelCombo_SelectionChanged" />
                                 </StackPanel>
-                                <Button x:Name="CodexAction" Grid.Column="1" VerticalAlignment="Center" Visibility="Collapsed"
-                                        Click="AiAction_Click" Tag="Codex" />
-                                <ComboBox x:Name="CodexModelCombo" Grid.Column="2" Width="160" VerticalAlignment="Center"
-                                          AutomationProperties.Name="Codex model"
-                                          SelectionChanged="AiModelCombo_SelectionChanged" />
-                            </Grid>
-                        </Border>
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
                     </StackPanel>
 
                     <!-- Shortcuts -->
-                    <StackPanel x:Name="ShortcutsPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="Shortcuts" Style="{StaticResource SettingsTitleStyle}" />
-                        <TextBlock Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap" Margin="0,-4,0,4"
-                                   Text="Click a shortcut, then press the keys you want. Esc cancels." />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel x:Name="ShortcutList" />
-                        </Border>
-                        <Button x:Name="ResetAllButton" Content="Reset all" HorizontalAlignment="Right" Margin="0,8,0,0"
+                    <StackPanel x:Name="ShortcutsPage" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsIntroStyle}"
+                                   Text="Click a shortcut, then press the keys you'd like instead. Press Esc to cancel." />
+                        <local:SettingsGroup x:Name="ShortcutList" />
+                        <Button x:Name="ResetAllButton" Content="Reset all shortcuts" HorizontalAlignment="Right" Margin="0,8,0,0"
                                 Click="ResetAll_Click" />
                     </StackPanel>
 
                     <!-- Extensions -->
-                    <StackPanel x:Name="ExtensionsPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="Extensions" Style="{StaticResource SettingsTitleStyle}" />
-                        <TextBlock Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap" Margin="0,-4,0,4"
-                                   Text="Chrome and Edge extensions, added from their unpacked folder. They work in every page, but Drift has no toolbar, so their buttons and popups don't show." />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel x:Name="ExtensionList" />
-                        </Border>
+                    <StackPanel x:Name="ExtensionsPage" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsIntroStyle}"
+                                   Text="Add Chrome and Edge extensions from their unzipped folder. They work on every page, but Drift doesn't have a toolbar yet, so you won't see their buttons or popups." />
+                        <local:SettingsGroup x:Name="ExtensionList" />
                         <TextBlock x:Name="ExtensionsError" Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
                                    Foreground="{ThemeResource SystemFillColorCriticalBrush}" Visibility="Collapsed" />
                         <Button Content="Add extension…" HorizontalAlignment="Right" Margin="0,8,0,0" Click="AddExtension_Click" />
                     </StackPanel>
 
                     <!-- Privacy: clearing what's kept, saving passwords, and what sites are allowed to do. -->
-                    <StackPanel x:Name="PrivacyPage" Spacing="8" Visibility="Collapsed">
-                        <TextBlock Text="Privacy" Style="{StaticResource SettingsTitleStyle}" />
-                        <TextBlock Text="Clear browsing data" FontWeight="SemiBold" Margin="0,0,0,2" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Time range" VerticalAlignment="Center" />
-                                    <ComboBox x:Name="ClearRangeCombo" Grid.Column="1" Width="200" VerticalAlignment="Center"
-                                              AutomationProperties.Name="Time range">
-                                        <ComboBoxItem Content="Last hour" />
-                                        <ComboBoxItem Content="Last 24 hours" />
-                                        <ComboBoxItem Content="Last 7 days" />
-                                        <ComboBoxItem Content="Last 4 weeks" />
-                                        <ComboBoxItem Content="All time" />
-                                    </ComboBox>
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <StackPanel Padding="14,8,14,12" Spacing="0">
-                                    <CheckBox x:Name="ClearHistoryCheck" AutomationProperties.Name="Browsing history" IsChecked="True">
-                                        <StackPanel>
-                                            <TextBlock Text="Browsing history" />
-                                            <TextBlock Text="The pages you've visited" Style="{StaticResource SettingsDescriptionStyle}" />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox x:Name="ClearCookiesCheck" AutomationProperties.Name="Cookies and site data" IsChecked="True">
-                                        <StackPanel>
-                                            <TextBlock Text="Cookies and site data" />
-                                            <TextBlock Text="Signs you out of most sites" Style="{StaticResource SettingsDescriptionStyle}" />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox x:Name="ClearCacheCheck" AutomationProperties.Name="Cached images and files" IsChecked="True">
-                                        <StackPanel>
-                                            <TextBlock Text="Cached images and files" />
-                                            <TextBlock Text="Some sites load more slowly the next time" Style="{StaticResource SettingsDescriptionStyle}" />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox x:Name="ClearDownloadsCheck" AutomationProperties.Name="Download list">
-                                        <StackPanel>
-                                            <TextBlock Text="Download list" />
-                                            <TextBlock Text="The files themselves stay" Style="{StaticResource SettingsDescriptionStyle}" />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox x:Name="ClearPasswordsCheck" AutomationProperties.Name="Saved passwords">
-                                        <StackPanel>
-                                            <TextBlock Text="Saved passwords" />
-                                            <TextBlock Text="And other saved form data" Style="{StaticResource SettingsDescriptionStyle}" />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <Grid Margin="0,10,0,0" ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="ClearDataText" Style="{StaticResource SettingsDescriptionStyle}"
-                                                   VerticalAlignment="Center" TextWrapping="Wrap" />
-                                        <Button x:Name="ClearDataButton" Grid.Column="1" Content="Clear data"
-                                                Style="{StaticResource AccentButtonStyle}" Click="ClearData_Click" />
-                                    </Grid>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Text="Passwords and forms" FontWeight="SemiBold" Margin="0,12,0,2" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Offer to save passwords" />
-                                        <TextBlock Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
-                                                   Text="Drift asks after you sign in, and fills them in next time. Kept on this PC, in Drift's profile." />
+                    <StackPanel x:Name="PrivacyPage" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Text="Clear browsing data" Style="{StaticResource SettingsCaptionStyle}" />
+                        <local:SettingsGroup>
+                            <local:SettingsRow Header="Clear data from">
+                                <ComboBox x:Name="ClearRangeCombo" Width="200">
+                                    <ComboBoxItem Content="Last hour" />
+                                    <ComboBoxItem Content="Last 24 hours" />
+                                    <ComboBoxItem Content="Last 7 days" />
+                                    <ComboBoxItem Content="Last 4 weeks" />
+                                    <ComboBoxItem Content="All time" />
+                                </ComboBox>
+                            </local:SettingsRow>
+                            <!-- Just the names: what clearing cookies costs is said when you click Clear (Warnings.ClearData). -->
+                            <local:SettingsRow Padding="14,6,14,12">
+                                <local:SettingsRow.Below>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox x:Name="ClearHistoryCheck" Content="Browsing history" AutomationProperties.Name="Browsing history" IsChecked="True" />
+                                        <CheckBox x:Name="ClearCookiesCheck" Content="Cookies and site data" AutomationProperties.Name="Cookies and site data" IsChecked="True" />
+                                        <CheckBox x:Name="ClearCacheCheck" Content="Cached images and files" AutomationProperties.Name="Cached images and files" IsChecked="True" />
+                                        <CheckBox x:Name="ClearDownloadsCheck" Content="Download history" AutomationProperties.Name="Download history" />
+                                        <CheckBox x:Name="ClearPasswordsCheck" Content="Passwords and form data" AutomationProperties.Name="Passwords and form data" />
+                                        <Grid Margin="0,10,0,0" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="ClearDataText" Style="{StaticResource SettingsDescriptionStyle}"
+                                                       VerticalAlignment="Center" TextWrapping="Wrap" />
+                                            <Button x:Name="ClearDataButton" Grid.Column="1" Content="Clear data"
+                                                    Style="{StaticResource AccentButtonStyle}" Click="ClearData_Click" />
+                                        </Grid>
                                     </StackPanel>
-                                    <ToggleSwitch x:Name="PasswordsToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Offer to save passwords"
-                                                  Toggled="PasswordsToggle_Toggled" />
-                                </Grid>
-                                <Border Style="{StaticResource SettingsDividerStyle}" />
-                                <Grid Style="{StaticResource SettingsRowStyle}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="Fill in forms" />
-                                        <TextBlock Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap"
-                                                   Text="Names, addresses and other things you've typed before" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="AutofillToggle" Grid.Column="1" VerticalAlignment="Center"
-                                                  MinWidth="0" OnContent="" OffContent=""
-                                                  AutomationProperties.Name="Fill in forms"
-                                                  Toggled="AutofillToggle_Toggled" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                                </local:SettingsRow.Below>
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
 
-                        <TextBlock Text="Site permissions" FontWeight="SemiBold" Margin="0,12,0,2" />
-                        <TextBlock Style="{StaticResource SettingsDescriptionStyle}" TextWrapping="Wrap" Margin="0,-2,0,4"
-                                   Text="What you've allowed or blocked. To change a site's, open it and click the padlock in the address bar." />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel x:Name="PermissionList" />
-                        </Border>
+                        <TextBlock Text="Passwords and forms" Style="{StaticResource SettingsCaptionStyle}" Margin="4,8,0,-6" />
+                        <local:SettingsGroup>
+                            <local:SettingsRow Header="Offer to save passwords"
+                                               Description="Drift asks when you sign in, then fills them in next time. They stay on this PC.">
+                                <ToggleSwitch x:Name="PasswordsToggle" Toggled="PasswordsToggle_Toggled" />
+                            </local:SettingsRow>
+                            <local:SettingsRow Header="Fill in forms"
+                                               Description="Names, addresses and other things you've typed before">
+                                <ToggleSwitch x:Name="AutofillToggle" Toggled="AutofillToggle_Toggled" />
+                            </local:SettingsRow>
+                        </local:SettingsGroup>
+
+                        <TextBlock Text="Site permissions" Style="{StaticResource SettingsCaptionStyle}" Margin="4,8,0,-6" />
+                        <TextBlock Style="{StaticResource SettingsIntroStyle}"
+                                   Text="What you've let sites do, like use your camera or send notifications, and what you've blocked. To change a site's, open it and click the padlock in the address bar." />
+                        <local:SettingsGroup x:Name="PermissionList" />
                     </StackPanel>
+                </Grid>
                 </Grid>
             </ScrollViewer>
         </Border>
 
-        <!-- Invisible drag area: the top of the page, up to the close button. -->
-        <Border x:Name="TitleBar" Grid.Column="1" Height="20" Margin="0,0,48,0" VerticalAlignment="Top" Background="Transparent" />
     </Grid>
 </Window>

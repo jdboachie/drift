@@ -2,6 +2,17 @@
 
 Rules learned from building Drift, each with why. Read before building or changing UI.
 
+## Components
+
+- **Build from the shared pieces; never copy one.** Before writing a panel, row, card or style, look for it here:
+  - `Views/`: the window's regions (caption bar, toolbar, address bar, command bar, switcher, Library, downloads peek, mini player, meeting notice, crash card, drag ghosts). A new region is a view of its own, with an `Owner` the window sets; its handlers stay in the window's code.
+  - `Controls/`: what's used in more than one place. A tab's row (`TabRowView`), an Essential's tile, a folder's header, a page's card (`PageCardView`, also Peek's), handle and divider, settings rows and groups (`SettingsRow` in a `SettingsGroup`), `Toast`, `HoverCard`. A control in a list's row finds its window with `MainWindow.Of(this)`.
+  - `Styles/`: colours (`Colors.xaml`, a light and a dark value for each), text, buttons, settings, the sidebar's rows, and floating surfaces (`FloatingPanelStyle`: the hairline, fill and shadow every panel over the window has).
+
+  A list's template in `MainWindow.xaml` is one element; a row with more is a control. A shadow comes from `FloatingPanelStyle`, `PageControlsPillStyle` or `PageCardView`, never one made on the spot. A colour that has to be written out (a button's `ButtonBackground` and the like, which won't take an alias) is one of Drift's own, in the same theme. Checked by `Drift.Tests/ComponentRulesTests.cs`.
+  Why: the same panel, row and colours were written out again and again, and drifted apart; one place for each keeps them alike and `MainWindow.xaml` readable (it had grown to 2,546 lines).
+  <!-- 2026-11-20: "i want us to componentize: resuable components for consistency and reducing repetition. also, to help break up the monstrous mainwindow.xaml" -->
+
 ## Surfaces
 
 - **When building from an Arc, Dia or Zen reference, copy its layout and behaviour, never its icons or artwork.**
@@ -89,9 +100,27 @@ Rules learned from building Drift, each with why. Read before building or changi
 
 ## Copy
 
+Drift's voice follows Arc's: see the `write-copy` skill (`.claude/skills/write-copy/SKILL.md`) for how each kind of string is worded. The rules below still apply on top.
+
 - **Subtext only when it's needed to understand a control.** Default to the label alone; don't restate what the control already shows (no "Off for this site" under an unchecked toggle); keep status short ("Connection is secure").
   Why: redundant lines were removed from the site settings panel as noise.
   <!-- 2026-11-05: the toggle's "Blocking ads… / Off for this site" line and the encryption note removed -->
+
+- **A line under a label is a whole thought, never a fragment leaning on the label: don't start it with a preposition or conjunction ("With", "From", "For", "And" and the like).** "With uBlock Origin Lite" becomes "Drift uses uBlock Origin Lite to block them."
+  Why: a fragment reads as a broken sentence.
+  <!-- 2026-11-20: "don't start sentences with 'With' like 'With uBlock blah blah'" -->
+
+- **A row's subtext describes the setting; its value lives in the control on the right** (a folder in a picker, as Arc's Download location), never in the subtext.
+  Why: every other row reads that way; a value in the subtext breaks the pattern.
+  <!-- 2026-11-20: "'Save downloads to' has its value in the subtext instead of using the subtext as a description. that diverges from the rest of the ui" -->
+
+- **Full stops: a single line of one sentence or less has none; two or more sentences end every sentence with one; an error written as a message, a confirmation body and an intro always end with one (a one-line status beside its button, such as "We couldn't reach Gmail", doesn't).** ("Your files stay where they are" · "Update in progress. Hang tight!" · "This action is permanent.")
+  Why: Arc's pattern; the app had both kinds side by side under the same kind of label.
+  <!-- 2026-11-20: "our use of punctuation in the app seems inconsistent. full stops especially" -->
+
+- **Status lines speak only when something needs the person (signed out, couldn't reach it); never the same line repeated down a list.** All well, still loading, or not set up says nothing.
+  Why: a status under every row is a wall of text.
+  <!-- 2026-11-20: "so much text sigghhh" (the previews sheet with "Pin … to see it here" under four rows) -->
 
 - **Write for an ordinary user, not an engineer: no lines describing internal behaviour.** If a line needs knowledge of how the browser works to make sense, drop it.
   Why: ordinary users wouldn't understand it.

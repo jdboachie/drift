@@ -57,7 +57,7 @@ public sealed partial class MainWindow
 
     private void MailTick()
     {
-        var tab = EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsMailTab);
+        var tab = Settings.Current.PreviewGmail ? EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsMailTab) : null;
         if (tab != _mailTab)
         {
             _mailTab = tab;
@@ -162,11 +162,11 @@ public sealed partial class MainWindow
     /// <summary>What the mail card shows for the tab it's for: its unread emails, or why there aren't any and what to do about it.</summary>
     private (List<MailItem> Items, int Unread, string? Message, string? Action) MailCardData()
     {
-        if (_hoverTab is { } tab && tab == _outlookMailTab) return (_outlookMail, _outlookUnread, OutlookMessage(), null);
+        if (_hoverTab is { } tab && tab == _outlookMailTab) return (_outlookMail, _outlookUnread, OutlookMessage(), OutlookAction());
         return _mailState switch
         {
             MailState.SignedOut => (_mailItems, _mailUnread, "You're signed out of Gmail", "Sign in"),
-            MailState.Failed => (_mailItems, _mailUnread, "Couldn't reach Gmail", "Try again"),
+            MailState.Failed => (_mailItems, _mailUnread, "We couldn't reach Gmail", "Try again"),
             MailState.Loading => (_mailItems, _mailUnread, "Loading…", null),
             _ => (_mailItems, _mailUnread, null, null),
         };
@@ -176,38 +176,20 @@ public sealed partial class MainWindow
     {
         MailList.Children.Clear();
         var (items, unread, message, action) = MailCardData();
-        MailHeader.Text = message is null && unread > 0 ? $"{unread} unread" : "Inbox";
+        MailCard.Title = message is null && unread > 0 ? $"{unread} unread" : "Inbox";
+        MailCard.Icon = _hoverTab?.Favicon;
         if (message is null && items.Count == 0) message = "No unread email";
-        ShowCardMessage(MailMessagePanel, MailMessage, MailActionButton, message, action);
+        MailMessage.Show(message, action);
         if (message is not null) return;
 
         var primary = ThemeBrush("TextFillColorPrimaryBrush");
         var secondary = ThemeBrush("DriftSecondaryTextBrush");
-        var hover = ThemeBrush("DriftHoverBrush");
-        var divider = ThemeBrush("DriftDividerBrush");
         var now = DateTimeOffset.Now;
-        Border? above = null;
-        foreach (var item in items)
-        {
-            var row = MailRow(item, now, primary, secondary, hover);
-            if (MailList.Children.Count > 0)
-            {
-                // A hairline between emails, in line with their text; gone beside the one hovered.
-                var line = new Border { Height = 1, Margin = new Thickness(8, 0, 8, 0), Background = divider };
-                MailList.Children.Add(line);
-                var before = above!;
-                before.PointerEntered += (_, _) => line.Opacity = 0;
-                before.PointerExited += (_, _) => line.Opacity = 1;
-                row.PointerEntered += (_, _) => line.Opacity = 0;
-                row.PointerExited += (_, _) => line.Opacity = 1;
-            }
-            MailList.Children.Add(row);
-            above = row;
-        }
+        foreach (var item in items) MailList.Children.Add(MailRow(item, now, primary, secondary));
     }
 
-    /// <summary>An email: who it's from and when, its subject, and the start of it.</summary>
-    private Border MailRow(MailItem item, DateTimeOffset now, Brush primary, Brush secondary, Brush hover)
+    /// <summary>An email, as Arc's: who it's from and when; its subject, up to two lines; and the start of it.</summary>
+    private Button MailRow(MailItem item, DateTimeOffset now, Brush primary, Brush secondary)
     {
         var grid = new Grid { RowSpacing = 1, ColumnSpacing = 8 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -218,10 +200,10 @@ public sealed partial class MainWindow
         var sender = new TextBlock { Text = item.Sender, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = primary, TextTrimming = TextTrimming.CharacterEllipsis };
         var age = new TextBlock { Text = GmailFeed.Age(item.Received, now), FontSize = 12, Foreground = secondary, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(age, 1);
-        var subject = new TextBlock { Text = item.Subject, FontSize = 12, Foreground = primary, TextTrimming = TextTrimming.CharacterEllipsis };
+        var subject = new TextBlock { Text = item.Subject, FontSize = 13, Foreground = primary, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetRow(subject, 1);
         Grid.SetColumnSpan(subject, 2);
-        var snippet = new TextBlock { Text = item.Snippet, FontSize = 12, Foreground = secondary, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+        var snippet = new TextBlock { Text = item.Snippet, FontSize = 12, Foreground = secondary, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetRow(snippet, 2);
         Grid.SetColumnSpan(snippet, 2);
         grid.Children.Add(sender);
@@ -229,18 +211,10 @@ public sealed partial class MainWindow
         grid.Children.Add(subject);
         if (item.Snippet.Length > 0) grid.Children.Add(snippet);
 
-        var row = new Border
-        {
-            Padding = new Thickness(8, 7, 8, 8),
-            CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            Child = grid,
-        };
+        var row = new Button { Style = (Style)Application.Current.Resources["CardRowButtonStyle"], Content = grid };
         AutomationProperties.SetName(row, $"{item.Sender}: {item.Subject}");
-        row.PointerEntered += (_, _) => row.Background = hover;
-        row.PointerExited += (_, _) => row.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         var tab = _hoverTab;
-        row.Tapped += (_, _) =>
+        row.Click += (_, _) =>
         {
             if (item.Link is { } link && Uri.TryCreate(link, UriKind.Absolute, out var page)) OpenInTab(tab, page);
             else OpenInTab(tab, item.MessageId is { } id ? GmailFeed.Message(id, MailAccount) : GmailFeed.Inbox(MailAccount));
@@ -251,6 +225,7 @@ public sealed partial class MainWindow
     /// <summary>Signed out: Gmail in its tab, to sign in. Couldn't reach it: asked again, by a fresh view.</summary>
     private void MailAction_Click(object sender, RoutedEventArgs e)
     {
+        if (RetryOutlook()) return;
         if (_mailState == MailState.SignedOut)
         {
             OpenInTab(_mailTab, GmailFeed.Inbox(MailAccount));

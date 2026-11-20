@@ -22,9 +22,9 @@ public sealed partial class MainWindow
 {
     private const int MaxHistoryItems = 15;
 
-    private void Back_ContextRequested(UIElement sender, ContextRequestedEventArgs e) => ShowHistoryMenu(sender, e, back: true);
+    internal void Back_ContextRequested(UIElement sender, ContextRequestedEventArgs e) => ShowHistoryMenu(sender, e, back: true);
 
-    private void Forward_ContextRequested(UIElement sender, ContextRequestedEventArgs e) => ShowHistoryMenu(sender, e, back: false);
+    internal void Forward_ContextRequested(UIElement sender, ContextRequestedEventArgs e) => ShowHistoryMenu(sender, e, back: false);
 
     /// <summary>The page's history that way (the engine's own list), each a click away.</summary>
     private async void ShowHistoryMenu(UIElement sender, ContextRequestedEventArgs e, bool back)
@@ -68,14 +68,14 @@ public sealed partial class MainWindow
 
     // ── The address ──
 
-    private void AddressMenu_Opening(object? sender, object e)
+    internal void AddressMenu_Opening(object? sender, object e)
     {
         var page = IsPeekShown ? _peekView?.CoreWebView2?.Source : _active?.View.CoreWebView2?.Source;
         var has = !string.IsNullOrEmpty(page) && page != "about:blank";
-        AddressCopyItem.IsEnabled = AddressShareItem.IsEnabled = has;
+        AddressBar.CopyItem.IsEnabled = AddressBar.ShareItem.IsEnabled = has;
     }
 
-    private void AddressCopy_Click(object sender, RoutedEventArgs e)
+    internal void AddressCopy_Click(object sender, RoutedEventArgs e)
     {
         if (CopyCurrentLink()) ShowCopiedToast();
     }
@@ -85,7 +85,7 @@ public sealed partial class MainWindow
     private bool _shareReady;
 
     /// <summary>Windows' share, for the page in front (or in Peek): its address and title.</summary>
-    private void AddressShare_Click(object sender, RoutedEventArgs e)
+    internal void AddressShare_Click(object sender, RoutedEventArgs e)
     {
         var core = IsPeekShown ? _peekView?.CoreWebView2 : _active?.View.CoreWebView2;
         if (core?.Source is not { Length: > 0 } url || url == "about:blank") return;

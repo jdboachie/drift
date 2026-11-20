@@ -24,8 +24,11 @@ namespace Drift;
 /// <item>New folder (menu, Ctrl+Alt+N, or a tab's Add to folder) starts with its name being edited.
 /// Double-click a folder to rename it: Enter keeps the name, Esc puts it back.</item>
 /// <item>A folder's menu: Rename, New subfolder, Expand all, Collapse all, Close all tabs (unloads
-/// them, keeping their rows), Copy all links, Delete folder (asking whether to close its tabs or keep
-/// them in the folder above).</item>
+/// them, keeping their rows), Copy all links, Ungroup (the folder goes, what's in it moves up into
+/// its place, as Chrome's tab groups' Ungroup), Delete folder (the folder and its tabs).</item>
+/// <item>Deleting (its menu, or the × on its header) asks nothing: it goes at once, with Undo for a
+/// moment (Apple's forgiveness over confirmation). Its tabs close for good, and can be reopened,
+/// once Undo's gone.</item>
 /// <item>Dragging: FolderTree.DropAt says where a drop lands; holding a drag over a closed folder's
 /// header for half a second opens it.</item>
 /// </list>
@@ -302,7 +305,7 @@ public sealed partial class MainWindow
         SaveSessionSoon();
     }
 
-    private void FolderName_KeyDown(object sender, KeyRoutedEventArgs e)
+    internal void FolderName_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (sender is not TextBox { Tag: TabFolder folder } box) return;
         if (e.Key == VirtualKey.Enter) EndRename(folder, box.Text);
@@ -312,12 +315,12 @@ public sealed partial class MainWindow
         _active?.View.Focus(FocusState.Programmatic);
     }
 
-    private void FolderName_LostFocus(object sender, RoutedEventArgs e)
+    internal void FolderName_LostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is TextBox { Tag: TabFolder folder } box) EndRename(folder, box.Text);
     }
 
-    private void FolderHeader_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    internal void FolderHeader_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not TabFolder folder) return;
         // The two clicks opened and closed it again; the double-click itself renames.
@@ -372,7 +375,7 @@ public sealed partial class MainWindow
     /// opening and closing them all; then closing its tabs and deleting it. A live folder's tabs come
     /// from GitHub, not from you: it's refreshed and shown there, and says what it shows, instead.
     /// </summary>
-    private void FolderMenu_Opening(object? sender, object e)
+    internal void FolderMenu_Opening(object? sender, object e)
     {
         if (sender is not MenuFlyout menu) return;
         menu.Items.Clear();
@@ -388,7 +391,13 @@ public sealed partial class MainWindow
 
         var copyLinks = Item("Copy all links", FolderCopyLinks_Click);
         var expand = new MenuFlyoutItemBase?[] { Item("Expand all folders", FolderExpandAll_Click), Item("Collapse all folders", FolderCollapseAll_Click) };
-        var ending = new MenuFlyoutItemBase?[] { Item("Close all tabs", FolderCloseAll_Click), Item("Delete folder", FolderDelete_Click) };
+        // A live folder's tabs are its source's, so there's nothing to ungroup.
+        var ending = new MenuFlyoutItemBase?[]
+        {
+            Item("Close all tabs", FolderCloseAll_Click),
+            folder.IsLive ? null : Item("Ungroup", FolderUngroup_Click),
+            Item("Delete folder", FolderDelete_Click),
+        };
 
         if (folder.Live is { } live)
             FillMenu(menu,
@@ -438,7 +447,7 @@ public sealed partial class MainWindow
 
     private void FolderCollapseAll_Click(object sender, RoutedEventArgs e) => SetAllExpanded(false);
 
-    /// <summary>Unloads every tab in it: their pages close, their rows stay. Its menu's, and its header's ×.</summary>
+    /// <summary>Unloads every tab in it: their pages close, their rows stay (its menu's Close all tabs).</summary>
     private async void FolderCloseAll_Click(object sender, RoutedEventArgs e)
     {
         if (FolderOf(sender) is not { } folder) return;
@@ -453,7 +462,7 @@ public sealed partial class MainWindow
     /// Its × shows, as Dia's groups' does. A closed folder, held a moment,
     /// shows what's in it beside the sidebar.
     /// </summary>
-    private void FolderHeader_PointerEntered(object sender, PointerRoutedEventArgs e)
+    internal void FolderHeader_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not Grid { Tag: TabFolder folder } header) return;
         if (header.Children.OfType<Button>().FirstOrDefault() is { } close)
@@ -461,16 +470,20 @@ public sealed partial class MainWindow
             close.Visibility = Visibility.Visible;
             close.Opacity = 1;
         }
+        // A live folder's spinner moves over for the ×, still in sight.
+        if (header.Children.OfType<ProgressRing>().FirstOrDefault() is { } spinner) spinner.Translation = default;
         // Closed, it shows its card, as Dia's groups do.
         _hoveredFolder = folder;
         IndentFolderRow(FolderList.ContainerFromItem(folder), folder);
+        // Back on the header of the folder whose list is open: it stays as it is (rebuilt, it flickered).
+        if (_folderPreview is { IsOpen: true } && _folderPreviewShown == folder) return;
         if (!folder.IsExpanded && !folder.IsRenaming && _dragTab is null) ShowFolderPreviewSoon(folder);
     }
 
     // The folder whose header the pointer's on: closed, its card shows (IndentFolderRow).
     private TabFolder? _hoveredFolder;
 
-    private void FolderHeader_PointerExited(object sender, PointerRoutedEventArgs e)
+    internal void FolderHeader_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         if (sender is Grid { Tag: TabFolder folder } && folder == _hoveredFolder)
         {
@@ -478,29 +491,72 @@ public sealed partial class MainWindow
             IndentFolderRow(FolderList.ContainerFromItem(folder), folder);
         }
         if (sender is Grid header && header.Children.OfType<Button>().FirstOrDefault() is { } close) close.Opacity = 0;
+        if (sender is Grid row && row.Children.OfType<ProgressRing>().FirstOrDefault() is { } spinner) spinner.Translation = SpinnerAtRest;
         // Not yet shown: passing over it on the way somewhere else shows nothing. Shown, it stays while
-        // the pointer goes over to it (FlyoutShowMode.TransientWithDismissOnPointerMoveAway).
+        // the pointer goes over to it (WatchFolderPreview).
         _folderPreviewTimer?.Stop();
     }
 
+    // A live folder's spinner at rest: over in the ×'s place (its 24, and the gap before it, less the
+    // difference in their widths, so the two are centred alike).
+    private static readonly System.Numerics.Vector3 SpinnerAtRest = new(27, 0, 0);
+
+    /// <summary>
+    /// Put at rest before its slide's set, so it doesn't slide there as it loads. (In code: a
+    /// Translation written in the XAML stops the XAML compiler, with no message.)
+    /// </summary>
+    internal void FolderSpinner_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ProgressRing spinner || spinner.TranslationTransition is not null) return;
+        spinner.Translation = SpinnerAtRest;
+        spinner.TranslationTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(150) };
+        // Showing, it takes some of the name's room; gone, the name has it back.
+        spinner.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) =>
+        {
+            if (spinner.Parent is Grid header) FitFolderName(header);
+        });
+        if (spinner.Parent is Grid row) FitFolderName(row);
+    }
+
     /// <summary>The name takes the room there is, short of its chevron and the ×, and trims to fit.</summary>
-    private void FolderHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+    internal void FolderHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is Grid header) FitFolderName(header);
+    }
+
+    private static void FitFolderName(Grid header)
     {
         // The name's column (the emoji's is the first): it gives way so the × always fits.
-        if (sender is not Grid header || header.Children.OfType<TextBlock>().FirstOrDefault(t => Grid.GetColumn(t) == 1) is not { } name) return;
+        if (header.ActualWidth <= 0 || header.Children.OfType<TextBlock>().FirstOrDefault(t => Grid.GetColumn(t) == 1) is not { } name) return;
         // Icon, chevron and × with the gaps between: 18 + 10 + 24, and four gaps of the header's spacing.
-        name.MaxWidth = Math.Max(0, e.NewSize.Width - 18 - 10 - 24 - 4 * header.ColumnSpacing);
+        // A live folder's spinner too while it shows (beside the × while the header's hovered): 14 and a gap.
+        var spinner = header.Children.OfType<ProgressRing>().Any(r => r.Visibility == Visibility.Visible) ? 14 + header.ColumnSpacing : 0;
+        name.MaxWidth = Math.Max(0, header.ActualWidth - 18 - 10 - 24 - 4 * header.ColumnSpacing - spinner);
     }
 
     // A closed folder's contents, beside the sidebar while its header's hovered (ShowFolderPreview).
     private MenuFlyout? _folderPreview;
     private DispatcherQueueTimer? _folderPreviewTimer;
     private TabFolder? _folderPreviewFor;
+    // The folder whose list is the one showing.
+    private TabFolder? _folderPreviewShown;
     // Long enough that passing over a header on the way past shows nothing.
     private const int FolderPreviewDelayMs = 250;
+    // While it's open, where the pointer is is checked this often; off the header and the list for
+    // two checks running (long enough to cross between them), it goes.
+    private const int FolderPreviewWatchMs = 150;
+    private DispatcherQueueTimer? _folderPreviewWatch;
+    private FrameworkElement? _folderPreviewRow;
+    private int _folderPreviewMisses;
+    // Where the pointer last was on the header: on its way from there to the list, it stays (MenuAim).
+    private Point? _folderPreviewLeftFrom;
+    // Checks running that only the way-to-the-list kept it: parked there, off both, it goes after these.
+    private int _folderPreviewAiming;
+    private const int FolderPreviewAimTicks = 5;
 
     private void ShowFolderPreviewSoon(TabFolder folder)
     {
+        if (!Settings.Current.PreviewFolders) return;
         _folderPreviewFor = folder;
         if (_folderPreviewTimer is null)
         {
@@ -519,7 +575,10 @@ public sealed partial class MainWindow
     /// <summary>
     /// A closed folder's contents in a list beside its header, as Dia shows a closed group's: its tabs,
     /// its folders (each opening its own list beside it), and New tab at the end. Pick a tab to go to
-    /// it (it shows under the header while it's in front). Goes when the pointer moves away from it.
+    /// it (it shows under the header while it's in front). Goes when the pointer has left both it and
+    /// the header (WatchFolderPreview): not WinUI's own "moves away", which goes by how far the pointer
+    /// is from the list, so resting on the folder's name at the far side of the sidebar closed it at the
+    /// slightest movement.
     /// </summary>
     private void ShowFolderPreview(TabFolder folder)
     {
@@ -541,8 +600,22 @@ public sealed partial class MainWindow
         // Open, it keeps a sidebar that's floating over the page from going away.
         menu.Opened += SidebarMenu_Opened;
         menu.Closed += SidebarMenu_Closed;
-        menu.Closed += (_, _) =>
+        menu.Opened += (sender, _) =>
         {
+            // Hidden or replaced while it was still opening, it opens anyway, after Drift's moved on, and
+            // with its row gone it lands on the window's corner, over the sidebar, where nothing closed it.
+            if (sender != _folderPreview || _folderPreviewFor != folder || !row.IsLoaded || !PreviewBeside(menu, row))
+            {
+                menu.Hide();
+                return;
+            }
+            _folderPreviewShown = folder;
+            WatchFolderPreview(row);
+        };
+        menu.Closed += (sender, _) =>
+        {
+            if (sender == _folderPreview) _folderPreviewWatch?.Stop();
+            CloseSubmenusSoon(menu);
             if (picked is { } action) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => action());
             picked = null;
         };
@@ -551,7 +624,7 @@ public sealed partial class MainWindow
             menu.ShowAt(row, new FlyoutShowOptions
             {
                 Placement = FlyoutPlacementMode.RightEdgeAlignedTop,
-                ShowMode = FlyoutShowMode.TransientWithDismissOnPointerMoveAway,
+                ShowMode = FlyoutShowMode.Transient,
             });
         }
         catch (Exception error)
@@ -560,6 +633,120 @@ public sealed partial class MainWindow
             App.LogCrash(error);
             _folderPreview = null;
         }
+    }
+
+    /// <summary>
+    /// A subfolder's list, opened from the preview, goes with it. WinUI leaves a submenu that's open (or
+    /// still opening) when its menu closes, and drops it on the window's corner, over the sidebar, where
+    /// nothing closes it (as GhostPopups notes for menus). Now, and again a moment later for one that
+    /// was still on its way.
+    /// </summary>
+    private void CloseSubmenusSoon(MenuFlyout menu)
+    {
+        CloseSubmenus(menu);
+        var later = DispatcherQueue.CreateTimer();
+        later.Interval = TimeSpan.FromMilliseconds(400);
+        later.IsRepeating = false;
+        later.Tick += (_, _) =>
+        {
+            later.Stop();
+            if (!menu.IsOpen) CloseSubmenus(menu);
+        };
+        later.Start();
+    }
+
+    private void CloseSubmenus(MenuFlyout menu)
+    {
+        if (Root.XamlRoot is null) return;
+        var inSubmenus = new HashSet<MenuFlyoutItemBase>();
+        void Collect(IEnumerable<MenuFlyoutItemBase> items)
+        {
+            foreach (var item in items)
+                if (item is MenuFlyoutSubItem sub)
+                {
+                    foreach (var inner in sub.Items) inSubmenus.Add(inner);
+                    Collect(sub.Items);
+                }
+        }
+        Collect(menu.Items);
+        if (inSubmenus.Count == 0) return;
+        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot))
+            if (popup.Child is MenuFlyoutPresenter list && list.Items.Any(inSubmenus.Contains))
+                popup.IsOpen = false;
+    }
+
+    /// <summary>Its list, beside its row (not over it, as one that opened with no row to go by is).</summary>
+    private bool PreviewBeside(MenuFlyout menu, FrameworkElement row)
+    {
+        if (PreviewList(menu) is not { } list) return true;
+        var at = BoundsOf(row);
+        return BoundsOf(list).X >= at.X + at.Width - 8;
+    }
+
+    /// <summary>The list a menu's showing in, if it's open.</summary>
+    private MenuFlyoutPresenter? PreviewList(MenuFlyout menu)
+    {
+        if (menu.Items.FirstOrDefault() is not { } first || Root.XamlRoot is null) return null;
+        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot))
+            if (popup.Child is MenuFlyoutPresenter list && list.Items.Contains(first)) return list;
+        return null;
+    }
+
+    /// <summary>
+    /// The preview stays while the pointer's on its folder's header or on it (or a folder's list opened
+    /// from it), or on its way from the header to it, for a moment.
+    /// </summary>
+    private void WatchFolderPreview(FrameworkElement row)
+    {
+        _folderPreviewRow = row;
+        _folderPreviewMisses = 0;
+        _folderPreviewAiming = 0;
+        _folderPreviewLeftFrom = null;
+        if (_folderPreviewWatch is null)
+        {
+            _folderPreviewWatch = DispatcherQueue.CreateTimer();
+            _folderPreviewWatch.Interval = TimeSpan.FromMilliseconds(FolderPreviewWatchMs);
+            _folderPreviewWatch.Tick += (_, _) =>
+            {
+                // Drift's own windows count: the list is one of its own.
+                var at = PointerOverDrift();
+                if (at is { } on && FolderPreviewHolds(on))
+                {
+                    _folderPreviewMisses = 0;
+                    _folderPreviewAiming = 0;
+                    if (_folderPreviewRow is { XamlRoot: not null } header && Contains(BoundsOf(header), on)) _folderPreviewLeftFrom = on;
+                    return;
+                }
+                if (at is { } going && HeadingForPreview(going) && ++_folderPreviewAiming <= FolderPreviewAimTicks)
+                {
+                    _folderPreviewMisses = 0;
+                    return;
+                }
+                if (++_folderPreviewMisses >= 2) HideFolderPreview();
+            };
+        }
+        _folderPreviewWatch.Start();
+    }
+
+    private static bool Contains(Rect r, Point at) => at.X >= r.X && at.X < r.X + r.Width && at.Y >= r.Y && at.Y < r.Y + r.Height;
+
+    /// <summary>On its way from where it left the header to the list (MenuAim's triangle).</summary>
+    private bool HeadingForPreview(Point at)
+    {
+        if (_folderPreviewLeftFrom is not { } from || _folderPreview is not { } menu || PreviewList(menu) is not { } list) return false;
+        var edge = BoundsOf(list);
+        return MenuAim.Toward(at.X, at.Y, from.X, from.Y, edge.X, edge.Y - 8, edge.Y + edge.Height + 8);
+    }
+
+    private bool FolderPreviewHolds(Point at)
+    {
+        if (_folderPreviewRow is { XamlRoot: not null } row && Near(BoundsOf(row), 2)) return true;
+        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot))
+            if (popup.Child is MenuFlyoutPresenter list && Near(BoundsOf(list), 8)) return true;
+        return false;
+
+        bool Near(Rect r, double slack) =>
+            at.X >= r.X - slack && at.X < r.X + r.Width + slack && at.Y >= r.Y - slack && at.Y < r.Y + r.Height + slack;
     }
 
     /// <summary>
@@ -607,8 +794,12 @@ public sealed partial class MainWindow
     private void HideFolderPreview()
     {
         _folderPreviewTimer?.Stop();
+        _folderPreviewWatch?.Stop();
         _folderPreviewFor = null;
-        _folderPreview?.Hide();
+        // Let go of too: one still opening is closed as it opens (its Opened), not left on the corner.
+        var menu = _folderPreview;
+        _folderPreview = null;
+        menu?.Hide();
     }
 
     private void FolderCopyLinks_Click(object sender, RoutedEventArgs e)
@@ -622,49 +813,68 @@ public sealed partial class MainWindow
         Clipboard.SetContent(package);
     }
 
-    private async void FolderDelete_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// The × on its header, or Delete folder in its menu: the folder and everything in it go at once,
+    /// with Undo for a moment. Only a page's own unsaved changes are asked about first.
+    /// </summary>
+    internal async void FolderDelete_Click(object sender, RoutedEventArgs e)
     {
         if (FolderOf(sender) is not { } folder) return;
-        var count = folder.AllTabs.Count();
-        if (count == 0 && !folder.Folders.Any())
-        {
-            DeleteFolder(folder, closeTabs: false);
-            return;
-        }
-        var dialog = new ContentDialog
-        {
-            XamlRoot = Root.XamlRoot,
-            Title = $"Delete “{folder.Name}”?",
-            Content = count == 0
-                ? "Its folders move up a level."
-                : $"Close its {count} {(count == 1 ? "tab" : "tabs")}, or keep {(count == 1 ? "it" : "them")} in "
-                  + (folder.Parent is { } parent ? $"“{parent.Name}”" : "your pinned tabs") + "?",
-            PrimaryButtonText = count == 0 ? "Delete" : $"Close {(count == 1 ? "tab" : "tabs")}",
-            SecondaryButtonText = count == 0 ? "" : $"Keep {(count == 1 ? "tab" : "tabs")}",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        _openSidebarMenus++;
-        try
-        {
-            switch (await dialog.ShowAsync())
-            {
-                case ContentDialogResult.Primary:
-                    if (count > 0 && !await MayLeaveAsync(folder.AllTabs.Cast<BrowserTab>())) break;
-                    DeleteFolder(folder, closeTabs: count > 0);
-                    break;
-                case ContentDialogResult.Secondary:
-                    DeleteFolder(folder, closeTabs: false);
-                    break;
-            }
-        }
-        finally
-        {
-            _openSidebarMenus = Math.Max(0, _openSidebarMenus - 1);
-        }
+        var tabs = folder.AllTabs.Cast<BrowserTab>().ToList();
+        if (tabs.Count > 0 && !await MayLeaveAsync(tabs)) return;
+        if (!_folderTree.AllFolders.Contains(folder)) return;
+        SetFolderAside(folder, tabs);
     }
 
-    private void NewFolder_Click(object sender, RoutedEventArgs e) => NewFolder(null);
+    /// <summary>
+    /// A folder out of the sidebar, its tabs still open behind the scenes so Undo puts it all back as
+    /// it was; once Undo's gone, its tabs close (and can be reopened, as any closed tab).
+    /// </summary>
+    private void SetFolderAside(TabFolder folder, List<BrowserTab> tabs)
+    {
+        foreach (var tab in tabs)
+        {
+            LeaveSplit(tab);
+            if (tab == _peekOwner) ClosePeek(animate: false);
+        }
+        if (_active is { } active && tabs.Contains(active))
+        {
+            var next = _recentTabs.FirstOrDefault(t => !tabs.Contains(t) && AllTabs.Contains(t))
+                ?? AllTabs.FirstOrDefault(t => !tabs.Contains(t));
+            if (next is not null) Activate(next);
+            else
+            {
+                active.View.Visibility = Visibility.Collapsed;
+                _active = null;
+                UpdateChrome();
+            }
+        }
+        var (parent, index) = _folderTree.Detach(folder);
+        RefreshFolderRows();
+        SaveSessionSoon();
+        var count = tabs.Count;
+        ShowUndo(count == 0 ? $"Deleted “{folder.Name}”" : $"Deleted “{folder.Name}” and its {count} {(count == 1 ? "tab" : "tabs")}",
+            undo: () =>
+            {
+                _folderTree.Reattach(folder, parent, index);
+                RefreshFolderRows();
+                SaveSessionSoon();
+                if (folder.IsLive) LiveTick();
+            },
+            gone: () =>
+            {
+                foreach (var tab in folder.AllTabs.Cast<BrowserTab>().ToList()) RemoveTab(tab);
+                SaveSessionSoon();
+            });
+    }
+
+    /// <summary>Ungroup: the folder goes, and what's in it moves up into its place (a top-level folder's tabs become pinned tabs).</summary>
+    private void FolderUngroup_Click(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) DeleteFolder(folder, closeTabs: false);
+    }
+
+    internal void NewFolder_Click(object sender, RoutedEventArgs e) => NewFolder(null);
 
     /// <summary>A folder tab's "Remove from folder": it becomes an ordinary pinned tab.</summary>
     private void RemoveFromFolder_Click(object sender, RoutedEventArgs e)
@@ -768,14 +978,14 @@ public sealed partial class MainWindow
     private async Task RenderFolderGhostAsync(TabFolder folder)
     {
         _rowGhost = _tileGhost = null;
-        RowGhostIcon.Source = null;
-        RowGhostGlyph.Glyph = folder.Glyph;
-        RowGhostGlyph.Visibility = Visibility.Visible;
-        RowGhostTitle.Text = folder.Name;
-        RowGhost.Width = Math.Max(120, FolderList.ActualWidth);
+        GhostStage.RowIcon.Source = null;
+        GhostStage.RowGlyph.Glyph = folder.Glyph;
+        GhostStage.RowGlyph.Visibility = Visibility.Visible;
+        GhostStage.RowTitle.Text = folder.Name;
+        GhostStage.Row.Width = Math.Max(120, FolderList.ActualWidth);
         try
         {
-            var row = await SnapshotAsync(RowGhost);
+            var row = await SnapshotAsync(GhostStage.Row);
             if (_dragFolder == folder && row is { } r)
             {
                 _rowGhost = r.Bitmap;
@@ -788,7 +998,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            RowGhostGlyph.Glyph = "";
+            GhostStage.RowGlyph.Glyph = "";
         }
     }
 }

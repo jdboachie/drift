@@ -27,7 +27,7 @@ public sealed partial class MainWindow
     /// <summary>The panel's switch for this site, once the blocker says how it stands; hidden if there's no blocker.</summary>
     private async void ShowSiteAdBlock(Uri page)
     {
-        SiteAdBlockRow.Visibility = Visibility.Collapsed;
+        AddressBar.SiteAdBlockRow.Visibility = Visibility.Collapsed;
         _siteAdBlockPage = page;
         if (AdBlockSite.HostFor(page) is null || !Settings.Current.BlockAds) return;
         _adBlock ??= new AdBlockHelper(WinRT.Interop.WindowNative.GetWindowHandle(this), _private);
@@ -35,22 +35,22 @@ public sealed partial class MainWindow
         if (level is null || _siteAdBlockPage != page) return;
 
         _showingSiteAdBlock = true;
-        SiteAdBlockSwitch.IsOn = AdBlockSite.IsOn(level.Value);
+        AddressBar.SiteAdBlockSwitch.IsOn = AdBlockSite.IsOn(level.Value);
         _showingSiteAdBlock = false;
-        SiteAdBlockSwitch.IsEnabled = true;
-        SiteAdBlockRow.Visibility = Visibility.Visible;
+        AddressBar.SiteAdBlockSwitch.IsEnabled = true;
+        AddressBar.SiteAdBlockRow.Visibility = Visibility.Visible;
     }
 
-    private async void SiteAdBlock_Toggled(object sender, RoutedEventArgs e)
+    internal async void SiteAdBlock_Toggled(object sender, RoutedEventArgs e)
     {
         if (_showingSiteAdBlock || _adBlock is null || _siteAdBlockPage is not { } page || AdBlockSite.HostFor(page) is not { } site) return;
-        var on = SiteAdBlockSwitch.IsOn;
-        SiteAdBlockSwitch.IsEnabled = false;
+        var on = AddressBar.SiteAdBlockSwitch.IsOn;
+        AddressBar.SiteAdBlockSwitch.IsEnabled = false;
         var level = AdBlockSite.LevelFor(on, await _adBlock.DefaultLevelAsync() ?? 2);
         var done = await _adBlock.SetAsync(site, level);
         // A setting for the exact host (made in the blocker itself, say) would outweigh the site's.
         if (done && !string.Equals(page.Host, site, StringComparison.OrdinalIgnoreCase)) done = await _adBlock.SetAsync(page.Host, level);
-        SiteAdBlockSwitch.IsEnabled = true;
+        AddressBar.SiteAdBlockSwitch.IsEnabled = true;
         if (!done)
         {
             // It didn't take: show how it really stands.

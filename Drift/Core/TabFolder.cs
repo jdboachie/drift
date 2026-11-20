@@ -159,6 +159,20 @@ public sealed class TabFolder : INotifyPropertyChanged
         }
     }
 
+    private bool _isFetching;
+
+    /// <summary>A live folder being asked again just now: a small spinner on its header (LiveFolders.cs).</summary>
+    public bool IsFetching
+    {
+        get => _isFetching;
+        set
+        {
+            if (_isFetching == value) return;
+            _isFetching = value;
+            OnPropertyChanged();
+        }
+    }
+
     private LiveNote? _note;
 
     /// <summary>A live folder's note row (LiveNote), the same one each time.</summary>

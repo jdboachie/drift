@@ -35,6 +35,16 @@ public class GmailFeedTests
     }
 
     [Fact]
+    public void An_emails_text_is_one_line()
+    {
+        var (_, items) = GmailFeed.Parse("<?xml version=\"1.0\"?><feed version=\"0.3\" xmlns=\"http://purl.org/atom/ns#\"><fullcount>1</fullcount>"
+            + "<entry><title>Two\n  lines</title><summary>Dear all,\r\n\r\nWe are excited</summary><issued>2026-11-07T01:00:00Z</issued>"
+            + "<author><name>Ali</name></author></entry></feed>")!.Value;
+        Assert.Equal("Two lines", items[0].Subject);
+        Assert.Equal("Dear all, We are excited", items[0].Snippet);
+    }
+
+    [Fact]
     public void Not_a_feed_is_nothing()
     {
         Assert.Null(GmailFeed.Parse("<html><body>Sign in</body></html>"));

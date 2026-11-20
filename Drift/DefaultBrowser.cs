@@ -71,7 +71,7 @@ internal static class DefaultBrowser
             using (var open = client.CreateSubKey(@"shell\open\command")) open.SetValue("", $"\"{Exe}\"");
             using var capabilities = client.CreateSubKey("Capabilities");
             capabilities.SetValue("ApplicationName", AppName);
-            capabilities.SetValue("ApplicationDescription", "A calm, sidebar-first browser.");
+            capabilities.SetValue("ApplicationDescription", "A calm, sidebar-first browser");
             capabilities.SetValue("ApplicationIcon", $"{Exe},0");
             using (var menu = capabilities.CreateSubKey("StartMenu")) menu.SetValue("StartMenuInternet", AppName);
             using (var urls = capabilities.CreateSubKey("URLAssociations"))

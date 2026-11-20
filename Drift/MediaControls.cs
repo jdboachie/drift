@@ -216,12 +216,12 @@ public sealed partial class MainWindow
         }
         if (tab is null) return;
 
-        MediaIcon.Source = tab.Favicon;
-        MediaIconGlyph.Visibility = tab.PlaceholderVisibility;
-        ToolTipService.SetToolTip(MediaTabButton, tab.Title);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MediaTabButton, "Go to " + tab.Title);
-        SetMediaButton(MediaPlayButton, MediaPlayGlyph, tab.IsPlayingAudio ? "" : "", tab.IsPlayingAudio ? "Pause" : "Play");
-        SetMediaButton(MediaMuteButton, MediaMuteGlyph, tab.IsMuted ? "" : "", tab.IsMuted ? "Unmute" : "Mute");
+        MediaCard.Icon.Source = tab.Favicon;
+        MediaCard.IconGlyph.Visibility = tab.PlaceholderVisibility;
+        ToolTipService.SetToolTip(MediaCard.TabButton, tab.Title);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MediaCard.TabButton, "Go to " + tab.Title);
+        SetMediaButton(MediaCard.PlayButton, MediaCard.PlayGlyph, tab.IsPlayingAudio ? "" : "", tab.IsPlayingAudio ? "Pause" : "Play");
+        SetMediaButton(MediaCard.MuteButton, MediaCard.MuteGlyph, tab.IsMuted ? "" : "", tab.IsMuted ? "Unmute" : "Mute");
 
         // Paused: gone once it's been paused long enough, unless something plays meanwhile.
         if (!tab.IsPlayingAudio)
@@ -257,17 +257,17 @@ public sealed partial class MainWindow
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
     }
 
-    private void MediaTab_Click(object sender, RoutedEventArgs e)
+    internal void MediaTab_Click(object sender, RoutedEventArgs e)
     {
         if (_mediaTab is { } tab) Activate(tab);
     }
 
-    private void MediaTitle_Tapped(object sender, TappedRoutedEventArgs e)
+    internal void MediaTitle_Tapped(object sender, TappedRoutedEventArgs e)
     {
         if (_mediaTab is { } tab) Activate(tab);
     }
 
-    private async void MediaPlay_Click(object sender, RoutedEventArgs e)
+    internal async void MediaPlay_Click(object sender, RoutedEventArgs e)
     {
         if (_mediaTab is not { View.CoreWebView2: { } core } tab) return;
         try
@@ -275,7 +275,7 @@ public sealed partial class MainWindow
             var result = (await EvaluateAsync(core, "window.__driftMedia ? window.__driftMedia.toggle() : 'none'", gesture: true))?.GetString();
             // Shown at once; the engine's own measure catches up a moment later.
             if (result is "playing" or "paused" && tab == _mediaTab)
-                SetMediaButton(MediaPlayButton, MediaPlayGlyph, result == "playing" ? "" : "", result == "playing" ? "Pause" : "Play");
+                SetMediaButton(MediaCard.PlayButton, MediaCard.PlayGlyph, result == "playing" ? "" : "", result == "playing" ? "Pause" : "Play");
         }
         catch
         {
@@ -283,12 +283,12 @@ public sealed partial class MainWindow
         }
     }
 
-    private void MediaBack_Click(object sender, RoutedEventArgs e) => _ = RunMediaAsync("window.__driftMedia && window.__driftMedia.skip(-1)");
-    private void MediaForward_Click(object sender, RoutedEventArgs e) => _ = RunMediaAsync("window.__driftMedia && window.__driftMedia.skip(1)");
-    private void MediaPip_Click(object sender, RoutedEventArgs e) => _ = RunMediaAsync("window.__driftMedia && window.__driftMedia.pip()");
+    internal void MediaBack_Click(object sender, RoutedEventArgs e) => _ = RunMediaAsync("window.__driftMedia && window.__driftMedia.skip(-1)");
+    internal void MediaForward_Click(object sender, RoutedEventArgs e) => _ = RunMediaAsync("window.__driftMedia && window.__driftMedia.skip(1)");
+    internal void MediaPip_Click(object sender, RoutedEventArgs e) => _ = RunMediaAsync("window.__driftMedia && window.__driftMedia.pip()");
 
     /// <summary>×: it stops, and the controller goes until the tab plays again.</summary>
-    private async void MediaClose_Click(object sender, RoutedEventArgs e)
+    internal async void MediaClose_Click(object sender, RoutedEventArgs e)
     {
         if (_mediaTab is not { } tab) return;
         _mediaDismissed = tab;
@@ -305,13 +305,13 @@ public sealed partial class MainWindow
         if (_mediaExpanded) await RefreshMediaStateAsync();
     }
 
-    private void MediaMute_Click(object sender, RoutedEventArgs e)
+    internal void MediaMute_Click(object sender, RoutedEventArgs e)
     {
         if (_mediaTab is { } tab) ToggleMute(tab);
     }
 
     /// <summary>A tab row's speaker: mutes the tab, or unmutes it.</summary>
-    private void TabAudio_Click(object sender, RoutedEventArgs e)
+    internal void TabAudio_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is BrowserTab tab) ToggleMute(tab);
     }
@@ -370,13 +370,13 @@ public sealed partial class MainWindow
     {
         _mediaExpanded = expand;
         var generation = ++_mediaGeneration;
-        var visual = ElementCompositionPreview.GetElementVisual(MediaCardBody);
+        var visual = ElementCompositionPreview.GetElementVisual(MediaCard.Body);
         var compositor = visual.Compositor;
         var animate = _uiSettings.AnimationsEnabled;
 
         if (expand)
         {
-            MediaHeader.Visibility = MediaProgress.Visibility = Visibility.Visible;
+            MediaCard.Header.Visibility = MediaCard.Progress.Visibility = Visibility.Visible;
             MediaCard.Height = double.NaN;
             _ = RefreshMediaStateAsync();
             _mediaPollTimer ??= CreatePollTimer();
@@ -411,7 +411,7 @@ public sealed partial class MainWindow
 
         // Past open, the cut rises above the card's top, and the card stretches up to fill it, from
         // its foot; its contents stay where they are.
-        var back = ElementCompositionPreview.GetElementVisual(MediaCardBack);
+        var back = ElementCompositionPreview.GetElementVisual(MediaCard.Back);
         back.CenterPoint = new Vector3(0, height, 0);
         back.StartAnimation("Scale", Bind("Vector3(1, 1 + Max(p.T - 1, 0) * (h - c) / h, 1)"));
 
@@ -426,10 +426,10 @@ public sealed partial class MainWindow
         cut.StartAnimation("BottomInset", Bind("Max(p.T, 0) * (h - c)"));
 
         // The solid card and the new rows fade in as it opens, and out as it shuts.
-        MediaCardPlate.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
-        MediaHeader.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
-        MediaProgress.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
-        MediaCardPlate.Opacity = MediaHeader.Opacity = MediaProgress.Opacity = expand ? 1 : 0;
+        MediaCard.Plate.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
+        MediaCard.Header.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
+        MediaCard.Progress.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
+        MediaCard.Plate.Opacity = MediaCard.Header.Opacity = MediaCard.Progress.Opacity = expand ? 1 : 0;
 
         if (animate)
         {
@@ -453,10 +453,10 @@ public sealed partial class MainWindow
     {
         if (afterMs > 0) await Task.Delay(afterMs);
         if (generation != _mediaGeneration || _mediaExpanded) return;
-        MediaHeader.Visibility = MediaProgress.Visibility = Visibility.Collapsed;
+        MediaCard.Header.Visibility = MediaCard.Progress.Visibility = Visibility.Collapsed;
         MediaCard.Height = CompactHeight;
-        ElementCompositionPreview.GetElementVisual(MediaCardBody).Clip = null;
-        var back = ElementCompositionPreview.GetElementVisual(MediaCardBack);
+        ElementCompositionPreview.GetElementVisual(MediaCard.Body).Clip = null;
+        var back = ElementCompositionPreview.GetElementVisual(MediaCard.Back);
         back.StopAnimation("Scale");
         back.Scale = Vector3.One;
         ElementCompositionPreview.GetElementVisual(SidebarScroll).Clip = null;
@@ -470,7 +470,7 @@ public sealed partial class MainWindow
         _mediaExpanded = false;
         var generation = ++_mediaGeneration;
         _mediaPollTimer?.Stop();
-        MediaCardPlate.Opacity = MediaHeader.Opacity = MediaProgress.Opacity = 0;
+        MediaCard.Plate.Opacity = MediaCard.Header.Opacity = MediaCard.Progress.Opacity = 0;
         _ = FinishCollapseAsync(generation, 0);
     }
 
@@ -499,11 +499,11 @@ public sealed partial class MainWindow
             var time = root.GetProperty("time").GetDouble();
             _mediaDuration = root.GetProperty("duration").GetDouble();
             SetMediaTitle(string.IsNullOrWhiteSpace(title) ? tab.Title : title.Trim());
-            MediaSite.Text = artist.Length > 0 ? artist : SiteOf(tab);
+            MediaCard.Site.Text = artist.Length > 0 ? artist : SiteOf(tab);
             SetMediaArt(MediaArtwork.Pick(root.GetProperty("art").EnumerateArray()
                 .Select(a => (a[0].GetString() ?? "", a[1].GetString())).ToList(), ArtPixels));
-            MediaPipButton.Visibility = root.GetProperty("video").GetBoolean() ? Visibility.Visible : Visibility.Collapsed;
-            MediaDuration.Text = _mediaDuration > 0 ? MediaTime.Format(_mediaDuration) : "";
+            MediaCard.PipButton.Visibility = root.GetProperty("video").GetBoolean() ? Visibility.Visible : Visibility.Collapsed;
+            MediaCard.Duration.Text = _mediaDuration > 0 ? MediaTime.Format(_mediaDuration) : "";
             if (!_scrubbing) ShowMediaTime(time);
         }
         catch
@@ -522,11 +522,11 @@ public sealed partial class MainWindow
     {
         if (src == _mediaArtSrc) return;
         _mediaArtSrc = src;
-        MediaArt.Source = src is null ? null : new BitmapImage(new Uri(src)) { DecodePixelHeight = 36, DecodePixelType = DecodePixelType.Logical };
-        MediaArtFrame.Visibility = src is null ? Visibility.Collapsed : Visibility.Visible;
+        MediaCard.Art.Source = src is null ? null : new BitmapImage(new Uri(src)) { DecodePixelHeight = 36, DecodePixelType = DecodePixelType.Logical };
+        MediaCard.ArtFrame.Visibility = src is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private void MediaArt_ImageFailed(object sender, ExceptionRoutedEventArgs e) => MediaArtFrame.Visibility = Visibility.Collapsed;
+    internal void MediaArt_ImageFailed(object sender, ExceptionRoutedEventArgs e) => MediaCard.ArtFrame.Visibility = Visibility.Collapsed;
 
     private static string SiteOf(BrowserTab tab)
     {
@@ -537,47 +537,47 @@ public sealed partial class MainWindow
 
     private void ShowMediaTime(double time)
     {
-        MediaElapsed.Text = MediaTime.Format(time);
-        MediaScrubFill.Width = MediaTime.Fraction(time, _mediaDuration) * MediaScrub.ActualWidth;
+        MediaCard.Elapsed.Text = MediaTime.Format(time);
+        MediaCard.ScrubFill.Width = MediaTime.Fraction(time, _mediaDuration) * MediaCard.Scrub.ActualWidth;
     }
 
     // ── Seeking: press or drag on the bar ──
 
-    private void MediaScrub_PointerPressed(object sender, PointerRoutedEventArgs e)
+    internal void MediaScrub_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_mediaDuration <= 0) return;
-        _scrubbing = MediaScrub.CapturePointer(e.Pointer);
+        _scrubbing = MediaCard.Scrub.CapturePointer(e.Pointer);
         ShowMediaTime(TimeAt(e));
         e.Handled = true;
     }
 
-    private void MediaScrub_PointerMoved(object sender, PointerRoutedEventArgs e)
+    internal void MediaScrub_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
         if (!_scrubbing) return;
         ShowMediaTime(TimeAt(e));
         e.Handled = true;
     }
 
-    private void MediaScrub_PointerReleased(object sender, PointerRoutedEventArgs e)
+    internal void MediaScrub_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (!_scrubbing) return;
         var time = TimeAt(e);
         _scrubbing = false;
-        MediaScrub.ReleasePointerCapture(e.Pointer);
+        MediaCard.Scrub.ReleasePointerCapture(e.Pointer);
         ShowMediaTime(time);
         _ = RunMediaAsync($"window.__driftMedia && window.__driftMedia.seek({time.ToString(CultureInfo.InvariantCulture)})");
         if (!_pointerOnMedia) HoverMedia(TimeSpan.FromMilliseconds(300));
         e.Handled = true;
     }
 
-    private void MediaScrub_PointerCaptureLost(object sender, PointerRoutedEventArgs e)
+    internal void MediaScrub_PointerCaptureLost(object sender, PointerRoutedEventArgs e)
     {
         _scrubbing = false;
         if (!_pointerOnMedia) HoverMedia(TimeSpan.FromMilliseconds(300));
     }
 
     private double TimeAt(PointerRoutedEventArgs e) =>
-        MediaTime.At(e.GetCurrentPoint(MediaScrub).Position.X, MediaScrub.ActualWidth, _mediaDuration);
+        MediaTime.At(e.GetCurrentPoint(MediaCard.Scrub).Position.X, MediaCard.Scrub.ActualWidth, _mediaDuration);
 
     // ── The title: scrolling by when it's too long to fit ──
 
@@ -585,13 +585,13 @@ public sealed partial class MainWindow
     {
         if (title == _mediaTitleText) return;
         _mediaTitleText = title;
-        MediaTitle.Text = MediaTitleCopy.Text = title;
+        MediaCard.Title.Text = MediaCard.TitleCopy.Text = title;
         UpdateMarquee();
     }
 
-    private void MediaTitleBox_SizeChanged(object sender, SizeChangedEventArgs e)
+    internal void MediaTitleBox_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        MediaTitleBox.Clip = new RectangleGeometry { Rect = new Rect(0, -4, e.NewSize.Width, e.NewSize.Height + 8) };
+        MediaCard.TitleBox.Clip = new RectangleGeometry { Rect = new Rect(0, -4, e.NewSize.Width, e.NewSize.Height + 8) };
         UpdateMarquee();
     }
 
@@ -602,14 +602,14 @@ public sealed partial class MainWindow
     private void UpdateMarquee()
     {
         StopMarquee();
-        MediaTitle.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var textWidth = MediaTitle.DesiredSize.Width;
-        var scrolls = MediaMarquee.Scrolls(textWidth, MediaTitleBox.ActualWidth) && _uiSettings.AnimationsEnabled;
-        MediaTitleCopy.Visibility = scrolls ? Visibility.Visible : Visibility.Collapsed;
-        MediaTitleCopy.Margin = new Thickness(MediaMarquee.Gap, 0, 0, 0);
+        MediaCard.Title.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var textWidth = MediaCard.Title.DesiredSize.Width;
+        var scrolls = MediaMarquee.Scrolls(textWidth, MediaCard.TitleBox.ActualWidth) && _uiSettings.AnimationsEnabled;
+        MediaCard.TitleCopy.Visibility = scrolls ? Visibility.Visible : Visibility.Collapsed;
+        MediaCard.TitleCopy.Margin = new Thickness(MediaMarquee.Gap, 0, 0, 0);
         if (!scrolls) return;
 
-        var compositor = ElementCompositionPreview.GetElementVisual(MediaTitleStrip).Compositor;
+        var compositor = ElementCompositionPreview.GetElementVisual(MediaCard.TitleStrip).Compositor;
         const double rest = 1.5;
         var loop = MediaMarquee.LoopSeconds(textWidth);
         var total = rest + loop;
@@ -621,13 +621,13 @@ public sealed partial class MainWindow
         move.Duration = TimeSpan.FromSeconds(total);
         move.IterationBehavior = AnimationIterationBehavior.Forever;
         _marquee = move;
-        MediaTitleStrip.StartAnimation(move);
+        MediaCard.TitleStrip.StartAnimation(move);
     }
 
     private void StopMarquee()
     {
-        if (_marquee is not null) MediaTitleStrip.StopAnimation(_marquee);
+        if (_marquee is not null) MediaCard.TitleStrip.StopAnimation(_marquee);
         _marquee = null;
-        MediaTitleStrip.Translation = Vector3.Zero;
+        MediaCard.TitleStrip.Translation = Vector3.Zero;
     }
 }

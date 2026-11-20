@@ -107,7 +107,7 @@ public sealed partial class MainWindow
         var wasOpen = _commandBarOpen;
         if (wasOpen && newTab == _commandNewTab)
         {
-            CommandBox.SelectAll();
+            CommandLayer.Box.SelectAll();
             return;
         }
 
@@ -116,21 +116,21 @@ public sealed partial class MainWindow
         LeaveSiteSearch();
         _commandFolder = null;
         _commandSplitWith = null;
-        CommandBox.PlaceholderText = "Search or Enter URL...";
+        CommandLayer.Box.PlaceholderText = "Search or Enter URL...";
         _commandBarOpen = true;
         _commandNewTab = newTab;
         _commandPrefill = newTab ? null : _active?.Url;
         _completion = null;
         _highlightMoved = false;
         SetCommandText(_commandPrefill ?? "");
-        _typed = CommandBox.Text;
+        _typed = CommandLayer.Box.Text;
 
-        CommandLayer.Visibility = Visibility.Visible;
+        CommandLayer.Backdrop.Visibility = Visibility.Visible;
         PlaceCommandCard();
         UpdateDragRegions();
         UpdateCommandResults();
-        CommandBox.Focus(FocusState.Keyboard);
-        CommandBox.SelectAll();
+        CommandLayer.Box.Focus(FocusState.Keyboard);
+        CommandLayer.Box.SelectAll();
         if (!wasOpen) ReadClipboard();
         if (!wasOpen) WarmAskAi();
 
@@ -138,14 +138,17 @@ public sealed partial class MainWindow
         if (!wasOpen && animate)
         {
             // About the middle of the field, so what you're about to type into barely moves.
-            CommandCard.UpdateLayout();
-            CommandCard.CenterPoint = new Vector3((float)CommandCard.ActualWidth / 2, 26, 0);
-            CommandEnterAnimation.Begin();
-            Spring.To(CommandCard, "Scale", Vector3.One, duration: 0.2, bounce: 0, from: new Vector3(0.97f, 0.97f, 1));
+            CommandLayer.Card.UpdateLayout();
+            CommandLayer.Card.CenterPoint = new Vector3((float)CommandLayer.Card.ActualWidth / 2, 26, 0);
+            CommandLayer.EnterAnimation.Begin();
+            Spring.To(CommandLayer.Card, "Scale", Vector3.One, duration: 0.2, bounce: 0, from: new Vector3(0.97f, 0.97f, 1));
         }
     }
 
-    /// <param name="focusPage">Give the keyboard back to the page, unless what's next takes it anyway.</param>
+    /// <param name="focusPage">
+    /// Give the keyboard back to the page even if it's elsewhere. Without it, the page takes the keyboard
+    /// only from the bar's own field.
+    /// </param>
     private void CloseCommandBar(bool focusPage = true)
     {
         if (!_commandBarOpen) return;
@@ -155,34 +158,37 @@ public sealed partial class MainWindow
         _suggestCancel?.Cancel();
         _suggestions.Clear();
         _lastSuggestQuery = null;
-        CommandEnterAnimation.Stop();
-        Spring.Jump(CommandCard, "Scale", Vector3.One);
-        CommandLayer.Visibility = Visibility.Collapsed;
+        CommandLayer.EnterAnimation.Stop();
+        Spring.Jump(CommandLayer.Card, "Scale", Vector3.One);
+        // The page takes the keyboard before the bar goes. Hidden while its field has it, the bar would
+        // pass it to the next stop, the page's dots, which then show keyboard focus until the new page
+        // takes it. Whatever comes next (a new tab, the Library) can still take it after.
+        if (focusPage || IsFocusIn(CommandLayer.Backdrop)) _active?.View.Focus(FocusState.Programmatic);
+        CommandLayer.Backdrop.Visibility = Visibility.Collapsed;
         UpdateDragRegions();
         // Room left for a page beside (Split.cs), and none coming: the page takes the whole width again.
         if (!_splitComing) ReleaseDropRoom();
-        if (focusPage) _active?.View.Focus(FocusState.Programmatic);
     }
 
     /// <summary>Centred on the window, a little above the middle, as wide as fits up to 720.</summary>
     private void PlaceCommandCard()
     {
-        CommandCard.Width = Math.Max(280, Math.Min(CommandCardMaxWidth, Root.ActualWidth - 48));
-        CommandCard.Margin = new Thickness(0, Math.Max(24, Math.Round(Root.ActualHeight * 0.22)), 0, 0);
+        CommandLayer.Card.Width = Math.Max(280, Math.Min(CommandCardMaxWidth, Root.ActualWidth - 48));
+        CommandLayer.Card.Margin = new Thickness(0, Math.Max(24, Math.Round(Root.ActualHeight * 0.22)), 0, 0);
     }
 
     private void SetCommandText(string text)
     {
         _programmaticText = text;
-        CommandBox.Text = text;
+        CommandLayer.Box.Text = text;
     }
 
     // ───────────────────────── Typing ─────────────────────────
 
-    private void CommandBox_TextChanged(object sender, TextChangedEventArgs e)
+    internal void CommandBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (!_commandBarOpen) return;
-        var text = CommandBox.Text;
+        var text = CommandLayer.Box.Text;
         if (_programmaticText is not null && text == _programmaticText)
         {
             _programmaticText = null;
@@ -207,7 +213,7 @@ public sealed partial class MainWindow
         // like Chrome: backspacing over a completion removes it rather than bringing it back.
         var grew = text.Length > _typed.Length
             && text.StartsWith(_typed, StringComparison.OrdinalIgnoreCase)
-            && CommandBox.SelectionStart == text.Length;
+            && CommandLayer.Box.SelectionStart == text.Length;
         _typed = text;
         _completion = null;
         _highlightMoved = false;
@@ -230,13 +236,13 @@ public sealed partial class MainWindow
             var (item, completed) = found;
             var rest = completed[text.Length..];
             SetCommandText(text + rest);
-            CommandBox.Select(text.Length, rest.Length);
+            CommandLayer.Box.Select(text.Length, rest.Length);
             _completion = item;
         }
         UpdateCommandResults();
     }
 
-    private void CommandBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    internal void CommandBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (_askMode && AskKeyDown(e.Key))
         {
@@ -244,7 +250,7 @@ public sealed partial class MainWindow
             return;
         }
         if (_siteSearch is not null && (e.Key == VirtualKey.Escape
-            || (e.Key == VirtualKey.Back && CommandBox.Text.Length == 0)))
+            || (e.Key == VirtualKey.Back && CommandLayer.Box.Text.Length == 0)))
         {
             // Out of the site's search, back to the usual one.
             e.Handled = true;
@@ -282,27 +288,27 @@ public sealed partial class MainWindow
                         EnterSiteSearch(picked);
                 }
                 else if (Settings.Current.AskAiWithTab) AskAi();
-                else if (CommandBox.SelectionLength > 0) CommandBox.Select(CommandBox.Text.Length, 0);
+                else if (CommandLayer.Box.SelectionLength > 0) CommandLayer.Box.Select(CommandLayer.Box.Text.Length, 0);
                 break;
         }
     }
 
-    private void CommandLayer_PointerPressed(object sender, PointerRoutedEventArgs e)
+    internal void CommandLayer_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         // Only presses outside the card; the card's own reach here too, on their way up.
-        if (!ReferenceEquals(e.OriginalSource, CommandLayer)) return;
+        if (!ReferenceEquals(e.OriginalSource, CommandLayer.Backdrop)) return;
         e.Handled = true;
         CloseCommandBar();
     }
 
-    private void AddressPill_Click(object sender, RoutedEventArgs e) => OpenCommandBar(newTab: false, animate: true);
+    internal void AddressPill_Click(object sender, RoutedEventArgs e) => OpenCommandBar(newTab: false, animate: true);
 
     // ───────────────────────── Results ─────────────────────────
 
     /// <summary>The query the suggestions are for: what's typed, without the inline completion.</summary>
-    private string CommandQuery => (_completion is not null ? _typed : CommandBox.Text).Trim();
+    private string CommandQuery => (_completion is not null ? _typed : CommandLayer.Box.Text).Trim();
 
-    private bool CommandPristine => _commandPrefill is not null && CommandBox.Text == _commandPrefill;
+    private bool CommandPristine => _commandPrefill is not null && CommandLayer.Box.Text == _commandPrefill;
 
     private void UpdateCommandResults()
     {
@@ -660,23 +666,23 @@ public sealed partial class MainWindow
     private void ShowCommandItems(List<CommandItem> items, int defaultHighlight)
     {
         // As many rows as fit below the field in this window.
-        var room = Root.ActualHeight - CommandCard.Margin.Top - CommandFieldHeight - 1 - 2 * CommandResultsPadding - 16;
+        var room = Root.ActualHeight - CommandLayer.Card.Margin.Top - CommandFieldHeight - 1 - 2 * CommandResultsPadding - 16;
         var fit = Math.Max(3, (int)((room + CommandRowGap) / (CommandRowHeight + CommandRowGap)));
         if (items.Count > fit) items = items.Take(fit).ToList();
 
         var keep = _highlightMoved && _highlight >= 0 && _highlight < _commandItems.Count ? _commandItems[_highlight].Key : null;
         _commandItems = items;
         _commandRows.Clear();
-        CommandResults.Children.Clear();
-        for (var i = 0; i < items.Count; i++) CommandResults.Children.Add(BuildRow(items[i], i));
+        CommandLayer.Results.Children.Clear();
+        for (var i = 0; i < items.Count; i++) CommandLayer.Results.Children.Add(BuildRow(items[i], i));
 
         var kept = keep is null ? -1 : items.FindIndex(i => i.Key == keep);
         _highlight = kept >= 0 ? kept : items.Count > 0 ? defaultHighlight : -1;
         if (kept < 0) _highlightMoved = false;
 
         var any = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        CommandResults.Visibility = any;
-        CommandDivider.Visibility = any;
+        CommandLayer.Results.Visibility = any;
+        CommandLayer.Divider.Visibility = any;
         ApplyHighlight();
         UpdateCommandIcon();
     }
@@ -930,14 +936,14 @@ public sealed partial class MainWindow
         // Checked again after the wait: the completion may have changed meanwhile.
         if (icon is not null && _completion == item)
         {
-            CommandFavicon.Source = icon;
-            CommandFavicon.Visibility = Visibility.Visible;
-            CommandGlyph.Visibility = Visibility.Collapsed;
+            CommandLayer.Favicon.Source = icon;
+            CommandLayer.Favicon.Visibility = Visibility.Visible;
+            CommandLayer.Glyph.Visibility = Visibility.Collapsed;
         }
         else
         {
-            CommandFavicon.Visibility = Visibility.Collapsed;
-            CommandGlyph.Visibility = Visibility.Visible;
+            CommandLayer.Favicon.Visibility = Visibility.Collapsed;
+            CommandLayer.Glyph.Visibility = Visibility.Visible;
         }
     }
 
@@ -979,7 +985,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        var input = CommandBox.Text.Trim();
+        var input = CommandLayer.Box.Text.Trim();
         var uri = _siteSearch is { } searching ? searching.UrlFor(input)
             : item?.Uri ?? (input.Length > 0 ? ToUri(input) : null);
         var newTab = _commandNewTab || _active is null;

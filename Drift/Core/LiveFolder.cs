@@ -115,16 +115,17 @@ public static class LiveFolder
     /// <summary>
     /// Whether to go by an answer. GitHub's search has been seen to answer with nothing for a moment
     /// (signed in, no error), so an empty answer counts only the second time running; until then the
-    /// folder stays as it is.
+    /// folder stays as it is. A folder with nothing in it believes one at once: there's nothing to lose,
+    /// and it shows "No open pull requests" straight away rather than staying blank.
     /// </summary>
-    public static bool Believe(LiveSource live, IReadOnlyCollection<PullRequest> found)
+    public static bool Believe(LiveSource live, IReadOnlyCollection<PullRequest> found, bool alreadyEmpty = false)
     {
         if (found.Count > 0)
         {
             live.EmptyOnce = false;
             return true;
         }
-        if (live.EmptyOnce) return true;
+        if (live.EmptyOnce || alreadyEmpty) return true;
         live.EmptyOnce = true;
         return false;
     }

@@ -93,10 +93,14 @@ public sealed partial class MainWindow : Window
                 const r = boxOf(link, x, y);
                 post(token + ':link:' + [x, y, window.innerWidth, r.left, r.top, r.width, r.height].join(','));
               };
+              // Ctrl+click or middle-click: the new tab it opens follows "switch to new tabs" (MainWindow.OnAsidePress).
+              const postAside = (e) => post(token + ':aside:' + (+e.shiftKey));
               window.addEventListener('pointerdown', (e) => {
                 if (!e.isTrusted || e.button > 1) return;
                 const link = linkOf(e);
-                if (link) postLink(e.clientX, e.clientY, link);
+                if (!link) return;
+                postLink(e.clientX, e.clientY, link);
+                if (e.button === 1 || e.ctrlKey || e.metaKey) postAside(e);
               }, true);
               window.addEventListener('click', (e) => {
                 if (e.isTrusted && e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.button === 0) {
@@ -112,6 +116,7 @@ public sealed partial class MainWindow : Window
                 if (!link) return;
                 const r = link.getBoundingClientRect();
                 postLink(r.left + r.width / 2, r.top + r.height / 2, link);
+                if (e.ctrlKey || e.metaKey) postAside(e);
               }, true);
               window.addEventListener('keydown', (e) => {
                 if (!e.isTrusted) return;
@@ -286,7 +291,7 @@ public sealed partial class MainWindow : Window
     /// are in their own places).
     /// </summary>
     private static IEnumerable<BrowserTab> RegularTabsOf(BrowserTab row) =>
-        row is { IsSplitRow: true, Split: { } split } ? new[] { split.Left, split.Right }.Where(t => t.Place is TabPlace.Regular or TabPlace.Pinned) : [row];
+        row is { IsSplitRow: true, Split: { } split } ? split.Pages.Where(t => t.Place is TabPlace.Regular or TabPlace.Pinned) : [row];
 
     /// <summary>The list a group's tabs are in. Folder tabs are in their folders instead (TabFolder.Children).</summary>
     private ObservableCollection<BrowserTab> CollectionFor(TabPlace place) => place switch
@@ -314,11 +319,30 @@ public sealed partial class MainWindow : Window
     /// <summary>False once the window has closed.</summary>
     internal bool IsOpen { get; private set; } = true;
 
+    // Every open window (a private one is a second), so a control in a list's row can find the one it's in.
+    private static readonly List<MainWindow> OpenWindows = [];
+
+    /// <summary>The window an element is in: for a row's control (Controls/), whose list template can't hand it one.</summary>
+    internal static MainWindow Of(UIElement element) => OpenWindows.First(w => w.Content.XamlRoot == element.XamlRoot);
+
     public MainWindow(IEnumerable<Uri>? launchUris = null, bool isPrivate = false)
     {
         _private = isPrivate;
         if (launchUris is not null) _launchUris.AddRange(launchUris);
         InitializeComponent();
+        // The views the window is made of (Views/): what's done in them is handled here.
+        MediaCard.Owner = this;
+        CaptionBar.Owner = this;
+        MeetingNotice.Owner = this;
+        CommandLayer.Owner = this;
+        SwitcherLayer.Owner = this;
+        Library.Owner = this;
+        DownloadPeekCard.Owner = this;
+        Toolbar.Owner = this;
+        AddressBar.Owner = this;
+        CrashPanel.Owner = this;
+        // And the controls in its lists' rows (Controls/), which find it when they need it (Of).
+        OpenWindows.Add(this);
         _ghostPopups = new GhostPopups(this);
         // The site settings button shows while the pointer is anywhere in the sidebar, over its buttons too.
         Sidebar.AddHandler(UIElement.PointerEnteredEvent, new PointerEventHandler(Sidebar_PointerEntered), true);
@@ -327,7 +351,7 @@ public sealed partial class MainWindow : Window
         {
             PrivateWindows.Add(this);
             PrivateTint.Visibility = Visibility.Visible;
-            PrivateBadge.Visibility = Visibility.Visible;
+            AddressBar.PrivateBadge.Visibility = Visibility.Visible;
             Title = "Drift Private";
         }
 
@@ -345,6 +369,9 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             IsOpen = false;
+            OpenWindows.Remove(this);
+            // First: a toast's time can run out while the rest closes (Press again to close's did, and crashed).
+            foreach (var toast in new[] { BookmarkToast, CopiedToast, CloseAgainHint, UndoToast }) toast.Stop();
             _adBlock?.Close();
             StopCalendar();
             StopMail();
@@ -393,10 +420,10 @@ public sealed partial class MainWindow : Window
         _sidebarWatch.Tick += SidebarWatch_Tick;
         StartCaptionWatch();
 
-        foreach (var button in new[] { MenuButton, SidebarToggleButton, BackButton, ForwardButton, ReloadButton })
+        foreach (var button in new[] { Toolbar.MenuButton, Toolbar.SidebarToggleButton, Toolbar.BackButton, Toolbar.ForwardButton, Toolbar.ReloadButton })
             AddPressFeedback(button, 0.95f);
         AddPressFeedback(NewTabButton, 0.98f);
-        AddPressFeedback(AddressPill, 0.98f);
+        AddPressFeedback(AddressBar.Pill, 0.98f);
         AddPressFeedback(PeekCloseButton, 0.95f);
         AddPressFeedback(PeekToTabButton, 0.95f);
         EssentialList.ContainerContentChanging += ListItem_ContainerContentChanging;
@@ -600,14 +627,21 @@ public sealed partial class MainWindow : Window
                 Position = _folderTree.PositionOf(tab),
             });
         }
-        // Splits whose tabs were both kept, with where their rows are in the tab list (one in the pinned
-        // list goes back to its pinned tab's place, whatever its row's number).
+        // Splits with at least two of their tabs kept, with where their rows are in the tab list (one in
+        // the pinned list goes back to its pinned tab's place, whatever its row's number); their widths
+        // if they all were.
         foreach (var (rows, pinned) in new[] { (PinnedTabs, true), (Tabs, false) })
             for (var row = 0; row < rows.Count; row++)
             {
-                if (rows[row] is { IsSplitRow: true, Split: { } split }
-                    && savedAt.TryGetValue(split.Left, out var left) && savedAt.TryGetValue(split.Right, out var right))
-                    data.Splits.Add(new SessionSplit { Left = left, Right = right, Row = pinned ? -1 : row, Ratio = split.Ratio });
+                if (rows[row] is not { IsSplitRow: true, Split: { } split }) continue;
+                var kept = split.Pages.Where(savedAt.ContainsKey).Select(p => savedAt[p]).ToList();
+                if (kept.Count < 2) continue;
+                data.Splits.Add(new SessionSplit
+                {
+                    Pages = kept,
+                    Shares = kept.Count == split.Count ? split.Shares.ToList() : null,
+                    Row = pinned ? -1 : row,
+                });
             }
         data.Folders = _folderTree.Save();
         data.Closed = _closedTabs.TakeLast(MaxClosedTabs).ToList();
@@ -820,6 +854,10 @@ public sealed partial class MainWindow : Window
 
     private void OpenInNewTab(Uri uri) => _ = CreateTabAsync(uri, TabPlace.Regular, activate: true);
 
+    /// <summary>A link you chose to open in a new tab: in front or behind, as the setting says (Shift turns it round).</summary>
+    private void OpenLinkInNewTab(Uri uri, bool shift = false) =>
+        _ = CreateTabAsync(uri, TabPlace.Regular, activate: NewTabChoice.ComesToFront(chosen: true, Settings.Current.SwitchToNewTabs, shift));
+
     private void WireTab(BrowserTab tab)
     {
         var core = tab.View.CoreWebView2;
@@ -861,7 +899,7 @@ public sealed partial class MainWindow : Window
         core.NewWindowRequested += (_, e) =>
         {
             // A page floating itself (Pip.cs), opening its window: a small window of its own, not Peek or a tab.
-            if (_pipOpening == tab && e.Uri == "about:blank")
+            if (e.Uri == "about:blank" && IsPipWindow(tab))
             {
                 PlayerWindow.Show(e, this, 0, 0, _private);
                 return;
@@ -873,7 +911,11 @@ public sealed partial class MainWindow : Window
             }
             e.Handled = true;
             if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var target)) return;
+            // A Ctrl+click or middle-click just now (the page said so as it was pressed): you chose a new tab.
+            var aside = NewTabChoice.PressedJustNow(tab.AsidePressTime, Environment.TickCount64);
+            tab.AsidePressTime = 0;
             if (tab.IsPinned) OpenPeek(target, tab);
+            else if (aside) OpenLinkInNewTab(target, tab.AsidePressShift);
             else OpenInNewTab(target);
         };
 
@@ -935,15 +977,15 @@ public sealed partial class MainWindow : Window
             if (items[i].Name != "openLinkInNewWindow") continue;
             if (!Uri.TryCreate(e.ContextMenuTarget.LinkUri, UriKind.Absolute, out var link)) return;
             var item = core.Environment.CreateContextMenuItem("Open link in new tab", null, CoreWebView2ContextMenuItemKind.Command);
-            item.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenInNewTab(link));
+            item.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenLinkInNewTab(link));
             items.RemoveAt(i);
             items.Insert(i, item);
             if (tab is null || link.Scheme is not ("http" or "https")) return;
             var peek = core.Environment.CreateContextMenuItem("Open link in Peek", null, CoreWebView2ContextMenuItemKind.Command);
             peek.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenPeek(link, tab));
             items.Insert(i + 1, peek);
-            // A page already beside another has no room for a third.
-            if (tab.Split is not null) return;
+            // A split already four pages wide has no room for another.
+            if (tab.Split is { IsFull: true }) return;
             var split = core.Environment.CreateContextMenuItem("Open link in split view", null, CoreWebView2ContextMenuItemKind.Command);
             split.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => _ = OpenLinkInSplitAsync(link, tab));
             items.Insert(i + 2, split);
@@ -1088,10 +1130,8 @@ public sealed partial class MainWindow : Window
     {
         if (tab.Split is { } split)
         {
-            // Out of its split first; the page beside it stays in front, on its own.
-            var partner = split.Other(tab);
-            SeparateTabs(split);
-            if (_active == tab) Activate(partner);
+            // Out of its split first; the page beside it is the one you're on.
+            TakeOutOfSplit(tab, next: _active == tab ? split.Beside(tab) : null);
         }
         if (tab == _peekOwner) ClosePeek(animate: false);
         BrowserTab? neighbour;
@@ -1136,6 +1176,13 @@ public sealed partial class MainWindow : Window
             if (next is not null) Activate(next);
             else UpdateChrome();
         }
+    }
+
+    /// <summary>A tab row's end button (TabRowTemplate): a pinned tab's −/×, a regular tab's ×.</summary>
+    internal void RowAction_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is BrowserTab { IsPinned: true }) PinnedAction_Click(sender, e);
+        else CloseTab_Click(sender, e);
     }
 
     /// <summary>A pinned row's hover button: "−" unloads the tab; on an unloaded tab, "×" removes it.</summary>
@@ -1564,7 +1611,7 @@ public sealed partial class MainWindow : Window
         PeekToSplitButton.Visibility = CanSplitWithPeek(_peekOwner) ? Visibility.Visible : Visibility.Collapsed;
         // The frame draws the border while the page is shrunk; the page's own would be soft.
         // This local value hides the style's border until HidePeekLayer clears it.
-        MainCardFace.BorderBrush = SplitCardFace.BorderBrush = null;
+        foreach (var pane in _panes) pane.Face.BorderBrush = null;
         SnapPageShrink();
         if (!animate)
         {
@@ -1595,8 +1642,7 @@ public sealed partial class MainWindow : Window
         if (!_peekExpanding) UnstagePicture();
         PeekPageFrame.Visibility = Visibility.Collapsed;
         // Back to the style's border, which follows light/dark mode as it changes.
-        MainCardFace.ClearValue(Border.BorderBrushProperty);
-        SplitCardFace.ClearValue(Border.BorderBrushProperty);
+        foreach (var pane in _panes) pane.Face.ClearValue(Border.BorderBrushProperty);
         // Stopping returns every animated value (page scale, opacity) to its base.
         SettlePeekMotion();
         PeekEnterAnimation.Stop();
@@ -1634,7 +1680,7 @@ public sealed partial class MainWindow : Window
         _peekOwner = null;
 
         var floating = PeekCardFrame.Margin;
-        var cardVisual = ElementCompositionPreview.GetElementVisual(PeekCard);
+        var cardVisual = ElementCompositionPreview.GetElementVisual(PeekCard.Face);
         var revealed = view.Opacity > 0;
         var picture = revealed
             ? PeekFreeze.IsFresh(_freezeTakenAt, Environment.TickCount64) && _freezePicture is { } early ? early : PrepareFreezeAsync(SnapshotAsync(core))
@@ -1661,12 +1707,12 @@ public sealed partial class MainWindow : Window
             Edges to;
             if (split)
             {
-                // The page it came from stays the one you're on until the end, now in the left half.
-                SplitTabs(owner!, tab);
+                // The page it came from stays the one you're on until the end, the new page to its right.
+                PutBeside(owner!, tab, animate: false);
                 PeekTrace("split tabs");
                 PageColumns.UpdateLayout();
                 PeekTrace("split laid out");
-                to = RightHalfEdges();
+                to = PaneEdges(tab);
             }
             else
             {
@@ -1736,8 +1782,8 @@ public sealed partial class MainWindow : Window
             PeekCardTint.Background = null;
             PeekControls.IsHitTestVisible = true;
             PeekControls.Visibility = Visibility.Visible;
-            PeekCardShadow.Visibility = Visibility.Visible;
-            PeekCardShadow.Opacity = 1;
+            PeekCard.Caster.Visibility = Visibility.Visible;
+            PeekCard.Caster.Opacity = 1;
             if (!revealed) view.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
         }
     }
@@ -1762,19 +1808,20 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>Its page can go beside the one it came from: that one isn't in a split already.</summary>
-    private static bool CanSplitWithPeek(BrowserTab? owner) => owner is { Split: null, IsSplitRow: false };
+    /// <summary>Its page can go beside the one it came from: that one isn't in a split, or its split has room.</summary>
+    private static bool CanSplitWithPeek(BrowserTab? owner) => owner is { IsSplitRow: false } && owner.Split is not { IsFull: true };
 
-    /// <summary>The split's right-hand page, as margins in the page column (where Peek's card is placed).</summary>
-    private Edges RightHalfEdges()
+    /// <summary>A split page's card, as margins in the page column (where Peek's card is placed).</summary>
+    private Edges PaneEdges(BrowserTab page)
     {
-        var page = PageArea.Margin;
-        var at = SplitCard.ActualOffset;
+        var card = _panes[Math.Max(0, page.Split?.IndexOf(page) ?? 0)].Card;
+        var area = PageArea.Margin;
+        var at = card.ActualOffset;
         return new Edges(
-            page.Left + at.X,
-            page.Top + at.Y,
-            page.Right + Math.Max(0, PageColumns.ActualWidth - at.X - SplitCard.ActualWidth),
-            page.Bottom + Math.Max(0, PageColumns.ActualHeight - at.Y - SplitCard.ActualHeight));
+            area.Left + at.X,
+            area.Top + at.Y,
+            area.Right + Math.Max(0, PageColumns.ActualWidth - at.X - card.ActualWidth),
+            area.Bottom + Math.Max(0, PageColumns.ActualHeight - at.Y - card.ActualHeight));
     }
 
     // The page behind coming back from under Peek (ReturnPageFromPeek), and the buttons leaving (FadePeekControls).
@@ -1796,8 +1843,7 @@ public sealed partial class MainWindow : Window
         PeekEnterAnimation.Stop();
         PeekFadeInAnimation.Stop();
         PeekPageFrame.Visibility = Visibility.Collapsed;
-        MainCardFace.ClearValue(Border.BorderBrushProperty);
-        SplitCardFace.ClearValue(Border.BorderBrushProperty);
+        foreach (var pane in _panes) pane.Face.ClearValue(Border.BorderBrushProperty);
         if (!_uiSettings.AnimationsEnabled) return;
 
         // On what's inside it, which fills it exactly: PageArea has a RenderTransform (the opening's), and
@@ -1832,16 +1878,16 @@ public sealed partial class MainWindow : Window
         var travel = new[] { end.Left - start.Left, end.Top - start.Top, end.Right - start.Right, end.Bottom - start.Bottom }.Max(Math.Abs);
 
         // The card takes the room of where it is and where it's going, cut back to where it is.
-        var edge = PeekCard.BorderBrush;
-        PeekCard.BorderBrush = null;
-        PeekCardShadow.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(100) };
-        PeekCardShadow.Opacity = 0;
+        var edge = PeekCard.Face.BorderBrush;
+        PeekCard.Face.BorderBrush = null;
+        PeekCard.Caster.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(100) };
+        PeekCard.Caster.Opacity = 0;
         PeekStill.Margin = new Thickness(start.Left, start.Top, start.Right, start.Bottom);
         PeekCardFrame.Margin = new Thickness(union.Left, union.Top, union.Right, union.Bottom);
         PeekCardFrame.UpdateLayout();
-        float width = (float)PeekCard.ActualWidth, height = (float)PeekCard.ActualHeight;
+        float width = (float)PeekCard.Face.ActualWidth, height = (float)PeekCard.Face.ActualHeight;
 
-        var cardVisual = ElementCompositionPreview.GetElementVisual(PeekCard);
+        var cardVisual = ElementCompositionPreview.GetElementVisual(PeekCard.Face);
         var stillVisual = ElementCompositionPreview.GetElementVisual(PeekStill);
         var compositor = cardVisual.Compositor;
         var progress = compositor.CreatePropertySet();
@@ -1890,19 +1936,20 @@ public sealed partial class MainWindow : Window
         var outlineVisual = compositor.CreateShapeVisual();
         outlineVisual.Size = new Vector2(width, height);
         outlineVisual.Shapes.Add(stroke);
-        ElementCompositionPreview.SetElementChildVisual(PeekCard, outlineVisual);
+        ElementCompositionPreview.SetElementChildVisual(PeekCard.Face, outlineVisual);
 
         _cardMoveCleanup = () =>
         {
             progress.StopAnimation("T");
             cardVisual.Clip = null;
-            ElementCompositionPreview.SetElementChildVisual(PeekCard, null);
+            ElementCompositionPreview.SetElementChildVisual(PeekCard.Face, null);
             stillVisual.StopAnimation("Translation");
             stillVisual.Properties.InsertVector3("Translation", Vector3.Zero);
             PeekStill.Margin = new Thickness(0);
-            PeekCard.BorderBrush = edge;
-            PeekCardShadow.OpacityTransition = null;
-            PeekCardShadow.Opacity = 1;
+            // Back to its style's border, which follows light and dark.
+            PeekCard.Face.ClearValue(Border.BorderBrushProperty);
+            PeekCard.Caster.OpacityTransition = null;
+            PeekCard.Caster.Opacity = 1;
         };
 
         // Nothing moves until the page behind is drawn at its new width and the card's set up on screen
@@ -1998,14 +2045,14 @@ public sealed partial class MainWindow : Window
     {
         var done = new TaskCompletionSource();
         // It'd be the page's size at once, around a card that's still growing.
-        PeekCardShadow.Visibility = Visibility.Collapsed;
+        PeekCard.Caster.Visibility = Visibility.Collapsed;
         var union = PeekExpand.Union(from, to);
         var start = PeekExpand.Inset(from, union);
         var end = PeekExpand.Inset(to, union);
         PeekCardFrame.Margin = new Thickness(union.Left, union.Top, union.Right, union.Bottom);
         if (held) PeekStill.Margin = new Thickness(start.Left, start.Top, start.Right, start.Bottom);
         PeekCardFrame.UpdateLayout();
-        float width = (float)PeekCard.ActualWidth, height = (float)PeekCard.ActualHeight;
+        float width = (float)PeekCard.Face.ActualWidth, height = (float)PeekCard.Face.ActualHeight;
 
         var compositor = cardVisual.Compositor;
         var shape = compositor.CreateRoundedRectangleGeometry();
@@ -2258,15 +2305,15 @@ public sealed partial class MainWindow : Window
     {
         var core = _active?.View.CoreWebView2;
 
-        BackButton.IsEnabled = core?.CanGoBack ?? false;
-        ForwardButton.IsEnabled = core?.CanGoForward ?? false;
-        ReloadButton.IsEnabled = core is not null;
+        Toolbar.BackButton.IsEnabled = core?.CanGoBack ?? false;
+        Toolbar.ForwardButton.IsEnabled = core?.CanGoForward ?? false;
+        Toolbar.ReloadButton.IsEnabled = core is not null;
         ShowLoadButton();
 
         var address = DisplayUrl(core?.Source);
-        AddressText.Text = address.Length > 0 ? address : "Search or Enter URL";
-        if (address.Length > 0) AddressText.ClearValue(TextBlock.ForegroundProperty);
-        else AddressText.Foreground = (Brush)Application.Current.Resources["DriftSecondaryTextBrush"];
+        AddressBar.Text.Text = address.Length > 0 ? address : "Search or Enter URL";
+        if (address.Length > 0) AddressBar.Text.ClearValue(TextBlock.ForegroundProperty);
+        else AddressBar.Text.Foreground = (Brush)Application.Current.Resources["DriftSecondaryTextBrush"];
 
         EmptyText.Visibility = _active is null ? Visibility.Visible : Visibility.Collapsed;
         var app = _private ? "Drift Private" : "Drift";
@@ -2292,7 +2339,22 @@ public sealed partial class MainWindow : Window
         var command = message[prefix.Length..];
         if (command.StartsWith("link:", StringComparison.Ordinal))
         {
-            if (source is not null) RecordLinkPress(source, command["link:".Length..]);
+            if (source is not null)
+            {
+                RecordLinkPress(source, command["link:".Length..]);
+                // A plain press; a Ctrl or middle one says so next.
+                source.AsidePressTime = 0;
+            }
+            return;
+        }
+
+        if (command.StartsWith("aside:", StringComparison.Ordinal))
+        {
+            if (source is not null)
+            {
+                source.AsidePressTime = Environment.TickCount64;
+                source.AsidePressShift = command["aside:".Length..] == "1";
+            }
             return;
         }
 
@@ -2398,6 +2460,10 @@ public sealed partial class MainWindow : Window
 
     private void Settings_Changed()
     {
+        // A preview switched on or off in Settings: at once, not at its next turn.
+        if (_mailTimer is not null) Safely(MailTick);
+        if (_calendarTimer is not null) Safely(CalendarTick);
+        if (_outlookTimer is not null) Safely(OutlookTick);
         ApplyShortcuts();
         Downloads.FolderChanged();
         Downloads.ArchiveOld();
@@ -2694,31 +2760,31 @@ public sealed partial class MainWindow : Window
         var hung = crash == TabCrash.Unresponsive;
         tab.View.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
         // Which page it is shows in its icon (and, hung, the page itself), so the title stays one short line.
-        (CrashTitle.Text, CrashText.Text) = crash switch
+        (CrashPanel.Title.Text, CrashPanel.Text.Text) = crash switch
         {
             TabCrash.Unresponsive => ("This page isn't responding", ""),
-            TabCrash.EngineStopped => ("Pages stopped working", "Your tabs are all still here."),
+            TabCrash.EngineStopped => ("Pages stopped working", "Your tabs are all still here"),
             _ => ("This page crashed", ""),
         };
-        CrashText.Visibility = CrashText.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CrashPanel.Text.Visibility = CrashPanel.Text.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         var favicon = crash == TabCrash.EngineStopped ? null : tab.Favicon;
-        CrashFavicon.Source = favicon;
-        CrashFavicon.Visibility = favicon is null ? Visibility.Collapsed : Visibility.Visible;
-        CrashGlyph.Glyph = crash == TabCrash.EngineStopped ? "" : "";
-        CrashGlyph.Visibility = favicon is null ? Visibility.Visible : Visibility.Collapsed;
+        CrashPanel.Favicon.Source = favicon;
+        CrashPanel.Favicon.Visibility = favicon is null ? Visibility.Collapsed : Visibility.Visible;
+        CrashPanel.Glyph.Glyph = crash == TabCrash.EngineStopped ? "" : "";
+        CrashPanel.Glyph.Visibility = favicon is null ? Visibility.Visible : Visibility.Collapsed;
         // Wait only means something for a hung page; otherwise Reload takes the whole row.
-        CrashWaitButton.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
-        Grid.SetColumn(CrashReloadButton, hung ? 1 : 0);
-        Grid.SetColumnSpan(CrashReloadButton, hung ? 1 : 2);
-        CrashScrim.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
+        CrashPanel.WaitButton.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetColumn(CrashPanel.ReloadButton, hung ? 1 : 0);
+        Grid.SetColumnSpan(CrashPanel.ReloadButton, hung ? 1 : 2);
+        CrashPanel.Scrim.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
 
         if (_crashShown) return;
         _crashShown = true;
         CrashPanel.Visibility = Visibility.Visible;
         CrashPanel.IsHitTestVisible = true;
-        CrashScrim.Opacity = 0.8;
-        CrashCard.Opacity = 1;
-        Spring.To(CrashCard, "Scale", Vector3.One, 0.35, 0, from: new Vector3(0.96f, 0.96f, 1));
+        CrashPanel.Scrim.Opacity = 0.8;
+        CrashPanel.Card.Opacity = 1;
+        Spring.To(CrashPanel.Card, "Scale", Vector3.One, 0.35, 0, from: new Vector3(0.96f, 0.96f, 1));
     }
 
     private void HideCrash()
@@ -2726,9 +2792,9 @@ public sealed partial class MainWindow : Window
         if (!_crashShown) return;
         _crashShown = false;
         CrashPanel.IsHitTestVisible = false;
-        CrashScrim.Opacity = 0;
-        CrashCard.Opacity = 0;
-        Spring.To(CrashCard, "Scale", new Vector3(0.96f, 0.96f, 1), 0.35, 0);
+        CrashPanel.Scrim.Opacity = 0;
+        CrashPanel.Card.Opacity = 0;
+        Spring.To(CrashPanel.Card, "Scale", new Vector3(0.96f, 0.96f, 1), 0.35, 0);
         var gone = DispatcherQueue.CreateTimer();
         gone.Interval = TimeSpan.FromMilliseconds(200);
         gone.IsRepeating = false;
@@ -2741,10 +2807,10 @@ public sealed partial class MainWindow : Window
     }
 
     // Scales about its middle, whatever its text makes its height.
-    private void CrashCard_SizeChanged(object sender, SizeChangedEventArgs e) =>
-        CrashCard.CenterPoint = new Vector3((float)e.NewSize.Width / 2, (float)e.NewSize.Height / 2, 0);
+    internal void CrashCard_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        CrashPanel.Card.CenterPoint = new Vector3((float)e.NewSize.Width / 2, (float)e.NewSize.Height / 2, 0);
 
-    private void CrashReload_Click(object sender, RoutedEventArgs e)
+    internal void CrashReload_Click(object sender, RoutedEventArgs e)
     {
         if (_active is not { } tab) return;
         if (tab.Crash == TabCrash.Crashed)
@@ -2761,7 +2827,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>A hung page is given more time: its page comes back as it is.</summary>
-    private void CrashWait_Click(object sender, RoutedEventArgs e)
+    internal void CrashWait_Click(object sender, RoutedEventArgs e)
     {
         if (_active is not { } tab) return;
         tab.Crash = TabCrash.None;
@@ -2815,10 +2881,10 @@ public sealed partial class MainWindow : Window
     private Uri? ActiveSite => _active?.Crash == TabCrash.None && Uri.TryCreate(_active.Url, UriKind.Absolute, out var uri) ? uri : null;
 
     // The pill's text stops short of the badges at its end (zoom, Private).
-    private double PillEnd => PillBadges.ActualWidth > 0 ? PillBadges.ActualWidth + PillBadges.Margin.Right + 6 : 10;
+    private double PillEnd => AddressBar.PillBadges.ActualWidth > 0 ? AddressBar.PillBadges.ActualWidth + AddressBar.PillBadges.Margin.Right + 6 : 10;
 
-    private void PillBadges_SizeChanged(object sender, SizeChangedEventArgs e) =>
-        AddressPill.Padding = new Thickness(AddressPill.Padding.Left, 0, PillEnd, 0);
+    internal void PillBadges_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        AddressBar.Pill.Padding = new Thickness(AddressBar.Pill.Padding.Left, 0, PillEnd, 0);
 
     /// <summary>
     /// The pill's padlock (or warning) at its start, and its copy link and site settings buttons at its
@@ -2831,23 +2897,23 @@ public sealed partial class MainWindow : Window
         ShowSiteSettingsButton();
         if (!_hasSite)
         {
-            SiteSecurityButton.Visibility = Visibility.Collapsed;
-            AddressPill.Padding = new Thickness(10, 0, PillEnd, 0);
+            AddressBar.SiteSecurityButton.Visibility = Visibility.Collapsed;
+            AddressBar.Pill.Padding = new Thickness(10, 0, PillEnd, 0);
             return;
         }
-        SiteSecurityGlyph.Glyph = security switch
+        AddressBar.SiteSecurityGlyph.Glyph = security switch
         {
             SiteSecurity.Secure => LockGlyph,
             SiteSecurity.Local => InfoGlyph,
             _ => WarningGlyph,
         };
         // The padlock is quiet; a warning isn't.
-        SiteSecurityGlyph.Opacity = security == SiteSecurity.Secure ? 0.6 : 1;
+        AddressBar.SiteSecurityGlyph.Opacity = security == SiteSecurity.Secure ? 0.6 : 1;
         var tip = SecurityText(security);
-        ToolTipService.SetToolTip(SiteSecurityButton, tip ?? "Site settings");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SiteSecurityButton, tip is null ? "Site settings" : tip + ", site settings");
-        SiteSecurityButton.Visibility = Visibility.Visible;
-        AddressPill.Padding = new Thickness(32, 0, PillEnd, 0);
+        ToolTipService.SetToolTip(AddressBar.SiteSecurityButton, tip ?? "Site settings");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AddressBar.SiteSecurityButton, tip is null ? "Site settings" : tip + ", site settings");
+        AddressBar.SiteSecurityButton.Visibility = Visibility.Visible;
+        AddressBar.Pill.Padding = new Thickness(32, 0, PillEnd, 0);
     }
 
     /// <summary>What the padlock says; nothing for a page on this computer.</summary>
@@ -2860,8 +2926,8 @@ public sealed partial class MainWindow : Window
     };
 
     /// <summary>The padlock opens site settings, below it.</summary>
-    private void SiteSecurity_Click(object sender, RoutedEventArgs e) =>
-        SiteInfoFlyout.ShowAt(SiteSecurityButton, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+    internal void SiteSecurity_Click(object sender, RoutedEventArgs e) =>
+        AddressBar.SiteInfoFlyout.ShowAt(AddressBar.SiteSecurityButton, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
         {
             Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft,
         });
@@ -2890,38 +2956,22 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private DispatcherQueueTimer? _copiedTimer;
-
     /// <summary>Ctrl+Shift+C: "Copied link" at the foot of the page, rising in, gone after a moment.</summary>
-    private void ShowCopiedToast()
-    {
-        CopiedToast.Visibility = Visibility.Visible;
-        CopiedToast.Opacity = 1;
-        Spring.To(CopiedToast, "Translation", new Vector3(0, 0, 32), 0.25, 0, from: new Vector3(0, 8, 32));
-        if (_copiedTimer is null)
-        {
-            _copiedTimer = DispatcherQueue.CreateTimer();
-            _copiedTimer.IsRepeating = false;
-            _copiedTimer.Interval = TimeSpan.FromSeconds(1.5);
-            _copiedTimer.Tick += (_, _) => CopiedToast.Opacity = 0;
-        }
-        _copiedTimer.Stop();
-        _copiedTimer.Start();
-    }
+    private void ShowCopiedToast() => CopiedToast.Show("Copied link", TimeSpan.FromSeconds(1.5), glyph: "\uE73E");
 
     /// <summary>The page's address to the clipboard; the button shows a tick for a moment.</summary>
-    private void CopyLink_Click(object sender, RoutedEventArgs e)
+    internal void CopyLink_Click(object sender, RoutedEventArgs e)
     {
         if (!CopyCurrentLink()) return;
-        CopyLinkGlyph.Glyph = CopiedGlyph;
-        ToolTipService.SetToolTip(CopyLinkButton, "Copied");
+        AddressBar.CopyLinkGlyph.Glyph = CopiedGlyph;
+        ToolTipService.SetToolTip(AddressBar.CopyLinkButton, "Copied");
         var timer = DispatcherQueue.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(1.5);
         timer.IsRepeating = false;
         timer.Tick += (_, _) =>
         {
-            CopyLinkGlyph.Glyph = LinkGlyph;
-            ToolTipService.SetToolTip(CopyLinkButton, "Copy link");
+            AddressBar.CopyLinkGlyph.Glyph = LinkGlyph;
+            ToolTipService.SetToolTip(AddressBar.CopyLinkButton, "Copy link");
         };
         timer.Start();
     }
@@ -2936,10 +2986,10 @@ public sealed partial class MainWindow : Window
             hasSite: _hasSite,
             sidebarHovered: _sidebarHovered,
             panelOpen: _siteInfoOpen,
-            focused: SiteInfoButton.FocusState != FocusState.Unfocused);
+            focused: AddressBar.SiteInfoButton.FocusState != FocusState.Unfocused);
         // Out of the pill altogether while hidden, so what's left (the zoom level) sits at its end.
         // They fade in as they come; they go at once, as the pill takes the room back.
-        foreach (var button in new[] { CopyLinkButton, SiteInfoButton })
+        foreach (var button in new[] { AddressBar.CopyLinkButton, AddressBar.SiteInfoButton })
         {
             button.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;
             button.Opacity = shows ? 1 : 0;
@@ -2980,16 +3030,16 @@ public sealed partial class MainWindow : Window
         _pillButtonsTimer.Start();
     }
 
-    private void SiteInfoButton_FocusChanged(object sender, RoutedEventArgs e) => ShowSiteSettingsButton();
+    internal void SiteInfoButton_FocusChanged(object sender, RoutedEventArgs e) => ShowSiteSettingsButton();
 
-    private void SiteInfo_Opened(object? sender, object e)
+    internal void SiteInfo_Opened(object? sender, object e)
     {
         _siteInfoOpen = true;
         SidebarMenu_Opened(sender, e);
         ShowSiteSettingsButton();
     }
 
-    private void SiteInfo_Closed(object? sender, object e)
+    internal void SiteInfo_Closed(object? sender, object e)
     {
         _siteInfoOpen = false;
         SidebarMenu_Closed(sender, e);
@@ -3023,29 +3073,29 @@ public sealed partial class MainWindow : Window
         _ => kind.ToString(),
     };
 
-    private async void SiteInfo_Opening(object sender, object e)
+    internal async void SiteInfo_Opening(object sender, object e)
     {
         var uri = ActiveSite;
         var core = _active?.View.CoreWebView2;
         if (uri is null || core is null) return;
         var origin = uri.GetLeftPart(UriPartial.Authority);
 
-        SiteInfoHost.Text = uri.Host.StartsWith("www.") ? uri.Host[4..] : uri.Host;
+        AddressBar.SiteInfoHost.Text = uri.Host.StartsWith("www.") ? uri.Host[4..] : uri.Host;
         var security = SecurityOf(uri);
-        SiteInfoSecureGlyph.Glyph = security switch
+        AddressBar.SiteInfoSecureGlyph.Glyph = security switch
         {
             SiteSecurity.Secure => LockGlyph,
             SiteSecurity.Local => InfoGlyph,
             _ => WarningGlyph,
         };
         var secureText = SecurityText(security);
-        SiteInfoSecureText.Text = secureText ?? "";
-        SiteInfoSecureText.Visibility = secureText is null ? Visibility.Collapsed : Visibility.Visible;
-        SiteDataText.Text = "Signs you out of this site and clears what it has stored.";
+        AddressBar.SiteInfoSecureText.Text = secureText ?? "";
+        AddressBar.SiteInfoSecureText.Visibility = secureText is null ? Visibility.Collapsed : Visibility.Visible;
+        AddressBar.SiteDataText.Text = "Signs you out of this site and clears what it has stored";
         ShowSiteAdBlock(uri);
-        ClearSiteDataButton.IsEnabled = true;
+        AddressBar.ClearSiteDataButton.IsEnabled = true;
 
-        SitePermissionList.Children.Clear();
+        AddressBar.SitePermissionList.Children.Clear();
         IReadOnlyList<CoreWebView2PermissionSetting> settings;
         try { settings = await core.Profile.GetNonDefaultPermissionSettingsAsync(); }
         catch { settings = []; }
@@ -3054,7 +3104,7 @@ public sealed partial class MainWindow : Window
             .ToDictionary(s => s.PermissionKind, s => s.PermissionState);
         var kinds = MainPermissions.Select(p => p.Kind).Concat(here.Keys.Where(k => MainPermissions.All(p => p.Kind != k)));
         foreach (var kind in kinds)
-            SitePermissionList.Children.Add(PermissionRow(core.Profile, origin, kind, here.TryGetValue(kind, out var state) ? state : CoreWebView2PermissionState.Default));
+            AddressBar.SitePermissionList.Children.Add(PermissionRow(core.Profile, origin, kind, here.TryGetValue(kind, out var state) ? state : CoreWebView2PermissionState.Default));
     }
 
     /// <summary>A permission and its setting for the site: ask (the default), allow or block.</summary>
@@ -3089,12 +3139,12 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Cookies, storage and cache for the site in front, then a reload so the page sees it.</summary>
-    private async void ClearSiteData_Click(object sender, RoutedEventArgs e)
+    internal async void ClearSiteData_Click(object sender, RoutedEventArgs e)
     {
         var uri = ActiveSite;
         var core = _active?.View.CoreWebView2;
         if (uri is null || core is null) return;
-        ClearSiteDataButton.IsEnabled = false;
+        AddressBar.ClearSiteDataButton.IsEnabled = false;
         try
         {
             var origin = uri.GetLeftPart(UriPartial.Authority);
@@ -3102,13 +3152,13 @@ public sealed partial class MainWindow : Window
                 System.Text.Json.JsonSerializer.Serialize(new { origin, storageTypes = "all" }));
             // Cookies set for the whole site (.example.com) too, not just this host.
             foreach (var cookie in await core.CookieManager.GetCookiesAsync(origin)) core.CookieManager.DeleteCookie(cookie);
-            SiteDataText.Text = "Cleared.";
+            AddressBar.SiteDataText.Text = "Cleared.";
             core.Reload();
         }
         catch (Exception ex)
         {
-            SiteDataText.Text = "Couldn't clear it: " + ex.Message;
-            ClearSiteDataButton.IsEnabled = true;
+            AddressBar.SiteDataText.Text = "Couldn't clear it: " + ex.Message;
+            AddressBar.ClearSiteDataButton.IsEnabled = true;
         }
     }
 
@@ -3126,37 +3176,37 @@ public sealed partial class MainWindow : Window
         ShowLibraryButtonDownloads(Downloads.Items.Where(i => i.IsRunning).ToList());
     }
 
-    private void DownloadList_ItemClick(object sender, ItemClickEventArgs e)
+    internal void DownloadList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is not DownloadItem item || item.State != DownloadState.Completed) return;
         Downloads.Open(item);
     }
 
-    private void DownloadFolder_Click(object sender, RoutedEventArgs e)
+    internal void DownloadFolder_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is DownloadItem item) Downloads.ShowInFolder(item);
     }
 
-    private void DownloadPause_Click(object sender, RoutedEventArgs e)
+    internal void DownloadPause_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is DownloadItem item) Downloads.PauseOrResume(item);
     }
 
-    private void DownloadCancel_Click(object sender, RoutedEventArgs e)
+    internal void DownloadCancel_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is DownloadItem item) Downloads.Cancel(item);
     }
 
-    private void DownloadRemove_Click(object sender, RoutedEventArgs e)
+    internal void DownloadRemove_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not DownloadItem item) return;
         Downloads.Remove(item);
         RefreshDownloads();
     }
 
-    private void DownloadsFolder_Click(object sender, RoutedEventArgs e) => Downloads.ShowInFolder(null);
+    internal void DownloadsFolder_Click(object sender, RoutedEventArgs e) => Downloads.ShowInFolder(null);
 
-    private void DownloadsClear_Click(object sender, RoutedEventArgs e)
+    internal void DownloadsClear_Click(object sender, RoutedEventArgs e)
     {
         Downloads.ClearFinished();
         RefreshDownloads();
@@ -3276,9 +3326,9 @@ public sealed partial class MainWindow : Window
         _syncingSelection = false;
     }
 
-    private void Back_Click(object sender, RoutedEventArgs e) => _active?.View.GoBack();
-    private void Forward_Click(object sender, RoutedEventArgs e) => _active?.View.GoForward();
-    private void Reload_Click(object sender, RoutedEventArgs e)
+    internal void Back_Click(object sender, RoutedEventArgs e) => _active?.View.GoBack();
+    internal void Forward_Click(object sender, RoutedEventArgs e) => _active?.View.GoForward();
+    internal void Reload_Click(object sender, RoutedEventArgs e)
     {
         if (_active is not { } tab) return;
         if (tab.Load.IsLoading) tab.View.CoreWebView2?.Stop();
@@ -3315,16 +3365,16 @@ public sealed partial class MainWindow : Window
     private void ShowLoadButton()
     {
         var loading = _active?.Load.IsLoading == true;
-        ReloadGlyph.Glyph = loading ? StopGlyphText : ReloadGlyphText;
+        Toolbar.ReloadGlyph.Glyph = loading ? StopGlyphText : ReloadGlyphText;
         var name = loading ? "Stop loading" : "Reload";
-        ToolTipService.SetToolTip(ReloadButton, name);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ReloadButton, name);
+        ToolTipService.SetToolTip(Toolbar.ReloadButton, name);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(Toolbar.ReloadButton, name);
     }
-    private void NewTab_Click(object sender, RoutedEventArgs e) => OpenCommandBar(newTab: true, animate: true);
-    private void Reopen_Click(object sender, RoutedEventArgs e) => ReopenClosedTab();
-    private void PrivateWindow_Click(object sender, RoutedEventArgs e) => OpenPrivateWindow();
-    private void Downloads_Click(object sender, RoutedEventArgs e) => OpenLibrary("downloads");
-    private void History_Click(object sender, RoutedEventArgs e) => OpenLibrary("history");
+    internal void NewTab_Click(object sender, RoutedEventArgs e) => OpenCommandBar(newTab: true, animate: true);
+    internal void Reopen_Click(object sender, RoutedEventArgs e) => ReopenClosedTab();
+    internal void PrivateWindow_Click(object sender, RoutedEventArgs e) => OpenPrivateWindow();
+    internal void Downloads_Click(object sender, RoutedEventArgs e) => OpenLibrary("downloads");
+    internal void History_Click(object sender, RoutedEventArgs e) => OpenLibrary("history");
 
     private async void CloseTab_Click(object sender, RoutedEventArgs e)
     {
@@ -3419,16 +3469,16 @@ public sealed partial class MainWindow : Window
     private async Task RenderGhostsAsync(BrowserTab tab)
     {
         _rowGhost = _tileGhost = _pageGhost = null;
-        RowGhostIcon.Source = TileGhostIcon.Source = PageGhostIcon.Source = tab.Favicon;
-        RowGhostGlyph.Visibility = TileGhostGlyph.Visibility = PageGhostGlyph.Visibility = tab.PlaceholderVisibility;
-        RowGhostTitle.Text = PageGhostTitle.Text = tab.Title;
-        RowGhost.Width = Math.Max(120, TabList.ActualWidth);
-        TileGhost.Width = EssentialList.ItemsPanelRoot is ItemsWrapGrid { ItemWidth: > 8 and var cell } ? cell - 8 : 88;
+        GhostStage.RowIcon.Source = GhostStage.TileIcon.Source = GhostStage.PageIcon.Source = tab.Favicon;
+        GhostStage.RowGlyph.Visibility = GhostStage.TileGlyph.Visibility = GhostStage.PageGlyph.Visibility = tab.PlaceholderVisibility;
+        GhostStage.RowTitle.Text = GhostStage.PageTitle.Text = tab.Title;
+        GhostStage.Row.Width = Math.Max(120, TabList.ActualWidth);
+        GhostStage.Tile.Width = EssentialList.ItemsPanelRoot is ItemsWrapGrid { ItemWidth: > 8 and var cell } ? cell - 8 : 88;
         try
         {
-            var row = await SnapshotAsync(RowGhost);
-            var tile = await SnapshotAsync(TileGhost);
-            var page = await SnapshotAsync(PageGhost);
+            var row = await SnapshotAsync(GhostStage.Row);
+            var tile = await SnapshotAsync(GhostStage.Tile);
+            var page = await SnapshotAsync(GhostStage.Page);
             if (_dragTab != tab) return;
             // The pointer holds a row by its icon, so the drop line shows to its left. A tile hangs
             // just below the pointer, so the bar's ring and top show above it.
@@ -3532,8 +3582,8 @@ public sealed partial class MainWindow : Window
         if (_dragTab is not { } tab || target == FolderList) return null;
         var at = e.GetPosition(Root);
         if (target == EssentialList)
-            return _tileGhost is null ? null : (tab, new Point(at.X - TileGhost.Width / 2 - 4, at.Y - 4 - 4));
-        return _rowGhost is null ? null : (tab, new Point(at.X - 19, at.Y - RowGhost.ActualHeight / 2));
+            return _tileGhost is null ? null : (tab, new Point(at.X - GhostStage.Tile.Width / 2 - 4, at.Y - 4 - 4));
+        return _rowGhost is null ? null : (tab, new Point(at.X - 19, at.Y - GhostStage.Row.ActualHeight / 2));
     }
 
     /// <summary>
@@ -3729,13 +3779,13 @@ public sealed partial class MainWindow : Window
     private void PeekToSplit_Click(object sender, RoutedEventArgs e) => PromotePeekToTab(split: true);
 
     // The close button on a tab row only shows while the row is hovered.
-    private void TabRow_PointerEntered(object sender, PointerRoutedEventArgs e)
+    internal void TabRow_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         SetCloseButtonOpacity(sender, 1);
         IntegrationAnchor_PointerEntered(sender, e);
     }
 
-    private void TabRow_PointerExited(object sender, PointerRoutedEventArgs e)
+    internal void TabRow_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         SetCloseButtonOpacity(sender, 0);
         IntegrationAnchor_PointerExited(sender, e);
@@ -3756,7 +3806,7 @@ public sealed partial class MainWindow : Window
 
     // ───────────────────────── Window and sidebar ─────────────────────────
 
-    private void ToggleSidebar_Click(object sender, RoutedEventArgs e) => SetSidebarHidden(!_sidebarHidden);
+    internal void ToggleSidebar_Click(object sender, RoutedEventArgs e) => SetSidebarHidden(!_sidebarHidden);
 
     /// <summary>
     /// Hidden: the page takes the whole window and the sidebar only appears, floating over
@@ -3951,11 +4001,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void SidebarMenu_Opened(object? sender, object e) => _openSidebarMenus++;
+    internal void SidebarMenu_Opened(object? sender, object e) => _openSidebarMenus++;
 
     // Once the menu closes, SidebarWatch_Tick decides from where the pointer is: picking an item or
     // clicking back on the sidebar keeps it, clicking away on the page sends it off.
-    private void SidebarMenu_Closed(object? sender, object e) => _openSidebarMenus = Math.Max(0, _openSidebarMenus - 1);
+    internal void SidebarMenu_Closed(object? sender, object e) => _openSidebarMenus = Math.Max(0, _openSidebarMenus - 1);
 
     /// <summary>
     /// Where the pointer is in the window, in its own coordinates, asked of Windows; null when the
@@ -3977,6 +4027,29 @@ public sealed partial class MainWindow : Window
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint { public int X, Y; }
+
+    /// <summary>
+    /// Where the pointer is, in the window's coordinates, when it's over Drift's window or one of Drift's
+    /// own (a menu's or list's window, which can reach past the window's edge); null over another app.
+    /// PointerOverWindow counts the main window only, so on a list of its own the pointer was "off".
+    /// </summary>
+    private Point? PointerOverDrift()
+    {
+        if (Root.XamlRoot is null || !GetCursorPos(out var screen)) return null;
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var under = WindowFromPoint(screen);
+        if (under == IntPtr.Zero) return null;
+        var root = GetAncestor(under, GetAncestorRoot);
+        GetWindowThreadProcessId(root, out var owner);
+        if (root != hwnd && owner != Environment.ProcessId) return null;
+        var client = screen;
+        if (!ScreenToClient(hwnd, ref client)) return null;
+        var scale = Root.XamlRoot.RasterizationScale;
+        return new Point(client.X / scale, client.Y / scale);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int process);
 
     private const uint GetAncestorRoot = 2;
 
@@ -4073,20 +4146,20 @@ public sealed partial class MainWindow : Window
         AddPressFeedback(args.ItemContainer, sender == EssentialList ? 0.96f : 0.98f);
     }
 
-    private void Menu_Opening(object? sender, object e)
+    internal void Menu_Opening(object? sender, object e)
     {
-        SidebarMenuItem.Text = _sidebarHidden ? "Show sidebar" : "Hide sidebar";
-        NewTabMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("newtab");
-        ReopenMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("reopen");
-        ReopenMenuItem.IsEnabled = _closedTabs.Count > 0;
-        NewFolderMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("folder");
+        Toolbar.SidebarMenuItem.Text = _sidebarHidden ? "Show sidebar" : "Hide sidebar";
+        Toolbar.NewTabMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("newtab");
+        Toolbar.ReopenMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("reopen");
+        Toolbar.ReopenMenuItem.IsEnabled = _closedTabs.Count > 0;
+        Toolbar.NewFolderMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("folder");
         // One's enough: they'd hold the same pull requests (LiveFolders.cs).
-        NewPullsFolderMenuItem.Visibility = Ui.Shown(!_private && !LiveFolders.Any());
-        PrivateMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("private");
-        DownloadsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("downloads");
-        HistoryMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("history");
-        SidebarMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("sidebar");
-        SettingsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("settings");
+        Toolbar.NewPullsFolderMenuItem.Visibility = Ui.Shown(!_private && !LiveFolders.Any());
+        Toolbar.PrivateMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("private");
+        Toolbar.DownloadsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("downloads");
+        Toolbar.HistoryMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("history");
+        Toolbar.SidebarMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("sidebar");
+        Toolbar.SettingsMenuItem.KeyboardAcceleratorTextOverride = ShortcutText("settings");
     }
 
     /// <summary>The + menu, across from the Library button: a tab, a folder, or a live folder.</summary>
@@ -4107,20 +4180,20 @@ public sealed partial class MainWindow : Window
     }
 
     // As the system minimizes (GhostPopups), so any menu open is closed first.
-    private void Minimize_Click(object sender, RoutedEventArgs e) => _ghostPopups.Minimize();
+    internal void Minimize_Click(object sender, RoutedEventArgs e) => _ghostPopups.Minimize();
 
-    private void Maximize_Click(object sender, RoutedEventArgs e)
+    internal void Maximize_Click(object sender, RoutedEventArgs e)
     {
         if (AppWindow.Presenter is not OverlappedPresenter presenter) return;
         if (presenter.State == OverlappedPresenterState.Maximized) presenter.Restore();
         else presenter.Maximize();
     }
 
-    private void CloseWindow_Click(object sender, RoutedEventArgs e) => RequestClose("Click again to close");
+    internal void CloseWindow_Click(object sender, RoutedEventArgs e) => RequestClose("Click again to close");
 
-    private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open(this);
+    internal void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open(this);
 
-    private void DragLayout_SizeChanged(object sender, SizeChangedEventArgs e)
+    internal void DragLayout_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         UpdateDragRegions();
         if (_commandBarOpen) PlaceCommandCard();
@@ -4153,7 +4226,7 @@ public sealed partial class MainWindow : Window
         };
         // Floating sidebar: its top row isn't always there, and the left edge is the hot zone.
         // (Not with the library over it.)
-        if (!_sidebarHidden && !Library.IsHitTestVisible) rects.Add(BoundsOf(TitleDragSpacer));
+        if (!_sidebarHidden && !Library.Panel.IsHitTestVisible) rects.Add(BoundsOf(Toolbar.TitleDragSpacer));
         // The window buttons, while they're down, are buttons; Peek's grabber, while it's open, a grabber;
         // a split page's handle, where it reaches up into the gap above the page, a handle.
         foreach (var hole in new[] { CaptionBarArea, PeekGrabberArea }.Concat(PageHandleAreas().Select(a => (Area?)a)))

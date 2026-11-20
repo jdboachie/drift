@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sidebar's top row: the menu and the sidebar toggle on the left, back, forward and reload on the right; the empty middle drags the window. -->
+<UserControl
+    x:Class="Drift.ToolbarView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift"
+    xmlns:models="using:Drift.Models">
+
+    <Grid Height="32">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Button x:Name="MenuButton" x:FieldModifier="internal" Style="{StaticResource IconButtonStyle}"
+                AutomationProperties.Name="Menu" ToolTipService.ToolTip="Menu">
+            <FontIcon Glyph="&#xE712;" FontSize="14" />
+            <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="{x:Bind Owner.Menu_Opening}" Opened="{x:Bind Owner.SidebarMenu_Opened}" Closed="{x:Bind Owner.SidebarMenu_Closed}">
+                    <MenuFlyoutItem x:Name="NewTabMenuItem" x:FieldModifier="internal" Text="New tab" Click="{x:Bind Owner.NewTab_Click}" />
+                    <MenuFlyoutItem x:Name="NewFolderMenuItem" x:FieldModifier="internal" Text="New folder" Click="{x:Bind Owner.NewFolder_Click}" />
+                    <MenuFlyoutItem x:Name="NewPullsFolderMenuItem" x:FieldModifier="internal" Text="New pull requests folder" Click="{x:Bind Owner.NewPullsFolder_Click}" />
+                    <MenuFlyoutItem x:Name="ReopenMenuItem" x:FieldModifier="internal" Text="Reopen closed tab" Click="{x:Bind Owner.Reopen_Click}" />
+                    <MenuFlyoutItem x:Name="PrivateMenuItem" x:FieldModifier="internal" Text="New private window" Click="{x:Bind Owner.PrivateWindow_Click}" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem x:Name="DownloadsMenuItem" x:FieldModifier="internal" Text="Downloads" Click="{x:Bind Owner.Downloads_Click}" />
+                    <MenuFlyoutItem x:Name="HistoryMenuItem" x:FieldModifier="internal" Text="History" Click="{x:Bind Owner.History_Click}" />
+                    <MenuFlyoutItem x:Name="SidebarMenuItem" x:FieldModifier="internal" Text="Hide sidebar" Click="{x:Bind Owner.ToggleSidebar_Click}" />
+                    <MenuFlyoutItem x:Name="SettingsMenuItem" x:FieldModifier="internal" Text="Settings" Click="{x:Bind Owner.Settings_Click}" />
+                </MenuFlyout>
+            </Button.Flyout>
+        </Button>
+        <Button x:Name="SidebarToggleButton" x:FieldModifier="internal" Grid.Column="1" Style="{StaticResource IconButtonStyle}"
+                Click="{x:Bind Owner.ToggleSidebar_Click}"
+                AutomationProperties.Name="Toggle sidebar" ToolTipService.ToolTip="Toggle sidebar (Ctrl+S)">
+            <FontIcon Glyph="&#xE90C;" FontSize="14" />
+        </Button>
+        <Border x:Name="TitleDragSpacer" x:FieldModifier="internal" Grid.Column="2" Background="Transparent"
+                SizeChanged="{x:Bind Owner.DragLayout_SizeChanged}" />
+        <Button x:Name="BackButton" x:FieldModifier="internal" Grid.Column="3" Style="{StaticResource IconButtonStyle}"
+                Click="{x:Bind Owner.Back_Click}" ContextRequested="{x:Bind Owner.Back_ContextRequested}" AutomationProperties.Name="Back" ToolTipService.ToolTip="Back">
+            <FontIcon Glyph="&#xE72B;" FontSize="14" />
+        </Button>
+        <Button x:Name="ForwardButton" x:FieldModifier="internal" Grid.Column="4" Style="{StaticResource IconButtonStyle}"
+                Click="{x:Bind Owner.Forward_Click}" ContextRequested="{x:Bind Owner.Forward_ContextRequested}" AutomationProperties.Name="Forward" ToolTipService.ToolTip="Forward">
+            <FontIcon Glyph="&#xE72A;" FontSize="14" />
+        </Button>
+        <!-- Reload; while the page loads, stop (ShowLoadButton). -->
+        <Button x:Name="ReloadButton" x:FieldModifier="internal" Grid.Column="5" Style="{StaticResource IconButtonStyle}"
+                Click="{x:Bind Owner.Reload_Click}" AutomationProperties.Name="Reload" ToolTipService.ToolTip="Reload">
+            <FontIcon x:Name="ReloadGlyph" x:FieldModifier="internal" Glyph="&#xE72C;" FontSize="14" />
+        </Button>
+    </Grid>
+</UserControl>

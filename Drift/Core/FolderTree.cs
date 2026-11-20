@@ -103,6 +103,39 @@ public sealed class FolderTree
     }
 
     /// <summary>
+    /// Takes a folder out of the tree whole, with everything in it, to be put back (Reattach) or let
+    /// go: deleting with Undo. Returns where it was.
+    /// </summary>
+    public (TabFolder? Parent, int Index) Detach(TabFolder folder)
+    {
+        var parent = folder.Parent;
+        int at;
+        if (parent is null)
+        {
+            at = _folders.IndexOf(folder);
+            _folders.Remove(folder);
+        }
+        else
+        {
+            at = parent.Children.IndexOf(folder);
+            parent.Children.Remove(folder);
+        }
+        return (parent, at);
+    }
+
+    /// <summary>
+    /// A folder taken out (Detach) back where it was; at the top level, last, if the folder it was in
+    /// has gone meanwhile.
+    /// </summary>
+    public void Reattach(TabFolder folder, TabFolder? parent, int index)
+    {
+        if (parent is not null && !AllFolders.Contains(parent)) (parent, index) = (null, _folders.Count);
+        folder.Parent = parent;
+        if (parent is null) _folders.Insert(Math.Clamp(index, 0, _folders.Count), folder);
+        else parent.Children.Insert(Math.Clamp(index, 0, parent.Children.Count), folder);
+    }
+
+    /// <summary>
     /// Removes a folder. With keepTabs, what's in it moves up into its place, and the tabs of a
     /// top-level folder (which have no folder to go to) are handed back, out of the folders, for
     /// the caller to pin. Without, everything in it goes, and its tabs are handed back to close.

@@ -230,6 +230,20 @@ public class AiErrorsTests
     {
         Assert.Contains("Something odd", AiErrors.Describe(AiProvider.Claude, new AiFailed(AiFailure.Other, "Something odd"), TimeZoneInfo.Utc));
     }
+
+    [Fact]
+    public void What_went_wrong_ends_as_a_sentence()
+    {
+        Assert.Equal("Codex couldn't answer: it isn't responding.",
+            AiErrors.Describe(AiProvider.Codex, new AiFailed(AiFailure.Other, "it isn't responding"), TimeZoneInfo.Utc));
+        Assert.Equal("Claude couldn't answer: Overloaded!",
+            AiErrors.Describe(AiProvider.Claude, new AiFailed(AiFailure.Other, "Overloaded!"), TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public void Unreachable_owns_it_and_says_what_to_do() =>
+        Assert.Equal("We couldn't reach Codex. Please try again.",
+            AiErrors.Describe(AiProvider.Codex, new AiFailed(AiFailure.Unreachable, "network"), TimeZoneInfo.Utc));
 }
 
 public class AiLocatorTests

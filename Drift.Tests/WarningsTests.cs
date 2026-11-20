@@ -68,10 +68,17 @@ public class WarningsTests
     [Fact]
     public void Clearing_data_says_what_and_from_when()
     {
-        var ask = Warnings.ClearData(["Browsing history", "Cookies and site data", "Saved passwords"], "Last hour")!;
+        var ask = Warnings.ClearData(["Browsing history", "Download history", "Passwords and form data"], "Last hour")!;
         Assert.Equal("Clear browsing data?", ask.Title);
-        Assert.Equal("Browsing history, cookies and site data, and saved passwords, from the last hour.", ask.Body);
+        Assert.Equal("Browsing history, download history, and passwords and form data, from the last hour.", ask.Body);
         Assert.Equal("Clear", ask.Action);
+    }
+
+    [Fact]
+    public void Clearing_cookies_warns_it_signs_you_out()
+    {
+        var ask = Warnings.ClearData(["Browsing history", "Cookies and site data"], "Last hour")!;
+        Assert.Equal("Browsing history and cookies and site data, from the last hour. You'll be signed out of most sites.", ask.Body);
     }
 
     [Fact]

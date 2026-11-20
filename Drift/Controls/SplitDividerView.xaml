@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The gap between two pages of a split (SplitDividerView.xaml.cs): drag it to share the width differently. A grip
+     shows it's something to drag: brighter on hover, in the accent colour while held (Split.cs). -->
+<UserControl
+    x:Class="Drift.SplitDividerView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Transparent, so the whole gap takes the pointer, not just the grip. -->
+    <Grid Background="Transparent">
+        <Border x:Name="Grip" x:FieldModifier="internal"
+                Width="4"
+                Height="32"
+                CornerRadius="2"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                IsHitTestVisible="False"
+                Background="{ThemeResource DriftIconBrush}"
+                Opacity="0">
+            <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Border.OpacityTransition>
+        </Border>
+        <Border x:Name="Accent" x:FieldModifier="internal"
+                Width="4"
+                Height="32"
+                CornerRadius="2"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                IsHitTestVisible="False"
+                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                Opacity="0">
+            <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.12" />
+            </Border.OpacityTransition>
+        </Border>
+    </Grid>
+</UserControl>

@@ -197,7 +197,7 @@ public sealed partial class MainWindow
     /// <summary>Enter (or Tab) in the answer view: a follow-up in the same conversation.</summary>
     private void AskFollowUp()
     {
-        var question = CommandBox.Text.Trim();
+        var question = CommandLayer.Box.Text.Trim();
         if (question.Length == 0 || _conversation is not { Session: { } session } conversation || session.Busy) return;
         SetCommandText("");
         _typed = "";
@@ -275,14 +275,14 @@ public sealed partial class MainWindow
         _completion = null;
         SetCommandText("");
         _typed = "";
-        CommandBox.PlaceholderText = "Ask a follow-up…";
-        CommandResults.Visibility = Visibility.Collapsed;
-        CommandDivider.Visibility = Visibility.Visible;
-        AskScroller.Visibility = Visibility.Visible;
-        AskScroller.MaxHeight = AskMaxHeight();
-        CommandFavicon.Visibility = Visibility.Collapsed;
-        CommandGlyph.Visibility = Visibility.Visible;
-        CommandGlyph.Glyph = ""; // sparkle-ish: the AI's
+        CommandLayer.Box.PlaceholderText = "Ask a follow-up…";
+        CommandLayer.Results.Visibility = Visibility.Collapsed;
+        CommandLayer.Divider.Visibility = Visibility.Visible;
+        CommandLayer.AskScroller.Visibility = Visibility.Visible;
+        CommandLayer.AskScroller.MaxHeight = AskMaxHeight();
+        CommandLayer.Favicon.Visibility = Visibility.Collapsed;
+        CommandLayer.Glyph.Visibility = Visibility.Visible;
+        CommandLayer.Glyph.Glyph = ""; // sparkle-ish: the AI's
         UpdateAskModelLabel();
         UpdateAskHint();
     }
@@ -293,17 +293,17 @@ public sealed partial class MainWindow
         if (!_askMode) return;
         _askMode = false;
         _askRender?.Stop();
-        AskScroller.Visibility = Visibility.Collapsed;
-        AskTranscript.Children.Clear();
+        CommandLayer.AskScroller.Visibility = Visibility.Collapsed;
+        CommandLayer.AskTranscript.Children.Clear();
         foreach (var turn in _conversation?.Turns ?? []) turn.View = turn.AnswerView = turn.StatusView = null;
-        CommandGlyph.Glyph = "";
-        CommandBox.PlaceholderText = "Search or Enter URL...";
-        AskModelLabel.Visibility = Visibility.Collapsed;
+        CommandLayer.Glyph.Glyph = "";
+        CommandLayer.Box.PlaceholderText = "Search or Enter URL...";
+        CommandLayer.AskModelLabel.Visibility = Visibility.Collapsed;
         if (!restoreQuestion) return;
         var question = _conversation?.Turns.LastOrDefault()?.Question ?? "";
         SetCommandText(question);
         _typed = question;
-        CommandBox.Select(question.Length, 0);
+        CommandLayer.Box.Select(question.Length, 0);
         UpdateCommandResults();
         UpdateAskHint();
     }
@@ -311,7 +311,7 @@ public sealed partial class MainWindow
     /// <summary>No taller than the suggestions get in this window: eight rows, or as many as fit.</summary>
     private double AskMaxHeight()
     {
-        var room = Root.ActualHeight - CommandCard.Margin.Top - CommandFieldHeight - 1 - 2 * CommandResultsPadding - 16;
+        var room = Root.ActualHeight - CommandLayer.Card.Margin.Top - CommandFieldHeight - 1 - 2 * CommandResultsPadding - 16;
         var fit = Math.Max(3, (int)((room + CommandRowGap) / (CommandRowHeight + CommandRowGap)));
         return Math.Min(CommandRowsMax, fit) * (CommandRowHeight + CommandRowGap) - CommandRowGap + 2 * CommandResultsPadding;
     }
@@ -320,11 +320,11 @@ public sealed partial class MainWindow
     {
         if (!_askMode || _conversation?.Session is not { } session)
         {
-            AskModelLabel.Visibility = Visibility.Collapsed;
+            CommandLayer.AskModelLabel.Visibility = Visibility.Collapsed;
             return;
         }
-        AskModelLabel.Text = AiNames.Model(session.Model);
-        AskModelLabel.Visibility = Visibility.Visible;
+        CommandLayer.AskModelLabel.Text = AiNames.Model(session.Model);
+        CommandLayer.AskModelLabel.Visibility = Visibility.Visible;
     }
 
     /// <summary>"Ask AI  Tab", at the end of the field whenever there's something typed to ask.</summary>
@@ -332,7 +332,7 @@ public sealed partial class MainWindow
     {
         var show = _commandBarOpen && !_askMode && _siteSearch is null && Settings.Current.AskAiWithTab && !CommandPristine && CommandQuery.Length > 0
             && !CommandQuery.StartsWith('@');
-        AskHint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        CommandLayer.AskHint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Draws what's arrived at most thirty times a second, rather than once per piece.</summary>
@@ -374,7 +374,7 @@ public sealed partial class MainWindow
 
     private void RenderAllTurns()
     {
-        AskTranscript.Children.Clear();
+        CommandLayer.AskTranscript.Children.Clear();
         var turns = _conversation?.Turns ?? [];
         foreach (var turn in turns)
         {
@@ -397,7 +397,7 @@ public sealed partial class MainWindow
                 });
             turn.View.Children.Add(turn.AnswerView);
             turn.View.Children.Add(turn.StatusView);
-            AskTranscript.Children.Add(turn.View);
+            CommandLayer.AskTranscript.Children.Add(turn.View);
             RenderAnswer(turn);
             RenderStatus(turn);
         }
@@ -461,28 +461,28 @@ public sealed partial class MainWindow
 
     private void ScrollAskToEnd()
     {
-        AskScroller.UpdateLayout();
-        AskScroller.ChangeView(null, AskScroller.ScrollableHeight, null, disableAnimation: true);
+        CommandLayer.AskScroller.UpdateLayout();
+        CommandLayer.AskScroller.ChangeView(null, CommandLayer.AskScroller.ScrollableHeight, null, disableAnimation: true);
     }
 
-    private void AskScroller_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
+    internal void AskScroller_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e)
     {
         // Only your scrolling decides whether it follows; the answer growing under it doesn't.
         if (!_askUserScrolling) return;
-        _askFollow = AskScroller.VerticalOffset >= AskScroller.ScrollableHeight - 8;
+        _askFollow = CommandLayer.AskScroller.VerticalOffset >= CommandLayer.AskScroller.ScrollableHeight - 8;
         if (!e.IsIntermediate) _askUserScrolling = false;
     }
 
     /// <summary>Wheel and scroll bar, seen even when the scroll viewer handles them itself.</summary>
     private void WatchAskScrolling()
     {
-        AskScroller.AddHandler(UIElement.PointerWheelChangedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, e) =>
+        CommandLayer.AskScroller.AddHandler(UIElement.PointerWheelChangedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, e) =>
         {
             _askUserScrolling = true;
             // Up: stop following now, before the next bit of answer pulls it back down.
-            if (e.GetCurrentPoint(AskScroller).Properties.MouseWheelDelta > 0) _askFollow = false;
+            if (e.GetCurrentPoint(CommandLayer.AskScroller).Properties.MouseWheelDelta > 0) _askFollow = false;
         }), handledEventsToo: true);
-        AskScroller.AddHandler(UIElement.PointerPressedEvent,
+        CommandLayer.AskScroller.AddHandler(UIElement.PointerPressedEvent,
             new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => _askUserScrolling = true), handledEventsToo: true);
     }
 
@@ -531,7 +531,7 @@ public sealed partial class MainWindow
             case Windows.System.VirtualKey.Up:
             case Windows.System.VirtualKey.Down:
                 _askUserScrolling = true;
-                AskScroller.ChangeView(null, AskScroller.VerticalOffset + (key == Windows.System.VirtualKey.Down ? 60 : -60), null);
+                CommandLayer.AskScroller.ChangeView(null, CommandLayer.AskScroller.VerticalOffset + (key == Windows.System.VirtualKey.Down ? 60 : -60), null);
                 return true;
         }
         return false;

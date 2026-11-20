@@ -39,10 +39,29 @@ miss it. Items marked "check" haven't been confirmed in Drift.
 | **Extension buttons** | Extensions run, but their toolbar buttons and popups have nowhere to show (e.g. uBlock's per-site switch). WebView2 has no API to open an extension's popup for a tab, so this would mean hosting the popup page ourselves, and most popups expect to know which tab they belong to. |
 | **Managing saved passwords** | Passwords save and fill, but there's no list to view or delete them one by one (WebView2 has no API for it); Privacy can clear them all. |
 
+## Bugs
+
+- **Shift+F10 on a tab row opens the wrong menu.** With a tab's row focused, Shift+F10 (or the Menu
+  key) opens the sidebar's own menu (New tab, New folder, New live folder) instead of the tab's. A
+  right-click opens the tab's menu as it should. The keyboard's request starts at the focused list
+  item and goes up to the sidebar, while the tab's menu is on the row's content, inside the item.
+
 ## Later (Arc / Zen ideas)
 
 - Spaces / workspaces
-- More than one window (only a private one so far)
+- More than one window (only a private one so far). Scope still to agree. The code is partly ready:
+  a private window is already a second `MainWindow`, and the sidebar's row controls find their own
+  window (`MainWindow.Of`).
+- **Meet's own picture-in-picture**, as in Dia. In Drift, Meet sees the engine as "Microsoft Edge
+  WebView2", never offers its picture-in-picture, and its menu's Open picture-in-picture floats a bare
+  video. In Dia it opens Meet's own window (300×489, with a bar: back to the tab, the site, ×).
+  Presenting Drift as Chrome to Meet stopped the bare-video fallback, but no window opened. Plan:
+  present as Chrome to Meet, find out why its window doesn't open, match Dia's window (its size and
+  bar), then do the same for Zoom.
+- **Tooltip arrows**: Drift's tooltips with a small arrow pointing at what's hovered, like WinUI's
+  TeachingTip's tail (a TeachingTip itself is too heavy for hover hints). Each tooltip would open on a
+  fixed side, so its arrow points the right way. Still to decide: arrows on every tooltip, or only on
+  the icon-only buttons.
 - **Vertical split view** (Arc's top and bottom panes): one page over the other, as well as side by
   side. Made from the page's buttons ("Add bottom split") and the command bar ("Add Bottom Split");
   a divider dragged up and down (each page at least 160 px tall, double-click for half and half);
@@ -50,6 +69,7 @@ miss it. Items marked "check" haven't been confirmed in Drift.
   grip has to sit clear of the lower page's dots, which are in the middle of the gap. Still to work
   out: dragging the dots to swap stacked pages, dropping a tab on the top or bottom half of the page,
   Peek opening into a lower page, and switching a split between side by side and stacked.
+  With it, Zen's grid for four pages (two over two). Splits of up to four side by side are done.
 
 ## Probably handled by WebView2 (check)
 

@@ -30,6 +30,24 @@ public sealed partial class MainWindow
     private BrowserTab? _pipOpening;
 
     /// <summary>
+    /// A page that asked for its own floating window just now (Document Picture-in-Picture), itself:
+    /// Meet's Open picture-in-picture, say, not Drift asking it to on leaving. The page says so just
+    /// before asking (PipScript), so its window, arriving as a new about:blank window, is hosted
+    /// (PlayerWindow) rather than going the way of an ordinary new window, where the engine gave up on
+    /// it ("no window") and the page's button did nothing.
+    /// </summary>
+    private (BrowserTab Tab, DateTime At)? _pipAsked;
+
+    /// <summary>Whether a new about:blank window from this tab is its floating window (and if so, it's taken).</summary>
+    private bool IsPipWindow(BrowserTab tab)
+    {
+        if (_pipOpening == tab) return true;
+        if (_pipAsked is not { } asked || asked.Tab != tab || DateTime.UtcNow - asked.At > TimeSpan.FromSeconds(3)) return false;
+        _pipAsked = null;
+        return true;
+    }
+
+    /// <summary>
     /// Page side: notes when each video last started playing, and whether the page has a
     /// media-session "enterpictureinpicture" handler (a meeting floating itself); reports entering
     /// and leaving picture-in-picture, leaving with whether the video plays on (Back to tab) or not
@@ -56,6 +74,11 @@ public sealed partial class MainWindow
             setTimeout(() => post(token + ':pip:leave:' + (video.paused ? 0 : 1)), 150);
           }, true);
           if (window.documentPictureInPicture) {
+            // Drift's told first, so it hosts the window that's about to be asked for (IsPipWindow).
+            try {
+              const request = documentPictureInPicture.requestWindow.bind(documentPictureInPicture);
+              documentPictureInPicture.requestWindow = function (options) { post(token + ':pip:asking'); return request(options); };
+            } catch { }
             documentPictureInPicture.addEventListener('enter', (e) => {
               post(token + ':pip:enter:page');
               e.window.addEventListener('pagehide', () => post(token + ':pip:leave:0'));
@@ -129,6 +152,11 @@ public sealed partial class MainWindow
     /// <summary>A page went into picture-in-picture, or came out ("leave:1" still playing).</summary>
     private void OnPipMessage(BrowserTab tab, string message)
     {
+        if (message == "asking")
+        {
+            _pipAsked = (tab, DateTime.UtcNow);
+            return;
+        }
         if (message.StartsWith("enter", StringComparison.Ordinal))
         {
             _pipTab = tab;

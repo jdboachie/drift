@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mini player in the sidebar (MediaControls.cs): a bar while a tab plays, a card with the title and a seek bar while hovered. -->
+<UserControl
+    x:Class="Drift.MediaCardView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
+
+    <Grid>
+        <!-- What's cut back to the bar while it grows (its visual's clip, MediaControls.cs). -->
+        <Grid x:Name="Body" x:FieldModifier="internal">
+        <!-- The card itself, which stretches up past its top as it springs open. -->
+        <Grid x:Name="Back" x:FieldModifier="internal">
+            <Border CornerRadius="8" Background="{ThemeResource DriftTileBrush}" />
+            <!-- Expanded, it's a solid card over the tabs. -->
+            <Border x:Name="Plate" x:FieldModifier="internal"
+                    CornerRadius="8"
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource DriftActiveBorderBrush}"
+                    Background="{ThemeResource DriftSelectedBrush}"
+                    Opacity="0" />
+        </Grid>
+        <Grid Padding="4,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="40" />
+            </Grid.RowDefinitions>
+            <Grid x:Name="Header" x:FieldModifier="internal" Margin="8,8,0,0" ColumnSpacing="2" Visibility="Collapsed" Opacity="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <!-- The album cover or the video's thumbnail, where the site gives one. -->
+                <Border x:Name="ArtFrame" x:FieldModifier="internal" Width="36" Height="36" Margin="0,0,8,0" CornerRadius="6"
+                        VerticalAlignment="Center" Background="{ThemeResource DriftTileBrush}" Visibility="Collapsed"
+                        Tapped="{x:Bind Owner.MediaTitle_Tapped}">
+                    <Image x:Name="Art" x:FieldModifier="internal" Stretch="UniformToFill" ImageFailed="{x:Bind Owner.MediaArt_ImageFailed}" />
+                </Border>
+                <!-- The title and site: click to go to the tab. -->
+                <StackPanel Grid.Column="1" Background="Transparent" Spacing="1" VerticalAlignment="Center" Tapped="{x:Bind Owner.MediaTitle_Tapped}">
+                    <Canvas x:Name="TitleBox" x:FieldModifier="internal" Height="18" SizeChanged="{x:Bind Owner.MediaTitleBox_SizeChanged}">
+                        <StackPanel x:Name="TitleStrip" x:FieldModifier="internal" Orientation="Horizontal">
+                            <TextBlock x:Name="Title" x:FieldModifier="internal" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock x:Name="TitleCopy" x:FieldModifier="internal" FontSize="13" FontWeight="SemiBold" Visibility="Collapsed" />
+                        </StackPanel>
+                    </Canvas>
+                    <TextBlock x:Name="Site" x:FieldModifier="internal" FontSize="12" TextTrimming="CharacterEllipsis"
+                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                </StackPanel>
+                <Button x:Name="PipButton" x:FieldModifier="internal" Grid.Column="2" Click="{x:Bind Owner.MediaPip_Click}" Style="{StaticResource IconButtonStyle}"
+                        VerticalAlignment="Top" Margin="0,-4,0,0"
+                        AutomationProperties.Name="Picture in picture" ToolTipService.ToolTip="Picture in picture">
+                    <FontIcon Glyph="&#xE8A7;" FontSize="13" />
+                </Button>
+                <Button Grid.Column="3" Click="{x:Bind Owner.MediaClose_Click}" Style="{StaticResource IconButtonStyle}"
+                        VerticalAlignment="Top" Margin="0,-4,0,0"
+                        AutomationProperties.Name="Stop and close" ToolTipService.ToolTip="Stop and close">
+                    <FontIcon Glyph="&#xE711;" FontSize="12" />
+                </Button>
+            </Grid>
+            <!-- How far through it is: press or drag on the bar to seek. -->
+            <Grid x:Name="Progress" x:FieldModifier="internal" Grid.Row="1" Margin="8,8,8,0" ColumnSpacing="8" Visibility="Collapsed" Opacity="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="Elapsed" x:FieldModifier="internal" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                <Grid x:Name="Scrub" x:FieldModifier="internal" Grid.Column="1" Height="16" Background="Transparent"
+                      PointerPressed="{x:Bind Owner.MediaScrub_PointerPressed}"
+                      PointerMoved="{x:Bind Owner.MediaScrub_PointerMoved}"
+                      PointerReleased="{x:Bind Owner.MediaScrub_PointerReleased}"
+                      PointerCaptureLost="{x:Bind Owner.MediaScrub_PointerCaptureLost}"
+                      AutomationProperties.Name="Seek">
+                    <Border Height="4" CornerRadius="2" VerticalAlignment="Center" Background="{ThemeResource DriftPillBrush}" />
+                    <Border x:Name="ScrubFill" x:FieldModifier="internal" Height="4" Width="0" CornerRadius="2" VerticalAlignment="Center"
+                            HorizontalAlignment="Left" Background="{ThemeResource DriftIconBrush}" Opacity="0.7" />
+                </Grid>
+                <TextBlock x:Name="Duration" x:FieldModifier="internal" Grid.Column="2" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+            </Grid>
+            <Grid x:Name="ControlsRow" x:FieldModifier="internal" Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="TabButton" x:FieldModifier="internal" Click="{x:Bind Owner.MediaTab_Click}" Style="{StaticResource IconButtonStyle}"
+                        HorizontalAlignment="Center">
+                    <Grid>
+                        <FontIcon x:Name="IconGlyph" x:FieldModifier="internal" Glyph="&#xE774;" FontSize="14" Opacity="0.6" />
+                        <Image x:Name="Icon" x:FieldModifier="internal" Width="16" Height="16" />
+                    </Grid>
+                </Button>
+                <Button x:Name="BackButton" x:FieldModifier="internal" Grid.Column="1" Click="{x:Bind Owner.MediaBack_Click}" Style="{StaticResource IconButtonStyle}"
+                        HorizontalAlignment="Center"
+                        AutomationProperties.Name="Skip back" ToolTipService.ToolTip="Skip back">
+                    <FontIcon Glyph="&#xE892;" FontSize="12" />
+                </Button>
+                <Button x:Name="PlayButton" x:FieldModifier="internal" Grid.Column="2" Click="{x:Bind Owner.MediaPlay_Click}" Style="{StaticResource IconButtonStyle}"
+                        HorizontalAlignment="Center">
+                    <FontIcon x:Name="PlayGlyph" x:FieldModifier="internal" Glyph="&#xE769;" FontSize="14" />
+                </Button>
+                <Button x:Name="ForwardButton" x:FieldModifier="internal" Grid.Column="3" Click="{x:Bind Owner.MediaForward_Click}" Style="{StaticResource IconButtonStyle}"
+                        HorizontalAlignment="Center"
+                        AutomationProperties.Name="Skip forward" ToolTipService.ToolTip="Skip forward">
+                    <FontIcon Glyph="&#xE893;" FontSize="12" />
+                </Button>
+                <Button x:Name="MuteButton" x:FieldModifier="internal" Grid.Column="4" Click="{x:Bind Owner.MediaMute_Click}" Style="{StaticResource IconButtonStyle}"
+                        HorizontalAlignment="Center">
+                    <FontIcon x:Name="MuteGlyph" x:FieldModifier="internal" Glyph="&#xE767;" FontSize="14" />
+                </Button>
+            </Grid>
+        </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

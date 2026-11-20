@@ -416,3 +416,64 @@ public class FolderTreeTests
         Assert.Null(_tree.DropAt(s.Rows, gap: 1, onto: null, dragging: s.Work));
     }
 }
+
+public class FolderDetachTests
+{
+    private readonly FolderTree _tree = new();
+
+    [Fact]
+    public void A_folder_taken_out_takes_its_tabs_and_folders_with_it()
+    {
+        var work = _tree.NewFolder("Work");
+        var docs = _tree.NewFolder("Docs", work);
+        var a = new FakeTab("a");
+        _tree.Add(a, docs);
+        var (parent, index) = _tree.Detach(work);
+        Assert.Null(parent);
+        Assert.Equal(0, index);
+        Assert.Empty(_tree.AllFolders);
+        Assert.Empty(_tree.AllTabs);
+        // Still in it, to come back with it.
+        Assert.Same(docs, a.Folder);
+    }
+
+    [Fact]
+    public void Put_back_it_is_where_it_was_with_everything_in_it()
+    {
+        var first = _tree.NewFolder("First");
+        var work = _tree.NewFolder("Work");
+        _tree.NewFolder("Last");
+        var inner = _tree.NewFolder("Inner", work);
+        var a = new FakeTab("a");
+        _tree.Add(a, inner);
+        var (parent, index) = _tree.Detach(work);
+        _tree.Reattach(work, parent, index);
+        Assert.Equal(["First", "Work", "Last"], _tree.Folders.Select(f => f.Name));
+        Assert.Contains(a, _tree.AllTabs);
+    }
+
+    [Fact]
+    public void A_nested_folder_goes_back_into_its_parent()
+    {
+        var outer = _tree.NewFolder("Outer");
+        var one = _tree.NewFolder("One", outer);
+        _tree.NewFolder("Two", outer);
+        var (parent, index) = _tree.Detach(one);
+        Assert.Same(outer, parent);
+        _tree.Reattach(one, parent, index);
+        Assert.Equal(["One", "Two"], outer.Folders.Select(f => f.Name));
+        Assert.Same(outer, one.Parent);
+    }
+
+    [Fact]
+    public void If_its_parent_went_meanwhile_it_comes_back_at_the_top_level()
+    {
+        var outer = _tree.NewFolder("Outer");
+        var one = _tree.NewFolder("One", outer);
+        var (parent, index) = _tree.Detach(one);
+        _tree.Delete(outer, keepTabs: false);
+        _tree.Reattach(one, parent, index);
+        Assert.Equal(["One"], _tree.Folders.Select(f => f.Name));
+        Assert.Null(one.Parent);
+    }
+}

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A page's place in a split's row (TabRowTemplate, Split.cs): its favicon and title, its × at the end on hover,
+     and its Peek's icon there while it has one. Split.cs fits it to its width (FitHalf) and shows its × (ShowHalfHover). -->
+<UserControl
+    x:Class="Drift.SplitPageView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid x:Name="Root" x:FieldModifier="internal"
+          Background="Transparent" CornerRadius="8"
+          Padding="11,0,8,0" ColumnSpacing="8"
+          AutomationProperties.Name="{x:Bind Page.Title, Mode=OneWay}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid x:Name="Icon" x:FieldModifier="internal" Opacity="{x:Bind Page.ContentOpacity, Mode=OneWay}">
+            <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource DriftIconBrush}" Opacity="0.6"
+                      Visibility="{x:Bind Page.PlaceholderVisibility, Mode=OneWay}" />
+            <Image Source="{x:Bind Page.Favicon, Mode=OneWay}" Width="16" Height="16" />
+        </Grid>
+        <TextBlock x:Name="TitleText" x:FieldModifier="internal"
+                   Grid.Column="1" Text="{x:Bind Page.Title, Mode=OneWay}" FontSize="14"
+                   Opacity="{x:Bind Page.ContentOpacity, Mode=OneWay}"
+                   Margin="{x:Bind Page.TitleEndMargin, Mode=OneWay}"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <!-- At its end, as on a tab's own row: this page's Peek first, if it has one (TabCloses); then the page
+             leaves the split. -->
+        <Button x:Name="CloseButton" x:FieldModifier="internal"
+                Grid.Column="1" Width="20" Height="20" HorizontalAlignment="Right"
+                Margin="{x:Bind Page.RowButtonMargin, Mode=OneWay}"
+                Opacity="0" IsHitTestVisible="False"
+                Click="CloseButton_Click"
+                Style="{StaticResource TabCloseButtonStyle}"
+                AutomationProperties.Name="{x:Bind Page.CloseName, Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind Page.CloseName, Mode=OneWay}">
+            <FontIcon Glyph="&#xE711;" FontSize="10" />
+        </Button>
+        <!-- This page's Peek, as on a tab's own row: the Peek page's icon at its end. -->
+        <Border Grid.Column="1"
+                Width="24" Height="24"
+                HorizontalAlignment="Right"
+                CornerRadius="6"
+                BorderThickness="1"
+                BorderBrush="{ThemeResource DriftPeekBadgeBorderBrush}"
+                Background="{ThemeResource DriftPeekBadgeBrush}"
+                Visibility="{x:Bind Page.PeekBadgeVisibility, Mode=OneWay}"
+                AutomationProperties.Name="Open in Peek">
+            <Grid>
+                <FontIcon Glyph="&#xE774;" FontSize="11" Foreground="{ThemeResource DriftIconBrush}"
+                          Visibility="{x:Bind Page.PeekPlaceholderVisibility, Mode=OneWay}" />
+                <Image Source="{x:Bind Page.PeekFavicon, Mode=OneWay}" Width="16" Height="16" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

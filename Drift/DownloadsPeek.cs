@@ -47,12 +47,12 @@ public sealed partial class MainWindow
         else if (!_libraryOpen) RunDownloadPeekTimer(DownloadPeekDelay, ShowDownloadPeek);
     }
 
-    private void DownloadPeek_PointerEntered(object sender, PointerRoutedEventArgs e) => StopDownloadPeekTimer();
+    internal void DownloadPeek_PointerEntered(object sender, PointerRoutedEventArgs e) => StopDownloadPeekTimer();
 
     // A download's menu is open, from the peek: it stays while the menu does (the pointer's on the menu).
     private bool _downloadMenuOpen;
 
-    private void DownloadPeek_PointerExited(object sender, PointerRoutedEventArgs e)
+    internal void DownloadPeek_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         if (_downloadDragging || _downloadMenuOpen) return;
         if (_downloadPeekShown) RunDownloadPeekTimer(DownloadPeekLinger, HideDownloadPeek);
@@ -84,11 +84,11 @@ public sealed partial class MainWindow
         var items = PeekDownloads();
         if (items.Length == 0 || _libraryOpen) return;
         // Newest nearest the button, as in Arc.
-        DownloadPeekList.ItemsSource = items.Reverse().ToArray();
+        DownloadPeekCard.List.ItemsSource = items.Reverse().ToArray();
         _downloadPeekShown = true;
-        DownloadPeekCard.IsHitTestVisible = true;
-        DownloadPeekCard.Opacity = 1;
-        DownloadPeekCard.Translation = Vector3.Zero;
+        DownloadPeekCard.Card.IsHitTestVisible = true;
+        DownloadPeekCard.Card.Opacity = 1;
+        DownloadPeekCard.Card.Translation = Vector3.Zero;
         foreach (var item in items) item.Refresh();
         Downloads.MarkSeen();
     }
@@ -98,23 +98,23 @@ public sealed partial class MainWindow
         StopDownloadPeekTimer();
         if (!_downloadPeekShown) return;
         _downloadPeekShown = false;
-        DownloadPeekCard.IsHitTestVisible = false;
-        DownloadPeekCard.Opacity = 0;
-        DownloadPeekCard.Translation = _uiSettings.AnimationsEnabled ? new Vector3(0, 8, 0) : Vector3.Zero;
+        DownloadPeekCard.Card.IsHitTestVisible = false;
+        DownloadPeekCard.Card.Opacity = 0;
+        DownloadPeekCard.Card.Translation = _uiSettings.AnimationsEnabled ? new Vector3(0, 8, 0) : Vector3.Zero;
     }
 
     /// <summary>A download started, moved on or finished while the peek's up: it shows the newest again.</summary>
     private void RefreshDownloadPeek()
     {
-        ToolTipService.SetToolTip(LibraryButton, PeekDownloads().Length > 0 ? null : "Library");
+        ToolTipService.SetToolTip(LibraryButton, PeekDownloads().Length > 0 ? null : "Library.Panel");
         if (!_downloadPeekShown) return;
         var items = PeekDownloads();
         if (items.Length == 0) HideDownloadPeek();
-        else if (DownloadPeekList.ItemsSource is not DownloadItem[] shown || !shown.SequenceEqual(items.Reverse()))
-            DownloadPeekList.ItemsSource = items.Reverse().ToArray();
+        else if (DownloadPeekCard.List.ItemsSource is not DownloadItem[] shown || !shown.SequenceEqual(items.Reverse()))
+            DownloadPeekCard.List.ItemsSource = items.Reverse().ToArray();
     }
 
-    private void DownloadPeek_ItemClick(object sender, ItemClickEventArgs e)
+    internal void DownloadPeek_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is not DownloadItem item) return;
         if (item.IsOnDisk)
@@ -136,7 +136,7 @@ public sealed partial class MainWindow
     /// (DownloadDrop_DragOver). One still downloading (or gone from disk) stays put. The peek stays up
     /// till the file's dropped.
     /// </summary>
-    private void DownloadItems_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    internal void DownloadItems_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
     {
         if (e.Items.FirstOrDefault() is not DownloadItem item || !item.IsOnDisk)
         {
@@ -154,7 +154,7 @@ public sealed partial class MainWindow
             catch { }
             finally { deferral.Complete(); }
         });
-        if (sender == DownloadPeekList)
+        if (sender == DownloadPeekCard.List)
         {
             StopDownloadPeekTimer();
             _downloadDragging = true;
@@ -166,12 +166,12 @@ public sealed partial class MainWindow
 
     private bool _downloadDragging;
 
-    private void DownloadItems_DragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs e)
+    internal void DownloadItems_DragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs e)
     {
         LeaveDragPage();
         _draggedDownload = null;
         PagesTakeDrops(true);
-        if (sender != DownloadPeekList) return;
+        if (sender != DownloadPeekCard.List) return;
         _downloadDragging = false;
         HideDownloadPeek();
     }
@@ -514,7 +514,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>A download's menu in the library: open, show, copy its link, take it off the list, or bin the file.</summary>
-    private void DownloadRow_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
+    internal void DownloadRow_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not DownloadItem download) return;
         e.Handled = true;

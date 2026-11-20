@@ -63,8 +63,8 @@ public sealed partial class MainWindow
     private void OutlookTick()
     {
         var pinned = EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).Where(t => t.IsPinned).ToList();
-        var mail = pinned.FirstOrDefault(t => OutlookApi.IsMail(PageOf(t)));
-        var calendar = pinned.FirstOrDefault(t => OutlookApi.IsCalendar(PageOf(t)));
+        var mail = Settings.Current.PreviewOutlookMail ? pinned.FirstOrDefault(t => OutlookApi.IsMail(PageOf(t))) : null;
+        var calendar = Settings.Current.PreviewOutlookCalendar ? pinned.FirstOrDefault(t => OutlookApi.IsCalendar(PageOf(t))) : null;
         if (calendar != _outlookCalendarTab)
         {
             _outlookCalendarTab?.SetMeeting(null, null);
@@ -149,7 +149,7 @@ public sealed partial class MainWindow
             var messages = _outlookMailTab is not null ? await OutlookGetAsync(core, OutlookApi.UnreadMessages(host)) : null;
             var count = _outlookMailTab is not null ? await OutlookGetAsync(core, OutlookApi.Inbox(host)) : null;
             if (events is not null) _outlookEvents = OutlookApi.ParseEvents(events, TimeZoneInfo.Local);
-            if (messages is not null) _outlookMail = OutlookApi.ParseMessages(messages);
+            if (messages is not null) _outlookMail = OutlookApi.ParseMessages(messages, host);
             if (count is not null) _outlookUnread = OutlookApi.ParseUnread(count);
             var got = (_outlookCalendarTab is null || events is not null) && (_outlookMailTab is null || messages is not null);
             if (got)
@@ -267,8 +267,38 @@ public sealed partial class MainWindow
     private string? OutlookMessage() => _outlookState switch
     {
         OutlookState.SignedOut => "Sign in to Outlook in its tab",
-        OutlookState.Failed when !_outlookHasData => "Couldn't reach Outlook",
+        OutlookState.Failed when !_outlookHasData => "We couldn't reach Outlook",
         OutlookState.Loading => "Loading…",
         _ => null,
     };
+
+    /// <summary>What needs you about a preview, for Settings › General › Previews; null when nothing does.</summary>
+    internal string? PreviewTrouble(PreviewKind kind)
+    {
+        static PreviewState As<T>(T state) where T : Enum => Enum.Parse<PreviewState>(state.ToString());
+        // Outlook that failed after it had something still shows that, so it's no trouble yet.
+        var outlook = _outlookState == OutlookState.Failed && _outlookHasData ? PreviewState.Ready : As(_outlookState);
+        return kind switch
+        {
+            PreviewKind.Gmail => Previews.Trouble(kind, _mailTab is not null, As(_mailState)),
+            PreviewKind.GoogleCalendar => Previews.Trouble(kind, _calendarTab is not null, As(_calendarState)),
+            PreviewKind.OutlookMail => Previews.Trouble(kind, _outlookMailTab is not null, outlook),
+            PreviewKind.OutlookCalendar => Previews.Trouble(kind, _outlookCalendarTab is not null, outlook),
+            _ => null,
+        };
+    }
+
+    /// <summary>The card's button for Outlook: Try again, when it couldn't be reached.</summary>
+    private string? OutlookAction() => _outlookState == OutlookState.Failed && !_outlookHasData ? "Try again" : null;
+
+    /// <summary>Try again, on an Outlook card: fetches now rather than at the next turn. False on other cards.</summary>
+    private bool RetryOutlook()
+    {
+        if (_hoverTab is not { } tab || (tab != _outlookMailTab && tab != _outlookCalendarTab)) return false;
+        _outlookState = OutlookState.Loading;
+        if (tab == _outlookMailTab) RenderMailCard();
+        else RenderCalendarCard(scroll: true);
+        if (!_outlookFetching) _ = FetchOutlookAsync();
+        return true;
+    }
 }

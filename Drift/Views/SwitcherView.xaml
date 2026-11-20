@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The tab switcher (TabSwitcher.cs): Ctrl+Tab's pictures of your recent tabs. -->
+<UserControl
+    x:Class="Drift.SwitcherView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift"
+    xmlns:models="using:Drift.Models">
+
+    <Grid x:Name="Backdrop" x:FieldModifier="internal"
+          Visibility="Collapsed">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="3*" />
+        </Grid.RowDefinitions>
+        <Border x:Name="Card" x:FieldModifier="internal"
+                Grid.Row="1"
+                HorizontalAlignment="Center"
+                Padding="8"
+                CornerRadius="14"
+                Style="{StaticResource FloatingPanelStyle}"
+                Translation="0,0,48">
+            <ScrollViewer HorizontalScrollMode="Enabled"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollMode="Disabled"
+                          VerticalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="List" x:FieldModifier="internal" ItemsSource="{x:Bind Owner.SwitcherItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="4" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:SwitcherItem">
+                            <Grid Width="172" Padding="8" RowSpacing="8" CornerRadius="10"
+                                  Background="Transparent"
+                                  Tag="{x:Bind}"
+                                  PointerPressed="SwitcherItem_PointerPressed"
+                                  AutomationProperties.Name="{x:Bind Tab.Title, Mode=OneWay}">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <!-- Picked: a tint behind it. -->
+                                <Border Grid.RowSpan="2" Margin="-8" CornerRadius="10"
+                                        Background="{ThemeResource DriftPillBrush}"
+                                        Visibility="{x:Bind SelectedVisibility, Mode=OneWay}" />
+                                <Border Height="100" CornerRadius="6" BorderThickness="1"
+                                        BorderBrush="{ThemeResource DriftPageBorderBrush}"
+                                        Background="{ThemeResource DriftTileBrush}">
+                                    <Grid>
+                                        <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="UniformToFill" VerticalAlignment="Top"
+                                               Visibility="{x:Bind PictureVisibility, Mode=OneWay}" />
+                                        <Grid Visibility="{x:Bind IconTileVisibility, Mode=OneWay}">
+                                            <FontIcon Glyph="&#xE774;" FontSize="24" Opacity="0.5"
+                                                      Foreground="{ThemeResource DriftIconBrush}"
+                                                      Visibility="{x:Bind Tab.PlaceholderVisibility, Mode=OneWay}" />
+                                            <Image Source="{x:Bind Tab.Favicon, Mode=OneWay}" Width="32" Height="32" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Grid Grid.Row="1" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Glyph="&#xE774;" FontSize="13" Opacity="0.6"
+                                              Foreground="{ThemeResource DriftIconBrush}"
+                                              Visibility="{x:Bind Tab.PlaceholderVisibility, Mode=OneWay}" />
+                                    <Image Source="{x:Bind Tab.Favicon, Mode=OneWay}" Width="16" Height="16" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Tab.Title, Mode=OneWay}" FontSize="12"
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                               Visibility="{x:Bind PlainVisibility, Mode=OneWay}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Tab.Title, Mode=OneWay}" FontSize="12"
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                               Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                               Visibility="{x:Bind SelectedVisibility, Mode=OneWay}" />
+                                </Grid>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

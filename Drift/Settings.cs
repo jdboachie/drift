@@ -95,8 +95,44 @@ internal sealed class SettingsData
     /// <summary>Ad blocking, with uBlock Origin Lite (Extensions).</summary>
     public bool BlockAds { get; set; } = true;
 
+    /// <summary>The previews hovering a pinned tab or a folder shows (Settings › General › Previews).</summary>
+    public bool PreviewFolders { get; set; } = true;
+    public bool PreviewGmail { get; set; } = true;
+    public bool PreviewGoogleCalendar { get; set; } = true;
+    public bool PreviewOutlookMail { get; set; } = true;
+    public bool PreviewOutlookCalendar { get; set; } = true;
+    /// <summary>The card a minute before a meeting, with Join (GoogleCalendar.cs ShowMeetingNotice).</summary>
+    public bool MeetingReminders { get; set; } = true;
+
+    public bool Shows(PreviewKind kind) => kind switch
+    {
+        PreviewKind.Folders => PreviewFolders,
+        PreviewKind.Gmail => PreviewGmail,
+        PreviewKind.GoogleCalendar => PreviewGoogleCalendar,
+        PreviewKind.OutlookMail => PreviewOutlookMail,
+        _ => PreviewOutlookCalendar,
+    };
+
+    public void Show(PreviewKind kind, bool on)
+    {
+        switch (kind)
+        {
+            case PreviewKind.Folders: PreviewFolders = on; break;
+            case PreviewKind.Gmail: PreviewGmail = on; break;
+            case PreviewKind.GoogleCalendar: PreviewGoogleCalendar = on; break;
+            case PreviewKind.OutlookMail: PreviewOutlookMail = on; break;
+            default: PreviewOutlookCalendar = on; break;
+        }
+    }
+
     /// <summary>Leaving a tab with a video playing floats it in its own window (Pip.cs).</summary>
     public bool AutoPictureInPicture { get; set; } = true;
+    /// <summary>
+    /// A link you open in a new tab (right-click › Open link in new tab, Ctrl+click, middle-click, a
+    /// bookmark's Open in new tab) comes to the front; off, it opens behind (MainWindow.OpenLinkInNewTab).
+    /// Links a page opens in a new tab itself always come to the front.
+    /// </summary>
+    public bool SwitchToNewTabs { get; set; }
     /// <summary>Ctrl+Tab goes by the tabs used last (TabSwitcher.cs); off, down the sidebar.</summary>
     public bool CtrlTabRecentOrder { get; set; } = true;
     /// <summary>Offer to save passwords, and fill them in (WebView2's password manager).</summary>

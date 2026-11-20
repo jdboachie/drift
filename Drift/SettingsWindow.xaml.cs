@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -38,7 +39,7 @@ public sealed partial class SettingsWindow : Window
     private bool _loading;
     // The shortcut being recorded, and the row it's on.
     private ShortcutAction? _recording;
-    private readonly Dictionary<string, (Button Button, TextBlock Message, Button Reset)> _rows = new();
+    private readonly Dictionary<string, (Button Button, SettingsRow Row, Button Reset)> _rows = new();
 
     // The window that opened Settings: pages picked from History open there.
     private MainWindow? _owner;
@@ -58,8 +59,8 @@ public sealed partial class SettingsWindow : Window
 
     private void ShowPage(string page)
     {
-        foreach (var item in Nav.Items.OfType<ListViewItem>())
-            if ((string)item.Tag == page) Nav.SelectedItem = item;
+        foreach (var tab in Toolbar.Children.OfType<RadioButton>())
+            if ((string)tab.Tag == page) tab.IsChecked = true;
     }
 
     public static void CloseIfOpen() => _open?.Close();
@@ -95,7 +96,7 @@ public sealed partial class SettingsWindow : Window
             }
         };
         Extensions.Changed += Extensions_Changed;
-        Nav.SelectedIndex = 0;
+        ShowPage("general");
 
         _loading = true;
         var settings = Settings.Current;
@@ -108,6 +109,8 @@ public sealed partial class SettingsWindow : Window
         CloseTwiceToggle.IsOn = settings.CloseTwice;
         LoadEssentialsToggle.IsOn = settings.LoadEssentialsAtStart;
         RecentTabsToggle.IsOn = settings.CtrlTabRecentOrder;
+        SwitchToNewTabsToggle.IsOn = settings.SwitchToNewTabs;
+        RemindersToggle.IsOn = settings.MeetingReminders;
         PasswordsToggle.IsOn = settings.SavePasswords;
         AutofillToggle.IsOn = settings.Autofill;
         SignInToggle.IsOn = settings.MicrosoftSignIn;
@@ -125,12 +128,13 @@ public sealed partial class SettingsWindow : Window
         _ = ShowAccountAsync();
 
         BuildShortcuts();
+        ShowPreviews();
     }
 
     private void Place(Window owner)
     {
         var scale = owner.Content?.XamlRoot?.RasterizationScale ?? 1;
-        AppWindow.Resize(new SizeInt32((int)(720 * scale), (int)(560 * scale)));
+        AppWindow.Resize(new SizeInt32((int)(720 * scale), (int)(640 * scale)));
         var ownerPos = owner.AppWindow.Position;
         var ownerSize = owner.AppWindow.Size;
         var size = AppWindow.Size;
@@ -139,10 +143,12 @@ public sealed partial class SettingsWindow : Window
             ownerPos.Y + (ownerSize.Height - size.Height) / 2));
     }
 
-    private void Nav_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void Page_Checked(object sender, RoutedEventArgs e)
     {
+        if (sender is not RadioButton tab || tab.Tag is not string page) return;
         StopRecording();
-        var page = (Nav.SelectedItem as ListViewItem)?.Tag as string ?? "general";
+        PageTitle.Text = AutomationProperties.GetName(tab);
+        if (page == "general" && PreviewList is not null) ShowPreviews();
         GeneralPage.Visibility = page == "general" ? Visibility.Visible : Visibility.Collapsed;
         AccountsPage.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         if (page == "accounts") _ = ShowAccountAsync();
@@ -162,8 +168,6 @@ public sealed partial class SettingsWindow : Window
     private void ShowDownloadFolder()
     {
         DownloadFolderText.Text = Downloads.Folder;
-        ToolTipService.SetToolTip(DownloadFolderText, Downloads.Folder);
-        DownloadFolderReset.Visibility = Settings.Current.DownloadFolder.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void DownloadFolder_Click(object sender, RoutedEventArgs e)
@@ -179,12 +183,6 @@ public sealed partial class SettingsWindow : Window
         ShowDownloadFolder();
     }
 
-    private void DownloadFolderReset_Click(object sender, RoutedEventArgs e)
-    {
-        Settings.Update(s => s.DownloadFolder = "");
-        ShowDownloadFolder();
-    }
-
     private void KeepDownloadsCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || KeepDownloadsCombo.SelectedIndex < 0) return;
@@ -197,8 +195,9 @@ public sealed partial class SettingsWindow : Window
     private void ShowDefaultBrowser()
     {
         var isDefault = DefaultBrowser.IsDefault;
-        DefaultBrowserText.Text = isDefault ? "Drift is your default browser" : "Open links from other apps in Drift";
+        DefaultBrowserRow.Header = isDefault ? "Drift is your default browser" : "Open links from other apps in Drift";
         DefaultBrowserButton.Visibility = isDefault ? Visibility.Collapsed : Visibility.Visible;
+        if (isDefault) DefaultBrowserRow.Description = null;
     }
 
     /// <summary>
@@ -211,19 +210,29 @@ public sealed partial class SettingsWindow : Window
         {
             DefaultBrowser.Register();
             DefaultBrowser.OpenSystemSettings();
-            DefaultBrowserText.Text = "In Settings, choose Set default for Drift";
+            ShowDefaultBrowserNote("Almost there: in Windows Settings, click Set default");
         }
         catch (Exception ex)
         {
-            DefaultBrowserText.Text = "Couldn't register Drift: " + ex.Message;
+            System.Diagnostics.Debug.WriteLine(ex);
+            ShowDefaultBrowserNote("We couldn't make Drift your default browser. Please try again.");
         }
     }
+
+    private void ShowDefaultBrowserNote(string note) => DefaultBrowserRow.Description = note;
 
     private void CloseTwiceToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading || CloseTwiceToggle.IsOn == Settings.Current.CloseTwice) return;
         var on = CloseTwiceToggle.IsOn;
         Settings.Update(s => s.CloseTwice = on);
+    }
+
+    private void SwitchToNewTabsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || SwitchToNewTabsToggle.IsOn == Settings.Current.SwitchToNewTabs) return;
+        var on = SwitchToNewTabsToggle.IsOn;
+        Settings.Update(s => s.SwitchToNewTabs = on);
     }
 
     private void LoadEssentialsToggle_Toggled(object sender, RoutedEventArgs e)
@@ -280,9 +289,7 @@ public sealed partial class SettingsWindow : Window
     private void ShowSignInRestart()
     {
         var pending = MainWindow.SignInRestartPending;
-        SignInText.Text = pending
-            ? $"Turns {(Settings.Current.MicrosoftSignIn ? "on" : "off")} when Drift restarts"
-            : "With your Windows account";
+        SignInRow.Description = pending ? $"Turns {(Settings.Current.MicrosoftSignIn ? "on" : "off")} when Drift restarts" : null;
         SignInRestartButton.Visibility = pending && App.Main is not null ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -320,10 +327,10 @@ public sealed partial class SettingsWindow : Window
 
     private void ShowAdBlockStatus()
     {
-        AdBlockText.Text = Extensions.AdBlockStatus
+        AdBlockRow.Description = Extensions.AdBlockStatus
             ?? (Extensions.Profile is null && Settings.Current.BlockAds
-                ? "With uBlock Origin Lite, once a page has opened"
-                : "With uBlock Origin Lite");
+                ? "Drift uses uBlock Origin Lite to block them. It starts once you open a page."
+                : "Drift uses uBlock Origin Lite to block them");
     }
 
     private void Extensions_Changed()
@@ -351,51 +358,50 @@ public sealed partial class SettingsWindow : Window
         ExtensionList.Children.Clear();
         if (extensions.Count == 0)
         {
-            var empty = new Grid { Style = (Style)Application.Current.Resources["SettingsRowStyle"] };
-            empty.Children.Add(new TextBlock
+            ExtensionList.Children.Add(new SettingsRow
             {
-                Text = Extensions.Profile is null ? "Open a page in Drift first" : "No extensions yet",
-                Style = (Style)Application.Current.Resources["SettingsDescriptionStyle"],
-                VerticalAlignment = VerticalAlignment.Center,
+                Description = Extensions.Profile is null ? "Open a page, and your extensions show up here" : "No extensions yet",
             });
-            ExtensionList.Children.Add(empty);
             return;
         }
 
         foreach (var extension in extensions.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
-        {
-            if (ExtensionList.Children.Count > 0)
-                ExtensionList.Children.Add(new Border { Style = (Style)Application.Current.Resources["SettingsDividerStyle"] });
             ExtensionList.Children.Add(ExtensionRow(extension));
-        }
     }
 
-    private Grid ExtensionRow(CoreWebView2BrowserExtension extension)
+    /// <summary>A row whose name is one line, cut short with an ellipsis (an extension, a site).</summary>
+    private static SettingsRow OneLineRow(string header, string description)
+    {
+        var row = new SettingsRow { Header = header, Description = description };
+        row.HeaderText.TextWrapping = TextWrapping.NoWrap;
+        row.HeaderText.TextTrimming = TextTrimming.CharacterEllipsis;
+        return row;
+    }
+
+    /// <summary>The control on the right of a row, and a 32-wide place after it for a small button (or nothing),
+    /// so every row's control lines up, button or not.</summary>
+    private static Grid WithSlot(FrameworkElement control, FrameworkElement? button)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+        grid.Children.Add(control);
+        if (button is not null)
+        {
+            Grid.SetColumn(button, 1);
+            grid.Children.Add(button);
+        }
+        return grid;
+    }
+
+    private SettingsRow ExtensionRow(CoreWebView2BrowserExtension extension)
     {
         var adBlock = Extensions.IsAdBlock(extension);
-        var row = new Grid { Style = (Style)Application.Current.Resources["SettingsRowStyle"] };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+        var row = OneLineRow(extension.Name, adBlock ? "Ad blocking (Settings › General)" : extension.Id);
+        row.DescriptionText.TextWrapping = TextWrapping.NoWrap;
+        row.DescriptionText.TextTrimming = TextTrimming.CharacterEllipsis;
 
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = extension.Name, TextTrimming = TextTrimming.CharacterEllipsis });
-        text.Children.Add(new TextBlock
-        {
-            Text = adBlock ? "Ad blocking (Settings › General)" : extension.Id,
-            Style = (Style)Application.Current.Resources["SettingsDescriptionStyle"],
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        row.Children.Add(text);
-
-        var toggle = new ToggleSwitch
-        {
-            IsOn = extension.IsEnabled,
-            OnContent = "",
-            OffContent = "",
-            MinWidth = 0,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
+        var toggle = new ToggleSwitch { IsOn = extension.IsEnabled, VerticalAlignment = VerticalAlignment.Center };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, $"Turn {extension.Name} on or off");
         toggle.Toggled += async (_, _) =>
         {
@@ -417,12 +423,10 @@ public sealed partial class SettingsWindow : Window
                 ShowExtensionsError(ex);
             }
         };
-        Grid.SetColumn(toggle, 1);
-        row.Children.Add(toggle);
-
+        Button? remove = null;
         if (!adBlock)
         {
-            var remove = new Button
+            remove = new Button
             {
                 Content = new FontIcon { Glyph = RemoveGlyph, FontSize = 12 },
                 Width = 32,
@@ -447,9 +451,8 @@ public sealed partial class SettingsWindow : Window
                     ShowExtensionsError(ex);
                 }
             };
-            Grid.SetColumn(remove, 2);
-            row.Children.Add(remove);
         }
+        row.Trailing = WithSlot(toggle, remove);
         return row;
     }
 
@@ -472,9 +475,14 @@ public sealed partial class SettingsWindow : Window
 
     private void ShowExtensionsError(Exception ex)
     {
-        ExtensionsError.Text = ex is System.IO.FileNotFoundException
-            ? "That folder has no manifest.json. Pick the extension's own folder, unzipped."
-            : "Couldn't do that: " + ex.Message;
+        System.Diagnostics.Debug.WriteLine(ex);
+        ExtensionsError.Text = ex switch
+        {
+            System.IO.FileNotFoundException => "We couldn't find an extension in that folder. Choose the unzipped extension's own folder.",
+            // Drift's own, already in words ("Open a page first, then add the extension.").
+            InvalidOperationException => ex.Message,
+            _ => "Something went wrong with that extension. Please try again.",
+        };
         ExtensionsError.Visibility = Visibility.Visible;
     }
 
@@ -503,7 +511,7 @@ public sealed partial class SettingsWindow : Window
         if (ClearPasswordsCheck.IsChecked == true) kinds |= CoreWebView2BrowsingDataKinds.PasswordAutosave | CoreWebView2BrowsingDataKinds.GeneralAutofill;
         if (kinds == 0)
         {
-            ClearDataText.Text = "Tick something to clear";
+            ClearDataText.Text = "Choose something to clear";
             return;
         }
         var ticked = new[] { ClearHistoryCheck, ClearCookiesCheck, ClearCacheCheck, ClearDownloadsCheck, ClearPasswordsCheck }
@@ -527,7 +535,7 @@ public sealed partial class SettingsWindow : Window
                 else await profile.ClearBrowsingDataAsync(kinds);
                 ClearDataText.Text = "Cleared";
             }
-            else ClearDataText.Text = profileKinds == 0 ? "Cleared" : "Cleared history. Open a page, then clear the rest.";
+            else ClearDataText.Text = profileKinds == 0 ? "Cleared" : "History cleared. Open a page, then clear again for the rest.";
             // The library's history list, if it's showing.
             App.Main?.HistoryChanged();
             if (_owner is { } owner && owner != App.Main) owner.HistoryChanged();
@@ -535,7 +543,8 @@ public sealed partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            ClearDataText.Text = "Couldn't clear it: " + ex.Message;
+            System.Diagnostics.Debug.WriteLine(ex);
+            ClearDataText.Text = "We couldn't clear that. Please try again.";
         }
         finally
         {
@@ -573,35 +582,18 @@ public sealed partial class SettingsWindow : Window
         PermissionList.Children.Clear();
         if (profile is null || settings.Count == 0)
         {
-            var empty = new Grid { Style = (Style)Application.Current.Resources["SettingsRowStyle"] };
-            empty.Children.Add(new TextBlock
+            PermissionList.Children.Add(new SettingsRow
             {
-                Text = profile is null ? "Open a page in Drift first" : "No site has been allowed or blocked anything yet",
-                Style = (Style)Application.Current.Resources["SettingsDescriptionStyle"],
-                VerticalAlignment = VerticalAlignment.Center,
+                Description = profile is null ? "Open a page, and these show up here" : "You haven't allowed or blocked anything for a site yet",
             });
-            PermissionList.Children.Add(empty);
             return;
         }
 
         foreach (var site in settings.GroupBy(s => s.PermissionOrigin.TrimEnd('/')).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            if (PermissionList.Children.Count > 0)
-                PermissionList.Children.Add(new Border { Style = (Style)Application.Current.Resources["SettingsDividerStyle"] });
-            var row = new Grid { Style = (Style)Application.Current.Resources["SettingsRowStyle"] };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             var host = Uri.TryCreate(site.Key, UriKind.Absolute, out var origin) ? origin.Host : site.Key;
-            text.Children.Add(new TextBlock { Text = host, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock
-            {
-                Text = string.Join(" · ", site.Select(s =>
-                    $"{MainWindow.PermissionName(s.PermissionKind)}: {(s.PermissionState == CoreWebView2PermissionState.Allow ? "allowed" : "blocked")}")),
-                Style = (Style)Application.Current.Resources["SettingsDescriptionStyle"],
-                TextWrapping = TextWrapping.Wrap,
-            });
-            row.Children.Add(text);
+            var row = OneLineRow(host, string.Join(" · ", site.Select(s =>
+                $"{MainWindow.PermissionName(s.PermissionKind)}: {(s.PermissionState == CoreWebView2PermissionState.Allow ? "allowed" : "blocked")}")));
 
             var reset = new Button
             {
@@ -626,12 +618,49 @@ public sealed partial class SettingsWindow : Window
                 catch { }
                 await ShowPermissionsAsync();
             };
-            Grid.SetColumn(reset, 1);
-            row.Children.Add(reset);
+            row.Trailing = reset;
             PermissionList.Children.Add(row);
         }
     }
 
+
+    // ───────────────────────── Previews ─────────────────────────
+
+    private static readonly (PreviewKind Kind, string App, string What)[] PreviewChoices =
+    [
+        (PreviewKind.Folders, "Folders", "The tabs inside"),
+        (PreviewKind.Gmail, "Gmail", "Unread emails"),
+        (PreviewKind.GoogleCalendar, "Google Calendar", "Today's events"),
+        (PreviewKind.OutlookMail, "Outlook", "Unread emails"),
+        (PreviewKind.OutlookCalendar, "Outlook Calendar", "Today's events"),
+    ];
+
+    /// <summary>
+    /// The previews, each a row: its name, what it shows — or, when something needs you, what (signed out,
+    /// couldn't reach it) — and its switch. Built afresh whenever General shows.
+    /// </summary>
+    private void ShowPreviews()
+    {
+        PreviewList.Children.Clear();
+        void Row(string label, string? note, bool on, Action<bool> set)
+        {
+            var toggle = new ToggleSwitch { IsOn = on };
+            toggle.Toggled += (_, _) => set(toggle.IsOn);
+            PreviewList.Children.Add(new SettingsRow { Header = label, Description = note, Trailing = toggle });
+        }
+        foreach (var (kind, app, what) in PreviewChoices)
+        {
+            var on = Settings.Current.Shows(kind);
+            Row(app, (on ? App.Main?.PreviewTrouble(kind) : null) ?? what, on, v => Settings.Update(s => s.Show(kind, v)));
+        }
+    }
+
+    private void RemindersToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || RemindersToggle.IsOn == Settings.Current.MeetingReminders) return;
+        var on = RemindersToggle.IsOn;
+        Settings.Update(s => s.MeetingReminders = on);
+    }
 
     // ───────────────────────── Tabs ─────────────────────────
 
@@ -677,25 +706,8 @@ public sealed partial class SettingsWindow : Window
         _rows.Clear();
         foreach (var action in Settings.Actions)
         {
-            // One card for all of them, a hairline between rows.
-            if (ShortcutList.Children.Count > 0)
-                ShortcutList.Children.Add(new Border { Style = (Style)Application.Current.Resources["SettingsDividerStyle"] });
-
-            var grid = new Grid { Style = (Style)Application.Current.Resources["SettingsRowStyle"] };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
-
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            text.Children.Add(new TextBlock { Text = action.Name });
-            var message = new TextBlock
-            {
-                Style = (Style)Application.Current.Resources["SettingsDescriptionStyle"],
-                Visibility = Visibility.Collapsed,
-            };
-            text.Children.Add(message);
-            Grid.SetColumn(text, 0);
-            grid.Children.Add(text);
+            // One card for all of them, a hairline between rows; a message (a clash) under its name.
+            var row = new SettingsRow { Header = action.Name };
 
             var button = new Button
             {
@@ -714,8 +726,6 @@ public sealed partial class SettingsWindow : Window
             // While recording, Space and Enter are keys to record, not clicks.
             button.PreviewKeyUp += (_, e) => { if (_recording is not null) e.Handled = true; };
             button.LostFocus += (_, _) => { if (_recording == action) StopRecording(); };
-            Grid.SetColumn(button, 1);
-            grid.Children.Add(button);
 
             var reset = new Button
             {
@@ -735,11 +745,10 @@ public sealed partial class SettingsWindow : Window
                 Settings.SetShortcut(action, null);
                 ShowShortcut(action);
             };
-            Grid.SetColumn(reset, 2);
-            grid.Children.Add(reset);
+            row.Trailing = WithSlot(button, reset);
 
-            ShortcutList.Children.Add(grid);
-            _rows[action.Id] = (button, message, reset);
+            ShortcutList.Children.Add(row);
+            _rows[action.Id] = (button, row, reset);
             ShowShortcut(action);
         }
     }
@@ -747,12 +756,11 @@ public sealed partial class SettingsWindow : Window
     /// <summary>The row at rest: its keys as keycaps, and the reset button if it's been changed.</summary>
     private void ShowShortcut(ShortcutAction action, string? message = null)
     {
-        var (button, text, reset) = _rows[action.Id];
+        var (button, row, reset) = _rows[action.Id];
         var shortcut = Settings.ShortcutFor(action);
         button.Content = Keycaps(shortcut.Parts());
         reset.Visibility = shortcut == action.Default ? Visibility.Collapsed : Visibility.Visible;
-        text.Text = message ?? "";
-        text.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+        row.Description = message;
         ResetAllButton.IsEnabled = Settings.Actions.Any(a => Settings.ShortcutFor(a) != a.Default);
     }
 
@@ -779,9 +787,9 @@ public sealed partial class SettingsWindow : Window
     {
         StopRecording();
         _recording = action;
-        var (button, text, _) = _rows[action.Id];
+        var (button, row, _) = _rows[action.Id];
         button.Content = new TextBlock { Text = "Press keys…", FontSize = 12 };
-        text.Visibility = Visibility.Collapsed;
+        row.Description = null;
         button.Focus(FocusState.Programmatic);
     }
 
@@ -796,7 +804,7 @@ public sealed partial class SettingsWindow : Window
     {
         if (_recording is not { } action) return;
         e.Handled = true;
-        var (button, text, _) = _rows[action.Id];
+        var (button, row, _) = _rows[action.Id];
 
         if (e.Key == VirtualKey.Escape)
         {
@@ -824,11 +832,7 @@ public sealed partial class SettingsWindow : Window
             return;
         }
 
-        void Explain(string why)
-        {
-            text.Text = why;
-            text.Visibility = Visibility.Visible;
-        }
+        void Explain(string why) => row.Description = why;
 
         if (Shortcut.KeyName(e.Key) is null)
         {
@@ -838,12 +842,12 @@ public sealed partial class SettingsWindow : Window
         var shortcut = new Shortcut(e.Key, ctrl, shift, alt);
         if (!ctrl && !alt && !shortcut.IsFunctionKey)
         {
-            Explain("Add Ctrl or Alt");
+            Explain("Shortcuts need Ctrl or Alt");
             return;
         }
         if (Reserved.Contains(shortcut))
         {
-            Explain($"{shortcut} is already used for editing and windows");
+            Explain($"{shortcut} is already used everywhere in Windows");
             return;
         }
         if (Settings.ActionFor(shortcut) is { } other && other != action)
@@ -877,7 +881,7 @@ public sealed partial class SettingsWindow : Window
         FillModels(ClaudeModelCombo, ClaudeModels, Settings.Current.ClaudeModel);
         FillModels(CodexModelCombo, CodexFallbackModels, Settings.Current.CodexModel);
         _loading = false;
-        ClaudeStatus.Text = CodexStatus.Text = "Checking…";
+        ClaudeRow.Description = CodexRow.Description = "Checking…";
         ClaudeAction.Visibility = CodexAction.Visibility = Visibility.Collapsed;
 
         var claude = AiReadinessCheck.CheckAsync(AiProvider.Claude);
@@ -896,8 +900,8 @@ public sealed partial class SettingsWindow : Window
     private void ShowReadiness(AiProvider provider, AiReadiness readiness)
     {
         AiReadinessCheck.Known[provider] = readiness;
-        var (status, action) = provider == AiProvider.Claude ? (ClaudeStatus, ClaudeAction) : (CodexStatus, CodexAction);
-        status.Text = readiness switch
+        var (row, action) = provider == AiProvider.Claude ? (ClaudeRow, ClaudeAction) : (CodexRow, CodexAction);
+        row.Description = readiness switch
         {
             AiReadiness.Ready => "Ready",
             AiReadiness.SignedOut => "Not signed in",

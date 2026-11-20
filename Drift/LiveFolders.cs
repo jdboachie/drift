@@ -32,6 +32,9 @@ public sealed partial class MainWindow
     private DispatcherQueueTimer? _liveTimer;
     private readonly LiveSchedule _liveSchedule = new();
     private bool _liveFetching;
+    // You asked for this one (Refresh, or the folder just made): its spinner shows while it's asked.
+    // The asks every minute or so happen quietly.
+    private bool _liveAskedFor;
     // Drift's window is the one in front: asked more often (LiveSchedule).
     private bool _liveInFront = true;
 
@@ -97,19 +100,23 @@ public sealed partial class MainWindow
         _pullsFolderMade = true;
         RefreshFolderRows();
         SaveSessionSoon();
+        _liveAskedFor = true;
         _liveSchedule.Now();
         StartLiveFolders();
         LiveTick();
         return folder;
     }
 
-    private void NewPullsFolder_Click(object sender, RoutedEventArgs e)
+    internal void NewPullsFolder_Click(object sender, RoutedEventArgs e)
     {
         if (!LiveFolders.Any()) NewPullsFolder();
     }
 
     private void LiveFolderRefresh_Click(object sender, RoutedEventArgs e)
     {
+        // Already being asked (quietly): that ask is the one you're waiting on, so it shows.
+        if (_liveFetching) foreach (var folder in LiveFolders) folder.IsFetching = true;
+        else _liveAskedFor = true;
         _liveSchedule.Now();
         LiveTick();
     }
@@ -194,15 +201,40 @@ public sealed partial class MainWindow
 
     // ---- Fetching ----
 
+    // However long GitHub takes, an ask ends within these: a hidden page's script can wait forever
+    // (its timers are throttled or frozen while hidden), and while one ask is out no other is made, not
+    // even by Refresh, so a stuck one stopped the folder for good.
+    private static readonly TimeSpan LiveOpenLimit = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan LiveAskLimit = TimeSpan.FromSeconds(60);
+
     private async Task FetchPullsAsync()
     {
         _liveFetching = true;
+        var why = new List<string>();
+        // A spinner on each live folder's header meanwhile, if you asked for it.
+        if (_liveAskedFor) foreach (var folder in LiveFolders) folder.IsFetching = true;
+        _liveAskedFor = false;
         try
         {
-            var core = await HiddenSiteAsync(GitHubPulls.Base);
-            var result = await SearchPullsAsync(core);
+            var core = await Deadline.Within<CoreWebView2?>(HiddenSiteAsync(GitHubPulls.Base), LiveOpenLimit, fallback: null);
+            if (core is null)
+            {
+                LiveLog("no answer: GitHub's page didn't open in time");
+                CloseHiddenSite(GitHubPulls.Host);
+                _liveSchedule.Fetched(DateTimeOffset.Now, answered: false, doubted: false);
+                return;
+            }
+            var ask = SearchPullsAsync(core, why);
+            var result = await Deadline.Within(ask, LiveAskLimit, fallback: null);
+            if (!ask.IsCompleted)
+            {
+                // Given up on: the page's thrown away, so the next ask starts afresh.
+                LiveLog($"no answer in {LiveAskLimit.TotalSeconds:0} s ({string.Join("; ", why)})");
+                CloseHiddenSite(GitHubPulls.Host);
+            }
             if (result is not { } found)
             {
+                if (ask.IsCompleted) LiveLog("no answer: " + string.Join("; ", why));
                 _liveSchedule.Fetched(DateTimeOffset.Now, answered: false, doubted: false);
                 return;
             }
@@ -214,16 +246,20 @@ public sealed partial class MainWindow
                 var live = folder.Live!;
                 live.Checked = DateTimeOffset.Now;
                 live.Repos = LiveFolder.Repos(found.Pulls);
-                if (LiveFolder.Believe(live, found.Pulls)) ApplyPulls(folder, LiveFolder.Shown(live, found.Pulls));
+                if (LiveFolder.Believe(live, found.Pulls, alreadyEmpty: folder.Children.Count == 0)) ApplyPulls(folder, LiveFolder.Shown(live, found.Pulls));
                 else doubted = true;
             }
             // Its note (signed out, or nothing in it) may have changed.
             RefreshFolderRows();
+            LiveLog(found.SignedIn
+                ? $"answered: {found.Pulls.Count} pull requests{(doubted ? ", none: asked again before it's believed" : "")}"
+                : "answered: signed out of GitHub");
             // An answer with nothing in it is asked again soon before it's believed.
             _liveSchedule.Fetched(DateTimeOffset.Now, answered: true, doubted);
         }
         catch (Exception error)
         {
+            LiveLog($"failed: {error.GetType().Name} ({string.Join("; ", why)})");
             App.LogCrash(error);
             _liveSchedule.Fetched(DateTimeOffset.Now, answered: false, doubted: false);
             CloseHiddenSite(GitHubPulls.Host);
@@ -231,6 +267,7 @@ public sealed partial class MainWindow
         finally
         {
             _liveFetching = false;
+            foreach (var folder in _folderTree.AllFolders) folder.IsFetching = false;
         }
     }
 
@@ -238,7 +275,8 @@ public sealed partial class MainWindow
     /// Every search's pull requests, together; whether GitHub knew you; null if any search failed,
     /// so a folder is never emptied by a search that didn't answer.
     /// </summary>
-    private async Task<(bool SignedIn, List<PullRequest> Pulls)?> SearchPullsAsync(CoreWebView2 core)
+    /// <param name="why">What happened, a line for each page asked, for the log (LiveLog).</param>
+    private async Task<(bool SignedIn, List<PullRequest> Pulls)?> SearchPullsAsync(CoreWebView2 core, List<string> why)
     {
         var lists = new List<List<PullRequest>>();
         // The searches its menu has on (one live folder at most: NewPullsFolder).
@@ -248,8 +286,17 @@ public sealed partial class MainWindow
             var list = new List<PullRequest>();
             for (var page = 1; page <= GitHubPulls.MaxPages; page++)
             {
-                var json = await SearchPageAsync(core, GitHubPulls.SearchPath(who, page));
-                if (json is null || GitHubPulls.Parse(json) is not { } search) return null;
+                var (json, status) = await SearchPageAsync(core, GitHubPulls.SearchPath(who, page));
+                if (json is null)
+                {
+                    why.Add($"{who} page {page}: {status}");
+                    return null;
+                }
+                if (GitHubPulls.Parse(json) is not { } search)
+                {
+                    why.Add($"{who} page {page}: not a search ({json.Length} characters)");
+                    return null;
+                }
                 if (!search.SignedIn) return (false, []);
                 list.AddRange(search.Items);
                 if (page >= search.Pages) break;
@@ -259,8 +306,8 @@ public sealed partial class MainWindow
         return (true, GitHubPulls.Merge(lists));
     }
 
-    /// <summary>A search page's JSON, or null if GitHub doesn't answer.</summary>
-    private static async Task<string?> SearchPageAsync(CoreWebView2 core, string path)
+    /// <summary>A search page's JSON, or null and what happened instead (an HTTP status, an error).</summary>
+    private static async Task<(string? Json, string Status)> SearchPageAsync(CoreWebView2 core, string path)
     {
         var script = $$"""
             (async () => {
@@ -268,12 +315,37 @@ public sealed partial class MainWindow
               setTimeout(() => stop.abort(), 15000);
               try {
                 const r = await fetch({{JsonSerializer.Serialize(path)}}, { headers: { Accept: 'application/json' }, credentials: 'include', signal: stop.signal });
-                return r.ok ? await r.text() : null;
-              } catch { return null; }
+                return { status: r.status, text: r.ok ? await r.text() : null };
+              } catch (e) { return { error: String((e && e.name) || e) }; }
             })()
             """;
         var reply = await EvaluateAsync(core, script, gesture: false);
-        return reply is { ValueKind: JsonValueKind.String } text ? text.GetString() : null;
+        if (reply is not { ValueKind: JsonValueKind.Object } answer) return (null, "no reply from the page");
+        if (answer.TryGetProperty("error", out var error)) return (null, "error " + error.GetString());
+        var status = answer.TryGetProperty("status", out var s) && s.TryGetInt32(out var code) ? code : 0;
+        return answer.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String
+            ? (text.GetString(), $"HTTP {status}")
+            : (null, $"HTTP {status}");
+    }
+
+    /// <summary>
+    /// How each ask went, in live.log beside the session (what, how many, an HTTP status; never what the
+    /// pull requests are), to tell why a folder isn't changing. Kept to its last couple of hundred lines.
+    /// </summary>
+    private static void LiveLog(string line)
+    {
+        try
+        {
+            var folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Drift");
+            var path = System.IO.Path.Combine(folder, "live.log");
+            System.IO.File.AppendAllText(path, $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} {line}{Environment.NewLine}");
+            if (new System.IO.FileInfo(path).Length > 64 * 1024)
+                System.IO.File.WriteAllLines(path, System.IO.File.ReadAllLines(path).TakeLast(200));
+        }
+        catch
+        {
+            // Nowhere to write it.
+        }
     }
 
     // ---- Keeping a folder to the list ----

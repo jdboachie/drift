@@ -75,11 +75,28 @@ public sealed class SessionFolder
 /// <summary>A split view: its two tabs (indices into SessionData.Tabs) and its row in the tab list.</summary>
 internal sealed class SessionSplit
 {
-    public int Left { get; set; }
-    public int Right { get; set; }
+    /// <summary>Its tabs, left to right (indices into SessionData.Tabs).</summary>
+    public List<int>? Pages { get; set; }
+    /// <summary>Each page's share of the width.</summary>
+    public List<double>? Shares { get; set; }
     public int Row { get; set; }
-    /// <summary>The left page's share of the width.</summary>
-    public double Ratio { get; set; } = 0.5;
+
+    // As saved before a split could have more than two pages: read, not written.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Left { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Right { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? Ratio { get; set; }
+
+    public int[] PageList() => Pages is { Count: > 0 } ? Pages.ToArray() : [Left ?? -1, Right ?? -1];
+
+    public double[]? ShareList()
+    {
+        if (Pages is { Count: > 0 }) return Shares?.ToArray();
+        var ratio = Ratio ?? 0.5;
+        return [ratio, 1 - ratio];
+    }
 }
 
 internal sealed class SessionData

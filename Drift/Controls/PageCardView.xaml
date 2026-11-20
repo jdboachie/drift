@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A page's card (PageCardView.xaml.cs): the face its view sits in and the shadow it casts, as Arc's pages have, so
+     the two move as one (Split.cs moves and resizes the card). One per place a page can be (Split.cs's panes); what's
+     inside is the window's. The shadow is a stand-in under the face: lifting the face itself puts the web content on a
+     layer that ignores the rounded corners. -->
+<UserControl
+    x:Class="Drift.PageCardView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <!-- Lifted by Lift (10 for a pane, more for Peek's card, which floats over the page). -->
+        <Border x:Name="Caster" x:FieldModifier="internal"
+                CornerRadius="6"
+                Background="{ThemeResource DriftPageBrush}"
+                Translation="0,0,10"
+                IsHitTestVisible="False">
+            <Border.Shadow>
+                <ThemeShadow />
+            </Border.Shadow>
+        </Border>
+        <!-- Its border in a style, so Peek (or a drag's accent, SplitHandles.cs) can set a local value and clear it
+             after, getting back a brush that still follows light and dark mode. -->
+        <Border x:Name="Face" x:FieldModifier="internal"
+                CornerRadius="6"
+                BorderThickness="1"
+                Background="{ThemeResource DriftPageBrush}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="{ThemeResource DriftPageBorderBrush}" />
+                </Style>
+            </Border.Style>
+        </Border>
+    </Grid>
+</UserControl>

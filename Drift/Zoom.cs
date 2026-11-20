@@ -42,17 +42,17 @@ public sealed partial class MainWindow
         var zoom = _active?.Zoom ?? 1;
         if (!PageZoom.IsZoomed(zoom))
         {
-            ZoomChip.Visibility = Visibility.Collapsed;
+            AddressBar.ZoomChip.Visibility = Visibility.Collapsed;
             return;
         }
         var label = PageZoom.Label(zoom);
-        ZoomChipText.Text = label;
-        ToolTipService.SetToolTip(ZoomChip, $"Zoom {label}: click to reset to 100%");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ZoomChip, $"Zoom {label}, reset to 100%");
-        ZoomChip.Visibility = Visibility.Visible;
+        AddressBar.ZoomChipText.Text = label;
+        ToolTipService.SetToolTip(AddressBar.ZoomChip, $"Zoom {label}: click to reset to 100%");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AddressBar.ZoomChip, $"Zoom {label}, reset to 100%");
+        AddressBar.ZoomChip.Visibility = Visibility.Visible;
     }
 
-    private void ZoomChip_Click(object sender, RoutedEventArgs e) => ResetZoom();
+    internal void ZoomChip_Click(object sender, RoutedEventArgs e) => ResetZoom();
 
     private const ushort Vk0 = 0x30, VkControl = 0x11, VkF = 0x46, VkPlus = 0xBB, VkMinus = 0xBD;
 

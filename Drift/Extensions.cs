@@ -148,7 +148,8 @@ internal static class Extensions
         }
         catch (Exception ex)
         {
-            SetStatus("Couldn't set up ad blocking: " + ex.Message);
+            System.Diagnostics.Debug.WriteLine(ex);
+            SetStatus("We couldn't set up ad blocking. Turn it off and on to try again.");
         }
         finally
         {

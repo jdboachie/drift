@@ -31,7 +31,7 @@ public sealed partial class MainWindow
     /// </summary>
     private void StartCaptionWatch()
     {
-        Spring.Jump(CaptionBar, "Translation", CaptionBarAway);
+        Spring.Jump(CaptionBar.Panel, "Translation", CaptionBarAway);
         _captionWatch = DispatcherQueue.CreateTimer();
         _captionWatch.Interval = TimeSpan.FromMilliseconds(25);
         _captionWatch.Tick += (_, _) => CaptionWatch_Tick();
@@ -41,7 +41,7 @@ public sealed partial class MainWindow
         _captionCollapse.IsRepeating = false;
         _captionCollapse.Tick += (_, _) =>
         {
-            if (!_captionReveal.Shown) CaptionBar.Visibility = Visibility.Collapsed;
+            if (!_captionReveal.Shown) CaptionBar.Panel.Visibility = Visibility.Collapsed;
         };
         Closed += (_, _) => _captionWatch.Stop();
     }
@@ -80,24 +80,24 @@ public sealed partial class MainWindow
     {
         _captionCollapse?.Stop();
         var maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
-        CaptionMaximizeGlyph.Glyph = maximized ? "" : "";
-        if (CaptionMaximizeGlyph.Parent is FrameworkElement button)
+        CaptionBar.MaximizeGlyph.Glyph = maximized ? "" : "";
+        if (CaptionBar.MaximizeGlyph.Parent is FrameworkElement button)
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, maximized ? "Restore" : "Maximize");
         if (!_uiSettings.AnimationsEnabled)
         {
             // Windows' animation effects are off: a fade where it stands, no slide.
-            Spring.Jump(CaptionBar, "Translation", CaptionBarHome);
-            if (CaptionBar.Visibility == Visibility.Collapsed) CaptionBar.Opacity = 0;
-            CaptionBar.Visibility = Visibility.Visible;
-            Ui.Fade(CaptionBar, 1);
+            Spring.Jump(CaptionBar.Panel, "Translation", CaptionBarHome);
+            if (CaptionBar.Panel.Visibility == Visibility.Collapsed) CaptionBar.Panel.Opacity = 0;
+            CaptionBar.Panel.Visibility = Visibility.Visible;
+            Ui.Fade(CaptionBar.Panel, 1);
         }
-        else if (CaptionBar.Visibility == Visibility.Collapsed)
+        else if (CaptionBar.Panel.Visibility == Visibility.Collapsed)
         {
-            CaptionBar.Visibility = Visibility.Visible;
-            Spring.To(CaptionBar, "Translation", CaptionBarHome, duration: 0.25, bounce: 0, from: CaptionBarAway, kick: 0.5);
+            CaptionBar.Panel.Visibility = Visibility.Visible;
+            Spring.To(CaptionBar.Panel, "Translation", CaptionBarHome, duration: 0.25, bounce: 0, from: CaptionBarAway, kick: 0.5);
         }
         // Back while it was still going: the same spring turns round from wherever it got to.
-        else Spring.To(CaptionBar, "Translation", CaptionBarHome, duration: 0.25, bounce: 0);
+        else Spring.To(CaptionBar.Panel, "Translation", CaptionBarHome, duration: 0.25, bounce: 0);
         UpdateDragRegions();
     }
 
@@ -107,16 +107,16 @@ public sealed partial class MainWindow
         UpdateDragRegions();
         if (!_uiSettings.AnimationsEnabled)
         {
-            Ui.Fade(CaptionBar, 0, () =>
+            Ui.Fade(CaptionBar.Panel, 0, () =>
             {
                 if (_captionReveal.Shown) return;
-                CaptionBar.Visibility = Visibility.Collapsed;
-                CaptionBar.Opacity = 1;
-                Spring.Jump(CaptionBar, "Translation", CaptionBarAway);
+                CaptionBar.Panel.Visibility = Visibility.Collapsed;
+                CaptionBar.Panel.Opacity = 1;
+                Spring.Jump(CaptionBar.Panel, "Translation", CaptionBarAway);
             });
             return;
         }
-        Spring.To(CaptionBar, "Translation", CaptionBarAway, duration: 0.2, bounce: 0);
+        Spring.To(CaptionBar.Panel, "Translation", CaptionBarAway, duration: 0.2, bounce: 0);
         _captionCollapse?.Start();
     }
 

@@ -26,7 +26,7 @@ namespace Drift;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private void TabMenu_Opening(object? sender, object e)
+    internal void TabMenu_Opening(object? sender, object e)
     {
         if (sender is not MenuFlyout menu) return;
         menu.Items.Clear();
@@ -62,7 +62,7 @@ public sealed partial class MainWindow
             ]) : null,
         ],
         [
-            _active is { } current && CanSplit(current, tab) ? Command("Split with current tab", () => SplitWithCurrent(tab)) : null,
+            _active is { } current && CanGoBeside(current, tab) ? Command("Split with current tab", () => SplitWithCurrent(tab)) : null,
             link is null ? null : Command("Duplicate", () => _ = DuplicateTabAsync(tab)),
             loaded ? Command("Reload", () => tab.View.Reload()) : null,
             BookmarkItem(tab),
@@ -132,13 +132,13 @@ public sealed partial class MainWindow
     {
         FillMenu(menu,
         [
-            LinkOf(split.Left) is not null && LinkOf(split.Right) is not null
+            split.Pages.All(p => LinkOf(p) is not null)
                 ? Command("Duplicate split", () => _ = DuplicateSplitAsync(split)) : null,
-            Command("Separate tabs", () => SeparateFromMenu(split)),
+            Command("Separate tabs", () => SeparateAnimated(split)),
         ],
-        [HalfSubmenu(split.Left), HalfSubmenu(split.Right)],
+        split.Pages.Select(HalfSubmenu).ToArray(),
         [
-            Command("Close both tabs", () => _ = CloseSplitFromMenuAsync(split)),
+            Command(split.Count == 2 ? "Close both tabs" : $"Close all {split.Count} tabs", () => _ = CloseSplitFromMenuAsync(split)),
             split.Row is { } row ? CloseTabsSubmenu(row) : null,
         ]);
     }
@@ -161,17 +161,9 @@ public sealed partial class MainWindow
 
     private static string Shorten(string text, int max) => text.Length <= max ? text : text[..(max - 1)].TrimEnd() + "…";
 
-    private void SeparateFromMenu(TabSplit split)
-    {
-        var rightShown = split == _shownSplit && _active == split.Right;
-        var rightStart = LeftPaneColumn.ActualWidth + SplitGap;
-        SeparateTabs(split);
-        if (rightShown) AnimateSeparate(rightStart);
-    }
-
     private async Task CloseSplitFromMenuAsync(TabSplit split)
     {
-        if (!await MayLeaveAsync(new[] { split.Left, split.Right }.Where(p => !p.IsPinned))) return;
+        if (!await MayLeaveAsync(split.Pages.Where(p => !p.IsPinned).ToList())) return;
         if (split.Row is not null) CloseSplit(split);
     }
 
@@ -179,12 +171,7 @@ public sealed partial class MainWindow
     {
         if (!page.IsPinned && !await MayLeaveAsync([page])) return;
         if (page.Split is not { } split) return;
-        if (page.IsPinned)
-        {
-            var other = split.Other(page);
-            SeparateTabs(split);
-            if (_active == page) Activate(other);
-        }
+        if (page.IsPinned) TakeOutOfSplit(page, next: _active == page ? split.Beside(page) : null);
         else RemoveTab(page);
     }
 
@@ -213,7 +200,7 @@ public sealed partial class MainWindow
     {
         static string? Key(string? url) => string.IsNullOrEmpty(url) || url == "about:blank" ? null : Normalize(url);
         var kept = EssentialTabs.Concat(FolderTabs).Concat(PinnedTabs.SelectMany(RegularTabsOf))
-            .Concat(Tabs.Where(r => r.IsSplitRow).SelectMany(r => r.Split is { } s ? [s.Left, s.Right] : Array.Empty<BrowserTab>()))
+            .Concat(Tabs.Where(r => r.IsSplitRow).SelectMany(r => r.Split?.Pages ?? Array.Empty<BrowserTab>()))
             .Select(t => Key(t.Url)).OfType<string>().ToList();
         var rows = Tabs.Select(r => r.IsSplitRow ? null : Key(r.Url)).ToList();
         int? front = _active is { } active && Tabs.IndexOf(active) is >= 0 and var at ? at : null;
@@ -304,40 +291,38 @@ public sealed partial class MainWindow
         await CreateTabAsync(uri, TabPlace.Regular, activate: true, title: tab.PageTitle, index: index, name: tab.Name, icon: tab.Icon);
     }
 
-    /// <summary>Both pages again, as a new split beneath it.</summary>
+    /// <summary>All its pages again, as a new split beneath it, with the same widths.</summary>
     private async Task DuplicateSplitAsync(TabSplit split)
     {
-        if (LinkOf(split.Left) is not { } a || LinkOf(split.Right) is not { } b
-            || !Uri.TryCreate(a, UriKind.Absolute, out var left) || !Uri.TryCreate(b, UriKind.Absolute, out var right)) return;
+        var pages = split.Pages.ToList();
+        var shares = split.Shares.ToArray();
+        var links = pages.Select(p => LinkOf(p) is { } link && Uri.TryCreate(link, UriKind.Absolute, out var uri) ? uri : null).ToList();
+        if (links.Any(l => l is null)) return;
         var index = split.Row is { } row ? Tabs.IndexOf(row) + 1 : Tabs.Count;
-        var newLeft = await CreateTabAsync(left, TabPlace.Regular, activate: false, title: split.Left.PageTitle, index: index, name: split.Left.Name, icon: split.Left.Icon);
-        var newRight = await CreateTabAsync(right, TabPlace.Regular, activate: false, title: split.Right.PageTitle, index: index + 1, name: split.Right.Name, icon: split.Right.Icon);
-        SplitTabs(newLeft, newRight, split.Ratio, front: newLeft);
+        var copies = new List<BrowserTab>();
+        for (var i = 0; i < pages.Count; i++)
+            copies.Add(await CreateTabAsync(links[i]!, TabPlace.Regular, activate: false, title: pages[i].PageTitle, index: index + i, name: pages[i].Name, icon: pages[i].Icon));
+        SplitTabs(copies, shares, front: copies[0]);
     }
 
-    /// <summary>The page's right-click menu: the link opens in a new tab, beside this one.</summary>
+    /// <summary>The page's right-click menu: the link opens in a new tab, to the right of this one.</summary>
     private async Task OpenLinkInSplitAsync(Uri link, BrowserTab tab)
     {
-        if (tab.Split is not null)
+        if (tab.Split is { IsFull: true })
         {
             OpenInNewTab(link);
             return;
         }
-        var width = PageColumns.ActualWidth;
         var index = RowOf(tab) is { } row ? Tabs.IndexOf(row) + 1 : 0;
         var page = await CreateTabAsync(link, TabPlace.Regular, activate: false, index: index);
-        if (!CanSplit(tab, page)) return;
-        SplitTabs(tab, page, front: tab);
-        AnimateSplitIn(SplitSide.Right, width, page);
+        PutBeside(tab, page, front: tab);
     }
 
+    /// <summary>The tab settles in to the right of the one you're on, as if dropped there.</summary>
     private void SplitWithCurrent(BrowserTab tab)
     {
-        if (_active is not { } current || !CanSplit(current, tab)) return;
-        var width = PageColumns.ActualWidth;
-        SplitTabs(current, tab, front: current);
-        // The new page settles in on the right, as if dropped there.
-        AnimateSplitIn(SplitSide.Right, width, tab);
+        if (_active is not { } current) return;
+        PutBeside(current, tab, front: current);
     }
 
     // ── Rename…, Change icon… ──
@@ -393,7 +378,7 @@ public sealed partial class MainWindow
         SaveSessionSoon();
     }
 
-    private void TabName_KeyDown(object sender, KeyRoutedEventArgs e)
+    internal void TabName_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (sender is not TextBox { Tag: BrowserTab tab } box) return;
         if (e.Key == VirtualKey.Enter) EndTabRename(tab, box.Text);
@@ -403,7 +388,7 @@ public sealed partial class MainWindow
         _active?.View.Focus(FocusState.Programmatic);
     }
 
-    private void TabName_LostFocus(object sender, RoutedEventArgs e)
+    internal void TabName_LostFocus(object sender, RoutedEventArgs e)
     {
         if (sender is TextBox { Tag: BrowserTab tab } box) EndTabRename(tab, box.Text);
     }

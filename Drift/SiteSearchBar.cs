@@ -69,15 +69,15 @@ public sealed partial class MainWindow
     {
         _siteSearch = site;
         _completion = null;
-        SiteChipText.Text = site.Name;
-        SiteChip.Visibility = Visibility.Visible;
-        CommandBox.PlaceholderText = $"Search {site.Name}";
+        CommandLayer.SiteChipText.Text = site.Name;
+        CommandLayer.SiteChip.Visibility = Visibility.Visible;
+        CommandLayer.Box.PlaceholderText = $"Search {site.Name}";
         SetCommandText(query);
         _typed = query;
-        CommandBox.Select(query.Length, 0);
+        CommandLayer.Box.Select(query.Length, 0);
         ShowSiteIcon(site);
         UpdateCommandResults();
-        CommandBox.Focus(FocusState.Keyboard);
+        CommandLayer.Box.Focus(FocusState.Keyboard);
     }
 
     /// <summary>Back to searching as usual.</summary>
@@ -85,10 +85,10 @@ public sealed partial class MainWindow
     {
         if (_siteSearch is null) return;
         _siteSearch = null;
-        SiteChip.Visibility = Visibility.Collapsed;
-        CommandBox.PlaceholderText = "Search or Enter URL...";
-        CommandFavicon.Visibility = Visibility.Collapsed;
-        CommandGlyph.Visibility = Visibility.Visible;
+        CommandLayer.SiteChip.Visibility = Visibility.Collapsed;
+        CommandLayer.Box.PlaceholderText = "Search or Enter URL...";
+        CommandLayer.Favicon.Visibility = Visibility.Collapsed;
+        CommandLayer.Glyph.Visibility = Visibility.Visible;
     }
 
     /// <summary>
@@ -110,9 +110,9 @@ public sealed partial class MainWindow
     {
         if (await SiteSearchIconAsync(site) is { } icon && _siteSearch == site)
         {
-            CommandFavicon.Source = icon;
-            CommandFavicon.Visibility = Visibility.Visible;
-            CommandGlyph.Visibility = Visibility.Collapsed;
+            CommandLayer.Favicon.Source = icon;
+            CommandLayer.Favicon.Visibility = Visibility.Visible;
+            CommandLayer.Glyph.Visibility = Visibility.Collapsed;
         }
     }
 }

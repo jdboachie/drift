@@ -176,7 +176,7 @@ Same split as Arc: an unmodified engine with your own UI on top.
   removing an extension; resetting every shortcut. A deleted bookmark or folder, and Clear Tabs,
   aren't asked about: Undo shows for a moment instead, as in Chrome. Otherwise closing Drift takes a
   second click of × (or Alt+F4) soon after the first, as Arc's "warn before quitting" does; it can
-  be turned off in Settings › Tabs.
+  be turned off in Settings › Tabs › Warn before closing Drift.
 - Everything is kept on this machine, in `%LOCALAPPDATA%\Drift`: the web profile (logins, cookies,
   site data, saved passwords) in `Profile`, plus `session.json`, `settings.json`, `history.json`,
   `downloads.json`, site icons, and `Extensions` (the downloaded ad blocker).
@@ -202,19 +202,25 @@ Same split as Arc: an unmodified engine with your own UI on top.
   There's one Peek at a time: opening one from another tab closes the one left behind.
   The sidebar stays usable while Peek is open. The card's buttons follow the system's
   light/dark theme and accent colour.
-- Split view, like Arc's: two tabs side by side, each its own card. Drag a tab onto the page: the
+- Split view, like Arc's and Zen's: two to four tabs side by side, each its own card. Drag a tab onto the page: the
   page there makes room, moving to the other half as you drag, and the tab follows the pointer as a
   card of its page; let go on the empty half. Drag the tab you're on, and the tab you were on before
   takes its place and makes room for it; with no tab before it, the page makes room and, dropped,
   the command bar opens for a page to go in the empty half. Or right-click a tab for Split with current tab. Any
-  tabs can be split, Essentials and pinned tabs too. Drag the divider (by its grip, which turns the
-  accent colour while held) to share the width; double-click it for half and half. In the sidebar a
-  split is a row of its own in the tab list, with both pages as pills, the one you're on brighter;
-  click a pill, or into a page, to go to it. Essentials, pinned and folder tabs keep their own
-  places too. Each pill has its own × on hover: a regular tab closes, any other just leaves the
-  split; the other page stays on its own. The row's menu has Separate tabs and Close tabs; Ctrl+W
-  closes just the page you're on. Moving either tab elsewhere separates them. Splits are saved with
-  the session.
+  tabs can be split, Essentials and pinned tabs too. With fewer than four pages, a tab dragged onto
+  the left or right half of a split joins it at that end (the pages make room as you drag, as in
+  Zen), and Add split view (a page's buttons, the command bar), Split with current tab and Open link
+  in split view put the new page to the right of the one you're on, each page giving up some of its
+  width. Drag a divider (by its grip, which turns the accent colour while held) to share the width
+  of the two pages beside it; double-click it for half and half. Drag a page by its dots to move it
+  among the others; with more than two, its buttons have Move left and Move right in place of Swap.
+  In the sidebar a split is a row of its own in the tab list, with all its pages as pills (just
+  their icons when there isn't room for titles), the one you're on brighter; click a pill, or into
+  a page, to go to it. Essentials, pinned and folder tabs keep their own places too. Each pill has
+  its own × on hover: a regular tab closes, any other just leaves the split; the others stay
+  together (one left is a tab of its own again). Show alone takes a page out the same way. The
+  row's menu has Separate tabs and Close tabs; Ctrl+W closes just the page you're on. Moving a tab
+  elsewhere takes it out of the split. Splits are saved with the session, widths and all.
 - Zoom: Ctrl+plus, Ctrl+minus and Ctrl+0 on a page, and Ctrl+wheel (Chromium's own zoom). While
   the page in front isn't at 100%, its level shows at the end of the address pill; click it to go
   back to 100%.
@@ -265,7 +271,9 @@ Under `Drift/`:
 
 | File | What it does |
 |---|---|
-| `MainWindow.xaml` | Layout: sidebar, page area, Peek overlay |
+| `MainWindow.xaml` | Layout: sidebar, page area, Peek overlay; its regions are views of their own (`Views/`) |
+| `Views/` | The window's regions: caption bar, toolbar, address bar, command bar, switcher, Library, downloads peek, mini player, meeting notice, crash card, drag ghosts |
+| `Controls/` | Reusable pieces: a tab's row, an Essential's tile, a folder's header, a page's card, handle and divider, settings rows and groups, toasts, hover cards |
 | `MainWindow.xaml.cs` | Tabs, address bar, shortcuts, the Peek interception, drag regions |
 | `Models/BrowserTab.cs` | One tab: its WebView2, title, favicon, pinned state, Peek badge |
 | `Models/TabFolder.cs` | One folder: its name, what's in it, whether it's open |
@@ -273,7 +281,7 @@ Under `Drift/`:
 | `Confirm.cs` | Asking before what can't be undone (closing with downloads running, unsaved changes, clearing data…), and Undo for what can (Core/Warnings.cs words the questions) |
 | `LiveFolders.cs` | Live folders: asking GitHub for your pull requests and keeping the folder to them (Core/GitHubPulls.cs reads the search, Core/LiveFolder.cs works out the changes) |
 | `FolderRowTemplateSelector.cs` | Picks a folder header or a tab row for each row of the folder list |
-| `App.xaml` | Colours (light and dark), button styles, tile and tab-row templates |
+| `App.xaml`, `Styles/` | Colours (light and dark, `Styles/Colors.xaml`), text, buttons, settings, the sidebar's rows, floating surfaces |
 | `PopupWindow.cs` | Pages' own popups (sign-in windows), kept linked to the page that opened them |
 | `CommandBar.cs` | The command bar: suggestions, inline completion, keyboard handling |
 | `CommandActions.cs` | The command bar's commands (matched with Core/CommandMatch.cs), and what they do |
@@ -300,7 +308,7 @@ Under `Drift/`:
 | `SiteAdBlock.cs` | The site settings panel's ad blocking switch, and the hidden view on uBlock Origin Lite's dashboard that changes a site's filtering level |
 | `Zoom.cs` | The address pill's zoom level, and resetting it |
 | `MicrosoftSignIn.cs` | Signing in to Microsoft sites with the Windows account: the first-run card, noticing the first time (Core/MicrosoftSignIn.cs), another account, signing out, restarting, the Windows account's details |
-| `Split.cs` | Split view: putting two tabs side by side and back, the divider, dropping a tab on the page |
+| `Split.cs` | Split view: putting two to four tabs side by side and back, the dividers, dropping a tab on the page |
 | `Slides.cs`, `RowDrag.cs` | Rows sliding to their new places, and while a tab's dragged |
 | `Core/` | What can be tested without the UI (folders, slides, drag landings, the library's spring and swipe, history search, which video floats, how an opened Peek grows, the zoom level from a page's pixel ratio); tests in `Drift.Tests` |
 

@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The address pill (AddressBar.cs): the page's address, its badges (zoom, private, copy link), and the site's info and settings. -->
+<UserControl
+    x:Class="Drift.AddressBarView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift"
+    xmlns:models="using:Drift.Models">
+
+    <Grid>
+    <Button x:Name="Pill" x:FieldModifier="internal"
+            Height="36"
+            Padding="10,0"
+            CornerRadius="8"
+            BorderThickness="0"
+            HorizontalAlignment="Stretch"
+            HorizontalContentAlignment="Left"
+            AutomationProperties.Name="Address"
+            Click="{x:Bind Owner.AddressPill_Click}">
+        <Button.ContextFlyout>
+            <MenuFlyout Opening="{x:Bind Owner.AddressMenu_Opening}" Opened="{x:Bind Owner.SidebarMenu_Opened}" Closed="{x:Bind Owner.SidebarMenu_Closed}">
+                <MenuFlyoutItem x:Name="CopyItem" x:FieldModifier="internal" Text="Copy link" Click="{x:Bind Owner.AddressCopy_Click}" />
+                <MenuFlyoutItem x:Name="ShareItem" x:FieldModifier="internal" Text="Share…" Click="{x:Bind Owner.AddressShare_Click}" />
+            </MenuFlyout>
+        </Button.ContextFlyout>
+        <!-- The pill and pill-hover colours from Styles/Colors.xaml (DriftPillBrush, DriftPillHoverBrush), repeated
+             as plain brushes per theme: aliases to those keys aren't picked up by the button's template. -->
+        <Button.Resources>
+            <ResourceDictionary>
+                <ResourceDictionary.ThemeDictionaries>
+                    <ResourceDictionary x:Key="Light">
+                        <SolidColorBrush x:Key="ButtonBackground" Color="#14000000" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#1C000000" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#1C000000" />
+                        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+                    </ResourceDictionary>
+                    <ResourceDictionary x:Key="Dark">
+                        <SolidColorBrush x:Key="ButtonBackground" Color="#1AFFFFFF" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#24FFFFFF" />
+                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#24FFFFFF" />
+                        <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+                    </ResourceDictionary>
+                </ResourceDictionary.ThemeDictionaries>
+            </ResourceDictionary>
+        </Button.Resources>
+        <TextBlock x:Name="Text" x:FieldModifier="internal" FontSize="13" TextTrimming="CharacterEllipsis" />
+    </Button>
+    <!-- At the pill's end: the page's zoom, when it isn't 100% (ShowZoomChip), which resets it when
+         clicked; in a private window, a badge saying so, which lets clicks through to the pill; and,
+         like Arc's, copy link and site settings. -->
+    <StackPanel x:Name="PillBadges" x:FieldModifier="internal"
+                Orientation="Horizontal"
+                Spacing="6"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                Margin="0,0,5,0"
+                SizeChanged="{x:Bind Owner.PillBadges_SizeChanged}">
+        <Button x:Name="ZoomChip" x:FieldModifier="internal"
+                Style="{StaticResource SubtleButtonStyle}"
+                Visibility="Collapsed"
+                VerticalAlignment="Center"
+                Height="26" MinHeight="0" MinWidth="0"
+                Padding="6,0"
+                Click="{x:Bind Owner.ZoomChip_Click}">
+            <TextBlock x:Name="ZoomChipText" x:FieldModifier="internal" FontSize="12" Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+        </Button>
+        <Border x:Name="PrivateBadge" x:FieldModifier="internal"
+                Visibility="Collapsed"
+                IsHitTestVisible="False"
+                VerticalAlignment="Center"
+                Padding="8,2,8,3"
+                CornerRadius="10"
+                Background="{ThemeResource DriftPrivateBadgeBrush}">
+            <TextBlock Text="Private" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource DriftPrivateBadgeTextBrush}" />
+        </Border>
+        <!-- Copy link and site settings (whether it's secure, permissions, site data), Arc-style: only
+             there while the pointer is in the sidebar (ShowSiteSettingsButton); otherwise they take no room. -->
+        <Button x:Name="CopyLinkButton" x:FieldModifier="internal"
+                Width="26" Height="26"
+                VerticalAlignment="Center"
+                Style="{StaticResource IconButtonStyle}"
+                Visibility="Collapsed"
+                Opacity="0"
+                ToolTipService.ToolTip="Copy link"
+                AutomationProperties.Name="Copy link"
+                Click="{x:Bind Owner.CopyLink_Click}">
+            <Button.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Button.OpacityTransition>
+            <FontIcon x:Name="CopyLinkGlyph" x:FieldModifier="internal" Glyph="&#xE71B;" FontSize="13" />
+        </Button>
+        <Button x:Name="SiteInfoButton" x:FieldModifier="internal"
+                Width="26" Height="26"
+                VerticalAlignment="Center"
+                Style="{StaticResource IconButtonStyle}"
+                Visibility="Collapsed"
+                Opacity="0"
+                ToolTipService.ToolTip="Site settings"
+                AutomationProperties.Name="Site settings"
+                GotFocus="{x:Bind Owner.SiteInfoButton_FocusChanged}"
+                LostFocus="{x:Bind Owner.SiteInfoButton_FocusChanged}">
+            <Button.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Button.OpacityTransition>
+            <FontIcon Glyph="&#xE9E9;" FontSize="13" />
+        <Button.Flyout>
+            <Flyout x:Name="SiteInfoFlyout" x:FieldModifier="internal" Placement="BottomEdgeAlignedRight"
+                    Opening="{x:Bind Owner.SiteInfo_Opening}" Opened="{x:Bind Owner.SiteInfo_Opened}" Closed="{x:Bind Owner.SiteInfo_Closed}">
+                <StackPanel Width="300" Spacing="12">
+                    <!-- The site, after a padlock (or a warning), with what that means under its name. -->
+                    <Grid ColumnSpacing="8" RowSpacing="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <FontIcon x:Name="SiteInfoSecureGlyph" x:FieldModifier="internal" Glyph="&#xE72E;" FontSize="13" VerticalAlignment="Center" />
+                        <TextBlock x:Name="SiteInfoHost" x:FieldModifier="internal" Grid.Column="1" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="SiteInfoSecureText" x:FieldModifier="internal" Grid.Column="1" Grid.Row="1" FontSize="13" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                    </Grid>
+                    <!-- Ad blocking for this site (SiteAdBlock.cs): some sites break with it on. Shown once
+                         the ad blocker says how the site stands; not at all without one. -->
+                    <Grid x:Name="SiteAdBlockRow" x:FieldModifier="internal" Visibility="Collapsed" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Ad blocking" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <ToggleSwitch x:Name="SiteAdBlockSwitch" x:FieldModifier="internal" Grid.Column="1"
+                                      OnContent="" OffContent="" MinWidth="0" Margin="0,0,-12,0"
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.Name="Ad blocking on this site"
+                                      Toggled="{x:Bind Owner.SiteAdBlock_Toggled}" />
+                    </Grid>
+                    <Border Height="1" Background="{ThemeResource DriftDividerBrush}" />
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Permissions" FontSize="13" FontWeight="SemiBold" />
+                        <StackPanel x:Name="SitePermissionList" x:FieldModifier="internal" Spacing="6" />
+                    </StackPanel>
+                    <Border Height="1" Background="{ThemeResource DriftDividerBrush}" />
+                    <StackPanel Spacing="6">
+                        <Button x:Name="ClearSiteDataButton" x:FieldModifier="internal" Content="Clear cookies and site data" Click="{x:Bind Owner.ClearSiteData_Click}" />
+                        <TextBlock x:Name="SiteDataText" x:FieldModifier="internal" FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource DriftSecondaryTextBrush}"
+                                   Text="Signs you out of this site and clears what it has stored" />
+                    </StackPanel>
+                </StackPanel>
+            </Flyout>
+        </Button.Flyout>
+        </Button>
+    </StackPanel>
+    <!-- At the pill's start, like Arc's: a padlock on secure pages, a warning on others. Its tooltip
+         says which; clicking it opens site settings. -->
+    <Button x:Name="SiteSecurityButton" x:FieldModifier="internal"
+            Width="26" Height="26"
+            Margin="5,0,0,0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Center"
+            Style="{StaticResource IconButtonStyle}"
+            Visibility="Collapsed"
+            Click="{x:Bind Owner.SiteSecurity_Click}">
+        <FontIcon x:Name="SiteSecurityGlyph" x:FieldModifier="internal" Glyph="&#xE72E;" FontSize="12" />
+    </Button>
+    </Grid>
+</UserControl>

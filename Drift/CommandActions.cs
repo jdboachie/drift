@@ -82,6 +82,7 @@ public sealed partial class MainWindow
         // ── Split view ──
         if (tab is { Split: { } split })
         {
+            if (!split.IsFull) yield return new("Add Split View", "", () => OpenSplitCommandBar(tab), Keywords: ["side", "beside", "new", "right"]);
             yield return new("Separate Tabs", "", () => SeparateTabs(split), Keywords: ["remove", "split", "view", "unsplit"]);
             yield return new("Expand Split", "", () => ExpandSplit(split, tab), Keywords: ["only", "current"]);
         }
@@ -243,29 +244,33 @@ public sealed partial class MainWindow
         OpenCommandBar(newTab: true, animate: false);
         _commandSplitWith = with;
         _commandSplitSide = side;
-        CommandBox.PlaceholderText = "Open beside this tab…";
+        CommandLayer.Box.PlaceholderText = "Open beside this tab…";
         UpdateCommandResults();
     }
 
     private SplitSide _commandSplitSide = SplitSide.Right;
 
-    /// <summary>A page opened from "Add Split View" goes beside the tab it was for (_commandSplitSide).</summary>
+    /// <summary>
+    /// A page opened from "Add Split View" goes beside the tab it was for: where the tab you're on was
+    /// dropped (_commandSplitSide), or to its right, in its split if it's in one.
+    /// </summary>
     private void SplitBeside(BrowserTab with, BrowserTab tab)
     {
         _splitComing = false;
-        if (!AllTabs.Contains(with) || !CanSplit(with, tab))
+        if (!AllTabs.Contains(with) || !CanGoBeside(with, tab))
         {
             ReleaseDropRoom();
             Activate(tab);
             return;
         }
-        var width = PageColumns.ActualWidth;
-        var side = _commandSplitSide;
         // Room was left for it, where the tab you're on was dropped: the split takes over from there.
         TakeDropRoom();
-        if (side == SplitSide.Left) SplitTabs(tab, with, front: tab);
-        else SplitTabs(with, tab, front: tab);
-        AnimateSplitIn(side, width, tab);
+        if (with.Split is null && _commandSplitSide == SplitSide.Left)
+        {
+            SplitTabs(tab, with, front: tab);
+            AnimateSplitIn(tab);
+        }
+        else PutBeside(with, tab, front: tab);
     }
 
     private static async Task SavePageAsync(CoreWebView2 core)

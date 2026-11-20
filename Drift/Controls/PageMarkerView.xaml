@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What marks a page of a split (PageMarkerView.xaml.cs): on the page you're on, its border a step stronger (Ring)
+     and a little tab on its top edge (Button), half in the gap above the page: click it for what you can do with the
+     page, drag it to move the page (SplitHandles.cs). Nothing else in it takes the pointer. -->
+<UserControl
+    x:Class="Drift.PageMarkerView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
+
+    <Grid>
+        <Border x:Name="Ring" x:FieldModifier="internal"
+                CornerRadius="6"
+                BorderThickness="1"
+                IsHitTestVisible="False"
+                Opacity="0">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="{ThemeResource DriftFocusedPageBorderBrush}" />
+                </Style>
+            </Border.Style>
+            <Border.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Border.OpacityTransition>
+        </Border>
+        <local:PageHandleButton x:Name="Button" x:FieldModifier="internal"
+                Style="{StaticResource PageHandleStyle}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,-12,0,0"
+                Visibility="Collapsed"
+                Click="Button_Click">
+            <Button.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.15" />
+            </Button.OpacityTransition>
+            <Grid>
+                <Border x:Name="Tab" x:FieldModifier="internal"
+                        Width="40"
+                        Height="14"
+                        CornerRadius="7"
+                        BorderThickness="1"
+                        Opacity="0"
+                        Background="{ThemeResource DriftPageBrush}"
+                        BorderBrush="{ThemeResource DriftFocusedPageBorderBrush}">
+                    <Border.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </Border.OpacityTransition>
+                </Border>
+                <StackPanel x:Name="Dots" x:FieldModifier="internal" Orientation="Horizontal" Spacing="3"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                    <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                    <Ellipse Width="4" Height="4" Fill="{ThemeResource DriftIconBrush}" />
+                    <StackPanel.OpacityTransition>
+                        <ScalarTransition Duration="0:0:0.15" />
+                    </StackPanel.OpacityTransition>
+                </StackPanel>
+            </Grid>
+        </local:PageHandleButton>
+    </Grid>
+</UserControl>

@@ -223,9 +223,16 @@ public static partial class AiErrors
             AiFailure.SignedOut => provider == AiProvider.Claude
                 ? "Not signed in to Claude. Run `claude` to sign in."
                 : "Not signed in to Codex. Run `codex login` to sign in.",
-            AiFailure.Unreachable => $"Couldn't reach {name}.",
-            _ => $"{name} couldn't answer: {failed.Message}",
+            AiFailure.Unreachable => $"We couldn't reach {name}. Please try again.",
+            _ => $"{name} couldn't answer: {AsSentenceEnd(failed.Message)}",
         };
+    }
+
+    /// <summary>An error is read as a sentence, so it ends like one (DESIGN.md › Copy: full stops).</summary>
+    private static string AsSentenceEnd(string message)
+    {
+        var text = message.Trim();
+        return text.Length == 0 || ".!?…".Contains(text[^1]) ? text : text + ".";
     }
 
     [GeneratedRegex(@"\|(\d{9,11})\s*$")]

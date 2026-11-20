@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The library (Library.cs): bookmarks, downloads and history, sliding in beside the sidebar from the library button. -->
+<UserControl
+    x:Class="Drift.LibraryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift"
+    xmlns:models="using:Drift.Models">
+
+    <Grid x:Name="Panel" x:FieldModifier="internal"
+          Width="416"
+          HorizontalAlignment="Left"
+          Padding="8,6,4,8"
+          ColumnSpacing="8"
+          Visibility="Collapsed">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="72" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <!-- The rail: a section per button, icon over name; back to the tabs at the bottom. -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <StackPanel VerticalAlignment="Center" Spacing="6">
+                <Button x:Name="BookmarksTab" x:FieldModifier="internal" Tag="bookmarks" Click="{x:Bind Owner.LibraryTab_Click}"
+                        Style="{StaticResource SubtleButtonStyle}" Width="64" Height="58" Padding="0" CornerRadius="8"
+                        HorizontalAlignment="Center" AutomationProperties.Name="Bookmarks">
+                    <StackPanel Spacing="4">
+                        <FontIcon x:Name="BookmarksGlyph" x:FieldModifier="internal" Glyph="&#xE734;" FontSize="18" />
+                        <TextBlock Text="Bookmarks" FontSize="11" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="DownloadsTab" x:FieldModifier="internal" Tag="downloads" Click="{x:Bind Owner.LibraryTab_Click}"
+                        Style="{StaticResource SubtleButtonStyle}" Width="64" Height="58" Padding="0" CornerRadius="8"
+                        HorizontalAlignment="Center" AutomationProperties.Name="Downloads">
+                    <StackPanel Spacing="4">
+                        <FontIcon x:Name="DownloadsGlyph" x:FieldModifier="internal" Glyph="&#xEBD3;" FontSize="18" />
+                        <TextBlock Text="Downloads" FontSize="11" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="HistoryTab" x:FieldModifier="internal" Tag="history" Click="{x:Bind Owner.LibraryTab_Click}"
+                        Style="{StaticResource SubtleButtonStyle}" Width="64" Height="58" Padding="0" CornerRadius="8"
+                        HorizontalAlignment="Center" AutomationProperties.Name="History">
+                    <StackPanel Spacing="4">
+                        <FontIcon x:Name="HistoryGlyph" x:FieldModifier="internal" Glyph="&#xE81C;" FontSize="18" />
+                        <TextBlock Text="History" FontSize="11" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            <Button Grid.Row="1" Width="40" Height="40" Style="{StaticResource IconButtonStyle}"
+                    HorizontalAlignment="Left" Click="{x:Bind Owner.LibraryBack_Click}"
+                    AutomationProperties.Name="Back to tabs" ToolTipService.ToolTip="Back to tabs">
+                <FontIcon Glyph="&#xE72B;" FontSize="14" />
+            </Button>
+        </Grid>
+        <Grid Grid.Column="1" RowSpacing="8" Margin="0,2,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <!-- The search, and on History the filter (Library.cs), which takes its place while it's open, as in Zen. -->
+            <Grid x:Name="SearchRow" x:FieldModifier="internal" ColumnSpacing="8" VerticalAlignment="Top">
+                <Grid.OpacityTransition>
+                    <ScalarTransition Duration="0:0:0.15" />
+                </Grid.OpacityTransition>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="Search" x:FieldModifier="internal" PlaceholderText="Search downloads" IsSpellCheckEnabled="False"
+                         TextChanged="{x:Bind Owner.LibrarySearch_TextChanged}" KeyDown="{x:Bind Owner.LibrarySearch_KeyDown}"
+                         AutomationProperties.Name="Search" />
+                <Button x:Name="FilterButton" x:FieldModifier="internal" Grid.Column="1" Style="{StaticResource SubtleButtonStyle}"
+                        Padding="10,6" VerticalAlignment="Stretch" Visibility="Collapsed"
+                        Click="{x:Bind Owner.LibraryFilter_Click}" AutomationProperties.Name="Filter history">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE71C;" FontSize="13" />
+                        <TextBlock Text="Filter" FontSize="13" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <StackPanel x:Name="FilterPanel" x:FieldModifier="internal" Spacing="6" Visibility="Collapsed" Opacity="0">
+                <StackPanel.OpacityTransition>
+                    <ScalarTransition Duration="0:0:0.15" />
+                </StackPanel.OpacityTransition>
+                <Grid Margin="0,0,0,4">
+                    <TextBlock Text="Filter history" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,0,0" />
+                    <Button Content="Done" HorizontalAlignment="Right" Style="{StaticResource FilterChipStyle}"
+                            Click="{x:Bind Owner.LibraryFilterDone_Click}" />
+                </Grid>
+                <TextBlock Text="When was it visited?" FontSize="12" Margin="4,0,0,0"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button x:Name="RangeToday" x:FieldModifier="internal" Tag="range:Today" Content="Today" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                    <Button x:Name="RangeWeek" x:FieldModifier="internal" Tag="range:Week" Content="This week" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                    <Button x:Name="RangeMonth" x:FieldModifier="internal" Tag="range:Month" Content="This month" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                </StackPanel>
+                <TextBlock Text="Sort by" FontSize="12" Margin="4,8,0,0"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button x:Name="SortDate" x:FieldModifier="internal" Tag="sort:Date" Content="By date" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                    <Button x:Name="SortSite" x:FieldModifier="internal" Tag="sort:Site" Content="By site" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button x:Name="SortMostVisited" x:FieldModifier="internal" Tag="sort:MostVisited" Content="By most visited" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                    <Button x:Name="SortLastVisited" x:FieldModifier="internal" Tag="sort:LastVisited" Content="By last visited" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                </StackPanel>
+                <TextBlock Text="What to look through" FontSize="12" Margin="4,8,0,0"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+                    <Button x:Name="SourceHistory" x:FieldModifier="internal" Tag="source:History" Content="History" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                    <Button x:Name="SourceClosedTabs" x:FieldModifier="internal" Tag="source:ClosedTabs" Content="Closed tabs" Style="{StaticResource FilterChipStyle}" Click="{x:Bind Owner.LibraryFilterChip_Click}" />
+                </StackPanel>
+            </StackPanel>
+            <Grid x:Name="DownloadsPage" x:FieldModifier="internal" Grid.Row="1" RowSpacing="4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                    <Button Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
+                            Click="{x:Bind Owner.DownloadsFolder_Click}" AutomationProperties.Name="Open Downloads folder">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE838;" FontSize="12" />
+                            <TextBlock Text="Open folder" FontSize="13" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="DownloadsClearButton" x:FieldModifier="internal" Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
+                            Click="{x:Bind Owner.DownloadsClear_Click}">
+                        <TextBlock Text="Clear list" FontSize="13" />
+                    </Button>
+                </StackPanel>
+                <TextBlock x:Name="DownloadsEmpty" x:FieldModifier="internal" Grid.Row="1" Text="Nothing downloaded yet" FontSize="13" Margin="0,4"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                <ListView x:Name="DownloadList" x:FieldModifier="internal"
+                          ItemsSource="{x:Bind Owner.DownloadItems}"
+                          Grid.Row="1"
+                          Margin="-12,0,0,0"
+                          SelectionMode="None"
+                          IsItemClickEnabled="True"
+                          ItemClick="{x:Bind Owner.DownloadList_ItemClick}"
+                          CanDragItems="True"
+                          DragItemsStarting="{x:Bind Owner.DownloadItems_DragItemsStarting}"
+                      DragItemsCompleted="{x:Bind Owner.DownloadItems_DragItemsCompleted}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:DownloadItem">
+                            <Grid ColumnSpacing="12" Padding="0,8" Background="Transparent"
+                                  Tag="{x:Bind}" ContextRequested="DownloadRow_ContextRequested"
+                                  AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <!-- The file's own picture once it's saved (FileThumbnails), else Windows' icon for its type, as
+                                     Explorer has it (FileIcons); the plain glyph till one comes. -->
+                                <Grid Width="32" Height="32" VerticalAlignment="Top"
+                                      Opacity="{x:Bind ContentOpacity, Mode=OneWay}">
+                                    <FontIcon Glyph="&#xE8A5;" FontSize="20"
+                                              Visibility="{x:Bind GlyphVisibility, Mode=OneWay}"
+                                              Foreground="{ThemeResource DriftIconBrush}" />
+                                    <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="Uniform" />
+                                </Grid>
+                                <StackPanel Grid.Column="1" Spacing="2" Opacity="{x:Bind ContentOpacity, Mode=OneWay}">
+                                    <TextBlock Text="{x:Bind FileName, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Status, Mode=OneWay}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                                    <ProgressBar Margin="0,4,0,0"
+                                                 Value="{x:Bind Percent, Mode=OneWay}"
+                                                 IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
+                                                 Visibility="{x:Bind RunningVisibility, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource TabCloseButtonStyle}" Tag="{x:Bind}" Click="DownloadFolder_Click"
+                                            Visibility="{x:Bind FolderVisibility, Mode=OneWay}"
+                                            AutomationProperties.Name="Show in folder" ToolTipService.ToolTip="Show in folder">
+                                        <FontIcon Glyph="&#xE838;" FontSize="12" />
+                                    </Button>
+                                    <Button Style="{StaticResource TabCloseButtonStyle}" Tag="{x:Bind}" Click="DownloadPause_Click"
+                                            Visibility="{x:Bind ControlsVisibility, Mode=OneWay}"
+                                            AutomationProperties.Name="{x:Bind PauseLabel, Mode=OneWay}"
+                                            ToolTipService.ToolTip="{x:Bind PauseLabel, Mode=OneWay}">
+                                        <FontIcon Glyph="{x:Bind PauseGlyph, Mode=OneWay}" FontSize="10" />
+                                    </Button>
+                                    <Button Style="{StaticResource TabCloseButtonStyle}" Tag="{x:Bind}" Click="DownloadCancel_Click"
+                                            Visibility="{x:Bind ControlsVisibility, Mode=OneWay}"
+                                            AutomationProperties.Name="Cancel download" ToolTipService.ToolTip="Cancel">
+                                        <FontIcon Glyph="&#xE711;" FontSize="10" />
+                                    </Button>
+                                    <Button Style="{StaticResource TabCloseButtonStyle}" Tag="{x:Bind}" Click="DownloadRemove_Click"
+                                            Visibility="{x:Bind DoneVisibility, Mode=OneWay}"
+                                            AutomationProperties.Name="Remove from list" ToolTipService.ToolTip="Remove from list">
+                                        <FontIcon Glyph="&#xE711;" FontSize="10" />
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+            <!-- Bookmarks (Bookmarks.cs): folders that open and close, the pages in them. -->
+            <Grid x:Name="BookmarksPage" x:FieldModifier="internal" Grid.Row="1" RowSpacing="4" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Button HorizontalAlignment="Right" Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
+                        Click="{x:Bind Owner.BookmarksNewFolder_Click}" AutomationProperties.Name="New folder">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE8F4;" FontSize="12" />
+                        <TextBlock Text="New folder" FontSize="13" />
+                    </StackPanel>
+                </Button>
+                <ScrollViewer Grid.Row="1" Margin="-4,0,0,0">
+                    <StackPanel Padding="0,0,8,8">
+                        <StackPanel x:Name="BookmarkList" x:FieldModifier="internal" />
+                        <TextBlock x:Name="BookmarksEmpty" x:FieldModifier="internal" FontSize="13" Margin="4" Visibility="Collapsed" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+            <ScrollViewer x:Name="HistoryPage" x:FieldModifier="internal" Grid.Row="1" Visibility="Collapsed" Margin="-4,0,0,0">
+                <StackPanel Padding="0,0,8,8">
+                    <!-- Builds only the rows on screen (HistoryRows), so a long history opens at once. -->
+                    <ItemsRepeater x:Name="HistoryList" x:FieldModifier="internal" />
+                    <TextBlock x:Name="HistoryEmpty" x:FieldModifier="internal" FontSize="13" Margin="4" Visibility="Collapsed"
+                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                    <Button x:Name="HistoryMore" x:FieldModifier="internal" Content="Show more" HorizontalAlignment="Center" Margin="0,8,0,0"
+                            Click="{x:Bind Owner.LibraryHistoryMore_Click}" Visibility="Collapsed" />
+                    <HyperlinkButton Content="Clear browsing data…" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                     Click="{x:Bind Owner.LibraryClearData_Click}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

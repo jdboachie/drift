@@ -85,7 +85,7 @@ public class OutlookApiTests
               {"Id":"2","Subject":"","From":{"EmailAddress":{"Name":"","Address":"noreply@x.com"}},"ReceivedDateTime":"2026-11-07T08:00:00Z","BodyPreview":""}
             ]}
             """;
-        var items = OutlookApi.ParseMessages(json);
+        var items = OutlookApi.ParseMessages(json, "outlook.cloud.microsoft");
         Assert.Equal(2, items.Count);
         Assert.Equal("noreply@x.com", items[0].Sender);
         Assert.Equal("(no subject)", items[0].Subject);
@@ -93,6 +93,34 @@ public class OutlookApiTests
         Assert.Equal("hi", items[1].Snippet);
         Assert.Equal(new DateTimeOffset(2026, 11, 6, 8, 0, 0, TimeSpan.Zero), items[1].Received);
         Assert.Equal("https://outlook.office365.com/owa/?ItemID=1", items[1].Link);
+    }
+
+    [Fact]
+    public void An_email_opens_in_the_inbox_by_its_conversation()
+    {
+        var json = """
+            {"value":[
+              {"Id":"AAMkA1","ConversationId":"AAQkAGU5/+a=","Subject":"With","ReceivedDateTime":"2026-11-07T08:00:00Z","WebLink":"https://outlook.office365.com/owa/?ItemID=1"},
+              {"Id":"AAMkA2","Subject":"Without","ReceivedDateTime":"2026-11-06T08:00:00Z","WebLink":"https://outlook.office365.com/owa/?ItemID=2"}
+            ]}
+            """;
+        var items = OutlookApi.ParseMessages(json, "outlook.cloud.microsoft");
+        Assert.Equal("https://outlook.cloud.microsoft/mail/inbox/id/AAQkAGU5%2F%2Ba%3D", items[0].Link);
+        Assert.Equal("https://outlook.office365.com/owa/?ItemID=2", items[1].Link);
+        Assert.Contains("ConversationId", OutlookApi.UnreadMessages("outlook.cloud.microsoft").Query);
+    }
+
+    [Fact]
+    public void An_emails_text_is_one_line()
+    {
+        var json = """
+            {"value":[{"Id":"1","Subject":"Meeting\r\nbackgrounds","From":{"EmailAddress":{"Name":"Katrin\nHecker","Address":"k@x.com"}},"ReceivedDateTime":"2026-11-06T08:00:00Z",
+              "BodyPreview":"Dear all,\r\n\r\nWe are excited to share\t the new ones.\r\n\r\nWe have"}]}
+            """;
+        var item = OutlookApi.ParseMessages(json, "outlook.cloud.microsoft")[0];
+        Assert.Equal("Dear all, We are excited to share the new ones. We have", item.Snippet);
+        Assert.Equal("Meeting backgrounds", item.Subject);
+        Assert.Equal("Katrin Hecker", item.Sender);
     }
 
     [Fact]
@@ -106,6 +134,6 @@ public class OutlookApiTests
     public void Not_json_is_nothing()
     {
         Assert.Empty(OutlookApi.ParseEvents("<html>", Utc));
-        Assert.Empty(OutlookApi.ParseMessages("<html>"));
+        Assert.Empty(OutlookApi.ParseMessages("<html>", "outlook.cloud.microsoft"));
     }
 }

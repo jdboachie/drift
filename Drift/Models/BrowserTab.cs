@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -33,30 +35,94 @@ public enum TabCrash
     EngineStopped,
 }
 
-/// <summary>Two tabs side by side: Left's page on the left, Right's on the right.</summary>
-public sealed class TabSplit(BrowserTab left, BrowserTab right) : INotifyPropertyChanged
+/// <summary>
+/// Two to four tabs side by side (SplitShares.MaxPages), left to right in Pages, each with its share of
+/// the width in Shares.
+/// </summary>
+public sealed class TabSplit : INotifyPropertyChanged
 {
-    public BrowserTab Left { get; private set; } = left;
-    public BrowserTab Right { get; private set; } = right;
+    private readonly List<BrowserTab> _pages;
 
-    /// <summary>The pages change sides, each keeping its width (the left's share becomes the right's).</summary>
-    public void Swap()
+    public TabSplit(IEnumerable<BrowserTab> pages, IReadOnlyList<double>? shares = null)
     {
-        (Left, Right) = (Right, Left);
-        Ratio = 1 - Ratio;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Left)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Right)));
+        _pages = pages.ToList();
+        Shares = SplitShares.Checked(shares, _pages.Count);
     }
+
+    /// <summary>Left to right.</summary>
+    public IReadOnlyList<BrowserTab> Pages => _pages;
+
+    /// <summary>Each page's share of the width (adding up to 1), in the order of Pages.</summary>
+    public double[] Shares { get; set; }
+
+    public int Count => _pages.Count;
+
+    /// <summary>No room for another page.</summary>
+    public bool IsFull => _pages.Count >= SplitShares.MaxPages;
+
+    public int IndexOf(BrowserTab page) => _pages.IndexOf(page);
+
+    /// <summary>A page joins at <paramref name="at"/>, taking an even share.</summary>
+    public void Insert(int at, BrowserTab page)
+    {
+        at = Math.Clamp(at, 0, _pages.Count);
+        Shares = SplitShares.Insert(Shares, at);
+        _pages.Insert(at, page);
+        Changed();
+    }
+
+    /// <summary>A page leaves; the others widen into its place.</summary>
+    public void Remove(BrowserTab page)
+    {
+        if (_pages.IndexOf(page) is not (>= 0 and var at)) return;
+        Shares = SplitShares.Remove(Shares, at);
+        _pages.RemoveAt(at);
+        Changed();
+    }
+
+    /// <summary>A page moves to another place, every page keeping its width.</summary>
+    public void Move(int from, int to)
+    {
+        if (from == to) return;
+        Shares = SplitShares.Moved(Shares, from, to);
+        var page = _pages[from];
+        _pages.RemoveAt(from);
+        _pages.Insert(Math.Clamp(to, 0, _pages.Count), page);
+        Changed();
+    }
+
+    /// <summary>The page beside one (on its left, else its right): the one you're on after it goes.</summary>
+    public BrowserTab? Beside(BrowserTab page) =>
+        _pages.IndexOf(page) is var at && at > 0 ? _pages[at - 1] : _pages.Count > 1 ? _pages[1] : null;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>Its row in the tab list (a BrowserTab with IsSplitRow, standing for both pages).</summary>
+    /// <summary>Its row in the tab list (a BrowserTab with IsSplitRow, standing for all its pages).</summary>
     public BrowserTab? Row { get; set; }
 
-    /// <summary>The left page's share of the width.</summary>
-    public double Ratio { get; set; } = 0.5;
+    // The row's places for its pages (MainWindow.xaml): the page in each, or none, and their columns'
+    // widths, a place with no page taking no room.
+    public BrowserTab? Page1 => At(0);
+    public BrowserTab? Page2 => At(1);
+    public BrowserTab? Page3 => At(2);
+    public BrowserTab? Page4 => At(3);
+    public GridLength Slot3Width => SlotWidth(2);
+    public GridLength Slot4Width => SlotWidth(3);
+    public GridLength Gap3Width => new(_pages.Count > 2 ? 3 : 0);
+    public GridLength Gap4Width => new(_pages.Count > 3 ? 3 : 0);
+    public Visibility Slot3Visibility => _pages.Count > 2 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility Slot4Visibility => _pages.Count > 3 ? Visibility.Visible : Visibility.Collapsed;
 
-    public BrowserTab Other(BrowserTab tab) => tab == Left ? Right : Left;
+    private BrowserTab? At(int i) => i < _pages.Count ? _pages[i] : null;
+
+    private GridLength SlotWidth(int i) => i < _pages.Count ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+
+    private void Changed()
+    {
+        foreach (var name in new[] { nameof(Pages), nameof(Count), nameof(Page1), nameof(Page2), nameof(Page3), nameof(Page4),
+                     nameof(Slot3Width), nameof(Slot4Width), nameof(Gap3Width), nameof(Gap4Width), nameof(Slot3Visibility), nameof(Slot4Visibility) })
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
 }
 
 /// <summary>One tab: its own WebView2 plus the bits the sidebar displays.</summary>
@@ -96,6 +162,8 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
             OnPropertyChanged(nameof(ContentOpacity));
             OnPropertyChanged(nameof(PinnedActionGlyph));
             OnPropertyChanged(nameof(PinnedActionName));
+            OnPropertyChanged(nameof(RowActionGlyph));
+            OnPropertyChanged(nameof(RowActionName));
         }
     }
 
@@ -112,7 +180,27 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     /// <summary>A regular row's × (and a split half's): the tab, or first its Peek.</summary>
     public string CloseName => TabCloses.Name(_hasPeek, pinned: false, unloaded: false);
 
-    public TabPlace Place { get; set; }
+    public TabPlace Place
+    {
+        get => _place;
+        set
+        {
+            if (_place == value) return;
+            _place = value;
+            OnPropertyChanged(nameof(RowActionGlyph));
+            OnPropertyChanged(nameof(RowActionName));
+        }
+    }
+
+    private TabPlace _place;
+
+    /// <summary>
+    /// The end button of a row in the sidebar's tab lists (TabRowTemplate): a pinned tab's −/× (PinnedAction…),
+    /// a regular tab's × (Close…).
+    /// </summary>
+    public string RowActionGlyph => IsPinned ? PinnedActionGlyph : CloseGlyph;
+
+    public string RowActionName => IsPinned ? PinnedActionName : CloseName;
 
     /// <summary>The folder it's in, for a tab whose Place is Folder.</summary>
     public TabFolder? Folder { get; set; }
@@ -237,6 +325,14 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
 
     /// <summary>When LinkPress happened, from Environment.TickCount64.</summary>
     public long LinkPressTime { get; set; }
+
+    /// <summary>
+    /// When a link was last Ctrl+clicked or middle-clicked here (Environment.TickCount64), for the
+    /// new tab it opens to follow the "switch to new tabs" setting; 0 once used or after a plain press.
+    /// </summary>
+    public long AsidePressTime { get; set; }
+    /// <summary>Shift was held with it, which turns the setting around for that click.</summary>
+    public bool AsidePressShift { get; set; }
 
     private bool _isPlayingAudio;
     private bool _isMuted;
@@ -382,6 +478,8 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
             OnPropertyChanged(nameof(PinnedActionGlyph));
             OnPropertyChanged(nameof(PinnedActionName));
             OnPropertyChanged(nameof(CloseName));
+            OnPropertyChanged(nameof(RowActionGlyph));
+            OnPropertyChanged(nameof(RowActionName));
         }
     }
 

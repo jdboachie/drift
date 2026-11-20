@@ -65,17 +65,17 @@ public sealed partial class MainWindow
     {
         // The lists scroll up and down themselves (and mark the wheel handled); sideways is the library's.
         Sidebar.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(Sidebar_Wheel), true);
-        Library.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(Sidebar_Wheel), true);
+        Library.Panel.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(Sidebar_Wheel), true);
         SetUpSwipe();
         Sidebar.SizeChanged += (_, _) =>
             Sidebar.CenterPoint = new System.Numerics.Vector3((float)Sidebar.ActualWidth / 2, (float)Sidebar.ActualHeight / 2, 0);
         // Always there, and drawn, just transparent and out of reach while shut: showing it for the
         // first time on each open cost a few frames, and the slide started already a third done.
-        Library.Visibility = Visibility.Visible;
-        Library.Opacity = 0;
-        Library.IsHitTestVisible = false;
+        Library.Panel.Visibility = Visibility.Visible;
+        Library.Panel.Opacity = 0;
+        Library.Panel.IsHitTestVisible = false;
         // Nor can the keyboard reach it then: Tab goes on to the page instead.
-        Library.GettingFocus += (_, e) =>
+        Library.Panel.GettingFocus += (_, e) =>
         {
             if (_libraryOpen || _trackerSwiping || _swipeTo is not null) return;
             if (_active?.View is { } view && e.TrySetNewFocusedElement(view)) return;
@@ -103,7 +103,7 @@ public sealed partial class MainWindow
             OpenLibrary(page);
             // Ready to type a search.
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                () => LibrarySearch.Focus(FocusState.Programmatic));
+                () => Library.Search.Focus(FocusState.Programmatic));
         }
     }
 
@@ -111,7 +111,7 @@ public sealed partial class MainWindow
     {
         if (!_libraryOpen) return;
         _libraryProps?.InsertScalar("Pulling", 0);
-        if (LibrarySearch.FocusState != FocusState.Unfocused || IsFocusIn(Library)) _active?.View.Focus(FocusState.Programmatic);
+        if (Library.Search.FocusState != FocusState.Unfocused || IsFocusIn(Library.Panel)) _active?.View.Focus(FocusState.Programmatic);
         MoveLibrary(open: false);
     }
 
@@ -142,7 +142,7 @@ public sealed partial class MainWindow
         _librarySpring.Velocity = velocity;
         _librarySpring.Target = target;
         // Clicks go to where it's going.
-        Library.IsHitTestVisible = open;
+        Library.Panel.IsHitTestVisible = open;
         Sidebar.IsHitTestVisible = !open;
         if (!new Windows.UI.ViewManagement.UISettings().AnimationsEnabled || _libraryProps is null)
         {
@@ -216,10 +216,10 @@ public sealed partial class MainWindow
         PeekLayer.Translation = shift;
         var (tabs, library) = Swipe.Fade(width);
         // Its right edge on the page's.
-        if (Library.Width != LibraryWidth) Library.Width = LibraryWidth;
-        Library.Translation = new System.Numerics.Vector3((float)(width - LibraryWidth), 0, 0);
-        Library.Opacity = library;
-        Library.IsHitTestVisible = library >= 0.5;
+        if (Library.Panel.Width != LibraryWidth) Library.Panel.Width = LibraryWidth;
+        Library.Panel.Translation = new System.Numerics.Vector3((float)(width - LibraryWidth), 0, 0);
+        Library.Panel.Opacity = library;
+        Library.Panel.IsHitTestVisible = library >= 0.5;
         Sidebar.Opacity = tabs;
         Sidebar.IsHitTestVisible = tabs > 0.5;
         // The edge is there only with the library shut.
@@ -267,8 +267,8 @@ public sealed partial class MainWindow
         Bind(PageArea, "Translation", shift);
         Bind(PeekPageFrame, "Translation", shift);
         Bind(PeekLayer, "Translation", shift);
-        Bind(Library, "Translation", $"Vector3(p.Width - {open}, 0, 0)");
-        Bind(Library, "Opacity", library);
+        Bind(Library.Panel, "Translation", $"Vector3(p.Width - {open}, 0, 0)");
+        Bind(Library.Panel, "Opacity", library);
         Bind(Sidebar, "Opacity", $"1 - {leaving}");
         // Shrinking away. (Floating, its Translation is its slide in and out.)
         if (!_sidebarHidden) Bind(Sidebar, "Translation", $"Vector3(p.Pulling * {under}, 0, 0)");
@@ -385,7 +385,7 @@ public sealed partial class MainWindow
             element.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(element.ActualWidth, 0)).X;
         var right = 0.0;
         if (Sidebar.Visibility == Visibility.Visible && Sidebar.IsHitTestVisible && !_sidebarDismissing) right = RightOf(Sidebar);
-        if (Library.IsHitTestVisible) right = Math.Max(right, RightOf(Library));
+        if (Library.Panel.IsHitTestVisible) right = Math.Max(right, RightOf(Library.Panel));
         return right;
     }
 
@@ -409,7 +409,7 @@ public sealed partial class MainWindow
         _swipeFrom = _libraryWidth;
         // The section shown in full (its page, its rail button), not just its list refreshed.
         if (!_libraryOpen) ShowLibraryPage(_libraryPage);
-        Library.IsHitTestVisible = false;
+        Library.Panel.IsHitTestVisible = false;
 
         // The fingers drive the width: LibrarySwipe.Follow, written out.
         static string N(double v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -445,7 +445,7 @@ public sealed partial class MainWindow
         _libraryProps?.InsertScalar("Pulling", _libraryWidth < ClosedWidth ? 1 : 0);
         var speed = -velocity;
         var open = Swipe.Opens(_swipeFrom, _libraryWidth, speed);
-        if (!open && IsFocusIn(Library)) _active?.View.Focus(FocusState.Programmatic);
+        if (!open && IsFocusIn(Library.Panel)) _active?.View.Focus(FocusState.Programmatic);
         var carry = Swipe.Carry(_libraryWidth, open ? LibraryWidth : ClosedWidth, speed);
         // Not none: a swipe let go of still shouldn't get a button's kick.
         MoveLibrary(open, carry == 0 ? 0.001 : carry);
@@ -528,7 +528,7 @@ public sealed partial class MainWindow
         var (first, last) = (_swipeTrail.FirstOrDefault(), _swipeTrail.LastOrDefault());
         var velocity = last.Ms > first.Ms ? (last.Width - first.Width) / ((last.Ms - first.Ms) / 1000.0) : 0;
         var open = Swipe.Opens(_wheelFrom, _libraryWidth, velocity);
-        if (!open && IsFocusIn(Library)) _active?.View.Focus(FocusState.Programmatic);
+        if (!open && IsFocusIn(Library.Panel)) _active?.View.Focus(FocusState.Programmatic);
         var carry = Swipe.Carry(_libraryWidth, open ? LibraryWidth : ClosedWidth, velocity);
         MoveLibrary(open, carry == 0 ? 0.001 : carry);
     }
@@ -539,18 +539,18 @@ public sealed partial class MainWindow
     {
         var changed = page != _libraryPage;
         _libraryPage = page;
-        LibraryDownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
-        LibraryHistoryPage.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
-        LibraryBookmarksPage.Visibility = page == "bookmarks" ? Visibility.Visible : Visibility.Collapsed;
+        Library.DownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
+        Library.HistoryPage.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
+        Library.BookmarksPage.Visibility = page == "bookmarks" ? Visibility.Visible : Visibility.Collapsed;
         // The filter is History's only.
-        LibraryFilterButton.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
+        Library.FilterButton.Visibility = page == "history" ? Visibility.Visible : Visibility.Collapsed;
         if (page != "history") ShowFilterPanel(false, animate: false);
-        LibrarySearch.PlaceholderText = page switch { "downloads" => "Search downloads", "bookmarks" => "Search bookmarks", _ => "Search history" };
-        ShowRailItem(LibraryBookmarksTab, LibraryBookmarksGlyph, page == "bookmarks");
-        ShowRailItem(LibraryDownloadsTab, LibraryDownloadsGlyph, page == "downloads");
-        ShowRailItem(LibraryHistoryTab, LibraryHistoryGlyph, page == "history");
+        Library.Search.PlaceholderText = page switch { "downloads" => "Search downloads", "bookmarks" => "Search bookmarks", _ => "Search history" };
+        ShowRailItem(Library.BookmarksTab, Library.BookmarksGlyph, page == "bookmarks");
+        ShowRailItem(Library.DownloadsTab, Library.DownloadsGlyph, page == "downloads");
+        ShowRailItem(Library.HistoryTab, Library.HistoryGlyph, page == "history");
         // Switching section is instant, as in Zen; a search doesn't carry over.
-        if (changed && LibrarySearch.Text.Length > 0) LibrarySearch.Text = "";
+        if (changed && Library.Search.Text.Length > 0) Library.Search.Text = "";
         else RefreshLibraryPage();
         if (page == "downloads" && _libraryOpen) Downloads.MarkSeen();
     }
@@ -574,25 +574,25 @@ public sealed partial class MainWindow
     /// <summary>The library as you left it, or at Downloads while there's a finished file you haven't seen, as in Arc.</summary>
     private void LibraryButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(Downloads.HasUnseen ? "downloads" : _libraryPage);
 
-    private void LibraryBack_Click(object sender, RoutedEventArgs e) => CloseLibrary();
+    internal void LibraryBack_Click(object sender, RoutedEventArgs e) => CloseLibrary();
 
-    private void LibraryTab_Click(object sender, RoutedEventArgs e)
+    internal void LibraryTab_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is string page) ShowLibraryPage(page);
     }
 
-    private void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e)
+    internal void LibrarySearch_TextChanged(object sender, TextChangedEventArgs e)
     {
         _libraryHistoryShown = LibraryHistoryPageSize;
         RefreshLibraryPage();
     }
 
     /// <summary>Esc clears the search, then closes the library.</summary>
-    private void LibrarySearch_KeyDown(object sender, KeyRoutedEventArgs e)
+    internal void LibrarySearch_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Escape) return;
         e.Handled = true;
-        if (LibrarySearch.Text.Length > 0) LibrarySearch.Text = "";
+        if (Library.Search.Text.Length > 0) Library.Search.Text = "";
         else CloseLibrary();
     }
 
@@ -603,8 +603,8 @@ public sealed partial class MainWindow
     {
         Downloads.ArchiveOld();
         foreach (var item in Downloads.Items) item.Refresh();
-        var query = LibrarySearch.Text.Trim();
-        DownloadList.ItemsSource = query.Length == 0
+        var query = Library.Search.Text.Trim();
+        Library.DownloadList.ItemsSource = query.Length == 0
             ? DownloadItems
             : Downloads.Items.Where(i => i.FileName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
         UpdateDownloadsPage();
@@ -612,12 +612,12 @@ public sealed partial class MainWindow
 
     private void UpdateDownloadsPage()
     {
-        var searching = LibrarySearch.Text.Trim().Length > 0;
-        var shown = DownloadList.ItemsSource is System.Collections.ICollection items ? items.Count : 0;
-        DownloadsEmpty.Text = searching ? "No downloads match" : "Nothing downloaded yet";
-        DownloadsEmpty.Visibility = shown == 0 ? Visibility.Visible : Visibility.Collapsed;
-        DownloadList.Visibility = shown > 0 ? Visibility.Visible : Visibility.Collapsed;
-        DownloadsClearButton.Visibility = Downloads.Items.Any(i => !i.IsRunning) ? Visibility.Visible : Visibility.Collapsed;
+        var searching = Library.Search.Text.Trim().Length > 0;
+        var shown = Library.DownloadList.ItemsSource is System.Collections.ICollection items ? items.Count : 0;
+        Library.DownloadsEmpty.Text = searching ? "No downloads match" : "Nothing downloaded yet";
+        Library.DownloadsEmpty.Visibility = shown == 0 ? Visibility.Visible : Visibility.Collapsed;
+        Library.DownloadList.Visibility = shown > 0 ? Visibility.Visible : Visibility.Collapsed;
+        Library.DownloadsClearButton.Visibility = Downloads.Items.Any(i => !i.IsRunning) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ───────────────────────── History ─────────────────────────
@@ -640,7 +640,7 @@ public sealed partial class MainWindow
 
     private void ShowLibraryHistory()
     {
-        var query = LibrarySearch.Text;
+        var query = Library.Search.Text;
         var filter = _historyFilter;
         var closed = filter.Source == HistorySource.ClosedTabs;
         ShowHistoryFilter();
@@ -657,15 +657,15 @@ public sealed partial class MainWindow
             filter.Sort, since, i => i.Visits);
 
         var narrowed = query.Trim().Length > 0 || filter.Range != HistoryRange.All;
-        LibraryHistoryEmpty.Visibility = found.Days.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        LibraryHistoryEmpty.Text = closed
+        Library.HistoryEmpty.Visibility = found.Days.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        Library.HistoryEmpty.Text = closed
             ? narrowed ? "No closed tabs match" : "No closed tabs"
             : narrowed ? "No pages match" : "Nothing in your history yet";
-        LibraryHistoryMore.Visibility = found.HasMore ? Visibility.Visible : Visibility.Collapsed;
+        Library.HistoryMore.Visibility = found.HasMore ? Visibility.Visible : Visibility.Collapsed;
         // Rows made for the other theme have its colours: new ones.
         if (_historyRows is null || _historyRows.Dark != now.Dark)
-            LibraryHistoryList.ItemTemplate = _historyRows = new HistoryRows(this, now.Dark);
-        LibraryHistoryList.ItemsSource = HistoryView.Lines(found);
+            Library.HistoryList.ItemTemplate = _historyRows = new HistoryRows(this, now.Dark);
+        Library.HistoryList.ItemsSource = HistoryView.Lines(found);
     }
 
     // ── The filter ──
@@ -676,25 +676,25 @@ public sealed partial class MainWindow
         var f = _historyFilter;
         (Button Chip, bool On)[] chips =
         [
-            (RangeToday, f.Range == HistoryRange.Today), (RangeWeek, f.Range == HistoryRange.Week), (RangeMonth, f.Range == HistoryRange.Month),
-            (SortDate, f.Sort == HistorySort.Date), (SortSite, f.Sort == HistorySort.Site),
-            (SortMostVisited, f.Sort == HistorySort.MostVisited), (SortLastVisited, f.Sort == HistorySort.LastVisited),
-            (SourceHistory, f.Source == HistorySource.History), (SourceClosedTabs, f.Source == HistorySource.ClosedTabs),
+            (Library.RangeToday, f.Range == HistoryRange.Today), (Library.RangeWeek, f.Range == HistoryRange.Week), (Library.RangeMonth, f.Range == HistoryRange.Month),
+            (Library.SortDate, f.Sort == HistorySort.Date), (Library.SortSite, f.Sort == HistorySort.Site),
+            (Library.SortMostVisited, f.Sort == HistorySort.MostVisited), (Library.SortLastVisited, f.Sort == HistorySort.LastVisited),
+            (Library.SourceHistory, f.Source == HistorySource.History), (Library.SourceClosedTabs, f.Source == HistorySource.ClosedTabs),
         ];
         foreach (var (chip, on) in chips)
         {
             if (on) chip.Background = (Brush)Application.Current.Resources["DriftActiveBrush"];
             else chip.ClearValue(Control.BackgroundProperty);
         }
-        if (f.IsDefault) LibraryFilterButton.ClearValue(Control.BackgroundProperty);
-        else LibraryFilterButton.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+        if (f.IsDefault) Library.FilterButton.ClearValue(Control.BackgroundProperty);
+        else Library.FilterButton.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
         if (_libraryPage == "history")
-            LibrarySearch.PlaceholderText = f.Source == HistorySource.ClosedTabs ? "Search closed tabs" : "Search history";
+            Library.Search.PlaceholderText = f.Source == HistorySource.ClosedTabs ? "Search closed tabs" : "Search history";
     }
 
-    private void LibraryFilter_Click(object sender, RoutedEventArgs e) => ShowFilterPanel(true);
+    internal void LibraryFilter_Click(object sender, RoutedEventArgs e) => ShowFilterPanel(true);
 
-    private void LibraryFilterDone_Click(object sender, RoutedEventArgs e) => ShowFilterPanel(false);
+    internal void LibraryFilterDone_Click(object sender, RoutedEventArgs e) => ShowFilterPanel(false);
 
     private bool _filterOpen;
     private int _filterMotion;
@@ -715,25 +715,25 @@ public sealed partial class MainWindow
         _filterOpen = open;
         var motion = ++_filterMotion;
         animate &= new Windows.UI.ViewManagement.UISettings().AnimationsEnabled && _libraryOpen;
-        var list = LibraryHistoryPage;
-        var wasAt = list.ActualHeight > 0 ? list.TransformToVisual(Library).TransformPoint(default).Y : 0;
+        var list = Library.HistoryPage;
+        var wasAt = list.ActualHeight > 0 ? list.TransformToVisual(Library.Panel).TransformPoint(default).Y : 0;
 
-        LibrarySearchRow.IsHitTestVisible = !open;
+        Library.SearchRow.IsHitTestVisible = !open;
         if (open)
         {
-            LibraryFilterPanel.Margin = new Thickness(0);
-            LibraryFilterPanel.Visibility = Visibility.Visible;
+            Library.FilterPanel.Margin = new Thickness(0);
+            Library.FilterPanel.Visibility = Visibility.Visible;
         }
         else
         {
             // Out of the layout at once (the list closes up over it), still drawn while it fades.
-            LibraryFilterPanel.Margin = new Thickness(0, 0, 0, -LibraryFilterPanel.ActualHeight);
-            LibrarySearchRow.Visibility = Visibility.Visible;
+            Library.FilterPanel.Margin = new Thickness(0, 0, 0, -Library.FilterPanel.ActualHeight);
+            Library.SearchRow.Visibility = Visibility.Visible;
         }
         // Laid out first: one just shown doesn't fade in if its opacity is set in the same pass.
-        Library.UpdateLayout();
-        (open ? LibraryFilterPanel : (UIElement)LibrarySearchRow).Opacity = 1;
-        (open ? LibrarySearchRow : (UIElement)LibraryFilterPanel).Opacity = 0;
+        Library.Panel.UpdateLayout();
+        (open ? Library.FilterPanel : (UIElement)Library.SearchRow).Opacity = 1;
+        (open ? Library.SearchRow : (UIElement)Library.FilterPanel).Opacity = 0;
         if (!animate)
         {
             FinishFilterPanel(open);
@@ -741,7 +741,7 @@ public sealed partial class MainWindow
         }
 
         // The list drawn where it was, sliding to where it is now.
-        var isAt = list.TransformToVisual(Library).TransformPoint(default).Y;
+        var isAt = list.TransformToVisual(Library.Panel).TransformPoint(default).Y;
         if (list.Visibility == Visibility.Visible && Math.Abs(wasAt - isAt) > 0.5)
         {
             var compositor = CompositionTarget.GetCompositorForCurrentThread();
@@ -760,16 +760,16 @@ public sealed partial class MainWindow
     /// <summary>The faded one out of the way: the search, or the panel.</summary>
     private void FinishFilterPanel(bool open)
     {
-        if (open) LibrarySearchRow.Visibility = Visibility.Collapsed;
+        if (open) Library.SearchRow.Visibility = Visibility.Collapsed;
         else
         {
-            LibraryFilterPanel.Visibility = Visibility.Collapsed;
-            LibraryFilterPanel.Margin = new Thickness(0);
+            Library.FilterPanel.Visibility = Visibility.Collapsed;
+            Library.FilterPanel.Margin = new Thickness(0);
         }
     }
 
     /// <summary>A choice: when (choosing it again is any time), how it's sorted, or what it looks through.</summary>
-    private void LibraryFilterChip_Click(object sender, RoutedEventArgs e)
+    internal void LibraryFilterChip_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not string tag || tag.Split(':') is not [var kind, var value]) return;
         var was = _historyFilter;
@@ -1019,13 +1019,13 @@ public sealed partial class MainWindow
         parts.Glyph.Visibility = Visibility.Collapsed;
     }
 
-    private void LibraryHistoryMore_Click(object sender, RoutedEventArgs e)
+    internal void LibraryHistoryMore_Click(object sender, RoutedEventArgs e)
     {
         _libraryHistoryShown += LibraryHistoryPageSize;
         ShowLibraryHistory();
     }
 
-    private void LibraryClearData_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open(this, "privacy");
+    internal void LibraryClearData_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open(this, "privacy");
 
     /// <summary>History was cleared elsewhere (Settings): the list, if it's showing.</summary>
     internal void HistoryChanged()

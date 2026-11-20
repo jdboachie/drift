@@ -29,7 +29,6 @@ public sealed partial class MainWindow
 {
     // Folders opened in the Library, by id, for this session.
     private readonly HashSet<string> _openBookmarkFolders = new();
-    private DispatcherQueueTimer? _bookmarkToastTimer;
     // The bookmark the toast is about.
     private BookmarkNode? _toastBookmark;
     private bool _bookmarkEditorOpen;
@@ -98,31 +97,20 @@ public sealed partial class MainWindow
     {
         HideUndo();
         _toastBookmark = node;
-        BookmarkToastText.Text = text;
-        BookmarkToast.Visibility = Visibility.Visible;
-        BookmarkToast.Opacity = 1;
-        BookmarkToast.IsHitTestVisible = true;
-        Spring.To(BookmarkToast, "Translation", new Vector3(0, 0, 32), 0.25, 0, from: new Vector3(0, 8, 32));
-        if (_bookmarkToastTimer is null)
-        {
-            _bookmarkToastTimer = DispatcherQueue.CreateTimer();
-            _bookmarkToastTimer.IsRepeating = false;
-            _bookmarkToastTimer.Interval = TimeSpan.FromSeconds(3);
-            _bookmarkToastTimer.Tick += (_, _) => HideBookmarkToast();
-        }
-        _bookmarkToastTimer.Stop();
-        _bookmarkToastTimer.Start();
+        // It stays while its editor's open (Edit opens it from here, and leaves the toast up).
+        BookmarkToast.KeepOpen ??= () => _bookmarkEditorOpen;
+        BookmarkToast.Show(text, TimeSpan.FromSeconds(3), [new("Edit", EditToastBookmark, Closes: false)],
+            glyph: "\uE735", accentGlyph: true);
     }
 
     private void HideBookmarkToast()
     {
         // Not while its editor's open, or the pointer's on it.
         if (_bookmarkEditorOpen) return;
-        BookmarkToast.Opacity = 0;
-        BookmarkToast.IsHitTestVisible = false;
+        BookmarkToast.Hide();
     }
 
-    private void BookmarkToastEdit_Click(object sender, RoutedEventArgs e)
+    private void EditToastBookmark()
     {
         if (_toastBookmark is { } node && BookmarkStore.Tree.ById(node.Id) is not null)
             ShowBookmarkEditor(node, BookmarkToast, FlyoutPlacementMode.Top);
@@ -201,8 +189,7 @@ public sealed partial class MainWindow
                 BookmarkStore.Save();
                 BookmarksChanged();
             }
-            _bookmarkToastTimer?.Stop();
-            _bookmarkToastTimer?.Start();
+            BookmarkToast.RestartTimer();
         };
         if (options is not null) flyout.ShowAt(anchor, options);
         else flyout.ShowAt(anchor);
@@ -213,15 +200,15 @@ public sealed partial class MainWindow
     private void ShowLibraryBookmarks()
     {
         var tree = BookmarkStore.Tree;
-        var query = LibrarySearch.Text.Trim();
-        BookmarkList.Children.Clear();
+        var query = Library.Search.Text.Trim();
+        Library.BookmarkList.Children.Clear();
         if (query.Length > 0)
-            foreach (var node in tree.Search(query)) BookmarkList.Children.Add(BookmarkRow(node, 0, showFolder: true));
+            foreach (var node in tree.Search(query)) Library.BookmarkList.Children.Add(BookmarkRow(node, 0, showFolder: true));
         else AddBookmarkRows(tree.Root, 0);
 
-        var any = BookmarkList.Children.Count > 0;
-        LibraryBookmarksEmpty.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
-        LibraryBookmarksEmpty.Text = query.Length > 0 ? "No bookmarks match"
+        var any = Library.BookmarkList.Children.Count > 0;
+        Library.BookmarksEmpty.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        Library.BookmarksEmpty.Text = query.Length > 0 ? "No bookmarks match"
             : "No bookmarks yet. Press Ctrl+D on a page to save it here.";
     }
 
@@ -229,7 +216,7 @@ public sealed partial class MainWindow
     {
         foreach (var node in nodes)
         {
-            BookmarkList.Children.Add(BookmarkRow(node, depth, showFolder: false));
+            Library.BookmarkList.Children.Add(BookmarkRow(node, depth, showFolder: false));
             if (node.IsFolder && _openBookmarkFolders.Contains(node.Id)) AddBookmarkRows(node.Children!, depth + 1);
         }
     }
@@ -429,7 +416,7 @@ public sealed partial class MainWindow
         }
         var uri = Uri.TryCreate(node.Url, UriKind.Absolute, out var parsed) ? parsed : null;
         FillMenu(menu,
-        [uri is null ? null : Command("Open in new tab", () => OpenPage(uri))],
+        [uri is null ? null : Command("Open in new tab", () => OpenLinkInNewTab(uri))],
         [
             Command("Copy link", () =>
             {
@@ -444,7 +431,7 @@ public sealed partial class MainWindow
         return menu;
     }
 
-    private void BookmarksNewFolder_Click(object sender, RoutedEventArgs e) => NewBookmarkFolder(null);
+    internal void BookmarksNewFolder_Click(object sender, RoutedEventArgs e) => NewBookmarkFolder(null);
 
     /// <summary>A new folder, named straight away.</summary>
     private void NewBookmarkFolder(BookmarkNode? parent)
@@ -452,10 +439,10 @@ public sealed partial class MainWindow
         var folder = BookmarkStore.Tree.NewFolder("New folder", parent);
         if (parent is not null) _openBookmarkFolders.Add(parent.Id);
         BookmarkStore.Save();
-        if (LibrarySearch.Text.Length > 0) LibrarySearch.Text = "";
+        if (Library.Search.Text.Length > 0) Library.Search.Text = "";
         ShowLibraryBookmarks();
         var index = RowIndexOf(folder);
-        if (index >= 0 && index < BookmarkList.Children.Count && BookmarkList.Children[index] is Grid row)
+        if (index >= 0 && index < Library.BookmarkList.Children.Count && Library.BookmarkList.Children[index] is Grid row)
             ShowBookmarkEditor(folder, row, FlyoutPlacementMode.Bottom);
     }
 

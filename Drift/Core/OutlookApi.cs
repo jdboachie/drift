@@ -30,7 +30,11 @@ public static class OutlookApi
 
     public static Uri UnreadMessages(string host) => new(
         $"https://{host}/api/beta/me/mailfolders/inbox/messages?$filter=IsRead%20eq%20false&$top=20"
-        + "&$select=Subject,From,ReceivedDateTime,BodyPreview,WebLink");
+        + "&$select=Subject,From,ReceivedDateTime,BodyPreview,WebLink,ConversationId");
+
+    /// <summary>An email's conversation, open in the inbox's reading pane (not on a page of its own, as its WebLink is).</summary>
+    public static Uri Conversation(string host, string conversationId) =>
+        new($"https://{host}/mail/inbox/id/{Uri.EscapeDataString(conversationId)}");
 
     public static Uri Inbox(string host) => new($"https://{host}/api/beta/me/mailfolders/inbox?$select=UnreadItemCount");
 
@@ -75,8 +79,8 @@ public static class OutlookApi
         return events.OrderBy(e => e.Start).ToList();
     }
 
-    /// <summary>The inbox's unread emails, newest first.</summary>
-    public static List<MailItem> ParseMessages(string json) =>
+    /// <summary>The inbox's unread emails, newest first, each opening in the inbox on <paramref name="host"/>.</summary>
+    public static List<MailItem> ParseMessages(string json, string host) =>
         Values(json).Select(m =>
         {
             string? name = null, address = null;
@@ -89,12 +93,16 @@ public static class OutlookApi
             var received = DateTimeOffset.TryParse(Str(m, "ReceivedDateTime"), CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal, out var r) ? r : DateTimeOffset.MinValue;
             return new MailItem(
-                name is { Length: > 0 } ? name : address ?? "",
-                Str(m, "Subject") is { Length: > 0 } s ? s : "(no subject)",
-                Str(m, "BodyPreview")?.Trim() ?? "",
+                MailItem.OneLine(name is { Length: > 0 } ? name : address),
+                MailItem.OneLine(Str(m, "Subject")) is { Length: > 0 } s ? s : "(no subject)",
+                MailItem.OneLine(Str(m, "BodyPreview")),
                 received,
                 Str(m, "Id"))
-            { Link = Str(m, "WebLink") };
+            {
+                Link = Str(m, "ConversationId") is { Length: > 0 } conversation
+                    ? Conversation(host, conversation).AbsoluteUri
+                    : Str(m, "WebLink"),
+            };
         }).OrderByDescending(i => i.Received).ToList();
 
     public static int ParseUnread(string json)
