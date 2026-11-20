@@ -52,7 +52,8 @@ public sealed partial class MainWindow
             var row = (StackPanel)pill.Child;
             row.Children.Clear();
             foreach (var button in PageControlButtons(page)) row.Children.Add(button);
-            Grid.SetColumn(pill, Grid.GetColumn(handle));
+            // Its page's column: the marker's, which the handle sits in (the handle's own is always the first).
+            if (PaneOf(handle) is var pane and >= 0) Grid.SetColumn(pill, Grid.GetColumn(_panes[pane].Marker));
             // Just under the dots, over the top of the page.
             pill.Margin = new Thickness(0, handle.Margin.Top + HandleDrop + handle.Height + 4, 0, 0);
             if (pill.Opacity == 0)

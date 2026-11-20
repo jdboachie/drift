@@ -4114,14 +4114,19 @@ public sealed partial class MainWindow : Window
             if (element is ListViewItem { Content: BrowserTab { IsSplitRow: true } }) return;
             // A folder's own row only opens or closes it, and its tabs slide in or out below: that's the response.
             if (element is ListViewItem { Content: TabFolder }) return;
-            element.CenterPoint = new Vector3(element.ActualSize / 2, 0);
-            // Down fast, so the press shows at once.
-            Spring.To(element, "Scale", new Vector3(pressedScale, pressedScale, 1), duration: 0.15, bounce: 0);
+            var center = new Vector3(element.ActualSize / 2, 0);
+            foreach (var part in PressedParts(element))
+            {
+                // About the row's middle, whichever part of it this is.
+                part.CenterPoint = center - (part == element ? Vector3.Zero : new Vector3(part.ActualOffset.X, part.ActualOffset.Y, 0));
+                // Down fast, so the press shows at once.
+                Spring.To(part, "Scale", new Vector3(pressedScale, pressedScale, 1), duration: 0.15, bounce: 0);
+            }
         }
         void Release(object sender, PointerRoutedEventArgs e)
         {
-            if (element.Scale == Vector3.One) return;
-            Spring.To(element, "Scale", Vector3.One, duration: 0.25, bounce: 0);
+            foreach (var part in PressedParts(element))
+                if (part.Scale != Vector3.One) Spring.To(part, "Scale", Vector3.One, duration: 0.25, bounce: 0);
         }
 
         // Buttons and list items mark pointer events handled, so listen to handled ones too.
@@ -4130,6 +4135,18 @@ public sealed partial class MainWindow : Window
         element.AddHandler(UIElement.PointerCanceledEvent, new PointerEventHandler(Release), true);
         element.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler(Release), true);
         element.AddHandler(UIElement.PointerExitedEvent, new PointerEventHandler(Release), true);
+    }
+
+    /// <summary>
+    /// What shrinks when an element is pressed: the element, or, for a row in a folder, the row's own parts and not
+    /// the pieces of the folder's card drawn behind it (IndentFolderRow), which stays still as the row shrinks.
+    /// </summary>
+    private static IEnumerable<UIElement> PressedParts(UIElement element)
+    {
+        if (element is ListViewItem item && VisualTreeHelper.GetChildrenCount(item) > 0 && VisualTreeHelper.GetChild(item, 0) is Grid root
+            && root.Children.Any(c => c is Border { Tag: CardTag }))
+            return root.Children.Where(c => c is not Border { Tag: CardTag }).ToList();
+        return [element];
     }
 
     private void ListItem_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
