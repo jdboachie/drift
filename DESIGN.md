@@ -26,7 +26,7 @@ Rules learned from building Drift, each with why. Read before building or changi
   <!-- 2026-11-17: "the replace page icon looks like a share or pop out icon" · "replace page with a plus icon?? nah figure out something else" -->
 
 - **Anything grouping tabs in the sidebar (folders, splits) uses one card: `DriftFolderCardBrush`, a `DriftFolderCardBorderBrush` hairline, corner radius 10.**
-  A folder's card shows only while it's open; closed, it's a plain row. A split's shows always, in front or not, when its pages sit one under another, since without the card they'd read as separate tabs; side by side, only while it's in front, as a folder's while open.
+  A folder's card shows only while it's open; closed, it's a plain row. A split's shows always, in front or not, one under another or side by side, since it's what makes the pages read as one tab (the user, 2026-11-24, of side by side without it: "the horizontal split view tab doesn't have the folder background").
   Why: one card style makes groups read alike; a card on a closed group is noise.
   <!-- 2026-11-17: "the split view should have the same card treatment as the folders - just the color and border" · "the split row when it isn't open shouldn't have that folder-card treatment" -->
 - **A split's pages sit one under another in the sidebar, each a full tab row (38 tall), the left page on top, as Search Browser's do.**

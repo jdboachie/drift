@@ -566,8 +566,8 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// A split's pages are on a card of their own, the folders' (their colour and border) (DESIGN.md › Surfaces).
-    /// One under another, always, so they read as one tab, in front or not; side by side, only while the split's
-    /// the tab you're on, otherwise it's a row as any tab's is. While the split's the tab you're on, the page
+    /// Always, one under another or side by side, so they read as one tab, in front or not (the user: "the
+    /// horizontal split view tab doesn't have the folder background"). While the split's the tab you're on, the page
     /// you're on has a selected tab's card on it, a few pixels in, there at once when you switch pages; it fades
     /// away when you leave the split. No line between the pages.
     /// </summary>
@@ -579,7 +579,7 @@ public sealed partial class MainWindow
         var shown = split == _shownSplit;
         card.Width = row.ActualWidth;
         Spring.Jump(card, "Translation", Vector3.Zero);
-        card.Opacity = SideBySide && !shown ? 0 : 1;
+        card.Opacity = 1;
         if (row.Children.OfType<SplitPageView>().FirstOrDefault(h => h.Tag == FrontOf(split)) is { ActualHeight: > 0, ActualWidth: > 0 } half)
         {
             var pill = HalfPill(row, typeof(FrontHalf));
