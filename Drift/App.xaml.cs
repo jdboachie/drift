@@ -79,9 +79,12 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        StartupTrace.Mark("launched");
         // Registered as a browser from somewhere else (the app moved, or was rebuilt elsewhere):
         // point Windows at this copy.
         DefaultBrowser.RefreshIfRegistered();
+        // The web engine starts while the window is made, rather than when the tab in front first asks for it.
+        MainWindow.StartEngine();
 
         var uris = CommandLine.UrisIn(Environment.GetCommandLineArgs().Skip(1)).ToList();
         lock (Gate)
@@ -91,7 +94,10 @@ public partial class App : Application
             _queue = DispatcherQueue.GetForCurrentThread();
             _window = new MainWindow(uris);
         }
+        StartupTrace.Mark("window built");
         _window.Activate();
+        StartupTrace.Mark("activated");
+        StartupTrace.MarkFirstFrame();
     }
 
     /// <summary>

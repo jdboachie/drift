@@ -41,6 +41,8 @@ public sealed partial class MainWindow
     private void SetUpPageHandles()
     {
         SetUpPanes();
+        // The loading bar gone, the dots it hid come back.
+        LoadingBar.Gone += ShowPageFocus;
         foreach (var handle in _panes.Select(p => p.Handle))
         {
             // The button keeps presses to itself, so listen to handled ones too.
@@ -159,7 +161,8 @@ public sealed partial class MainWindow
             var under = _heldHandle == handle || (_overHandle && handle.IsPointerOver);
             var near = under || Kept(handle) || PointerNear(handle);
             pane.Tab.Opacity = near ? 1 : 0;
-            pane.Dots.Opacity = under ? 1 : near ? 0.9 : 0.8;
+            // At rest, they make way for the loading bar over the page you're on (LoadingBarView).
+            pane.Dots.Opacity = under ? 1 : near ? 0.9 : pageOn && LoadingBar.Showing ? 0 : 0.8;
             ScaleDots(pane.Dots, _heldHandle == handle ? 1.1f : near ? 1 : RestingDots);
             DropHandle(handle, near);
         }

@@ -206,6 +206,8 @@ public sealed partial class MainWindow
         {
             var reply = await core.CallDevToolsProtocolMethodAsync("Page.captureScreenshot", """{"format":"jpeg","quality":70}""");
             var bytes = Convert.FromBase64String(JsonDocument.Parse(reply).RootElement.GetProperty("data").GetString()!);
+            // As it last looked, for when it loads again after being unloaded (SwipePage.cs).
+            if (Uri.TryCreate(tab.Url, UriKind.Absolute, out var at)) PicturesOf(tab).LastLook = (bytes, at.AbsoluteUri);
             using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
             using (var writer = new Windows.Storage.Streams.DataWriter(stream))
             {

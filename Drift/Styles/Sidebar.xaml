@@ -53,7 +53,7 @@
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
                         <Border x:Name="Chip"
-                                CornerRadius="6"
+                                CornerRadius="10"
                                 BorderThickness="1"
                                 BorderBrush="Transparent"
                                 Background="{ThemeResource DriftTileBrush}" />
@@ -65,8 +65,17 @@
         </Setter>
     </Style>
 
-    <!-- Regular tab row: transparent until hovered, near-white when active. Arc's measures: 38 tall,
-         44 apart. -->
+    <!-- A selected tab's card, apart from its row's own: the half you're on of a split's row, on the row's card
+         (Split.cs), and tabs picked out together with Ctrl+click or Shift+click (Picks.cs). -->
+    <Style x:Key="SplitFrontCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource DriftSelectedBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DriftSelectedEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <!-- Regular tab row: transparent until hovered, near-white when active, and when picked out with others. Arc's
+         measures: 38 tall, 44 apart. -->
     <Style x:Key="TabRowStyle" TargetType="ListViewItem">
         <Setter Property="Margin" Value="0,3" />
         <Setter Property="MinHeight" Value="38" />
@@ -112,23 +121,32 @@
                                 </VisualState>
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
-                        <!-- The selected tab's shadow: a pixel of it below the card, as Arc's. -->
-                        <Border x:Name="Lift"
-                                CornerRadius="8"
-                                Margin="0,1,0,-1"
-                                Background="{ThemeResource DriftSelectedShadowBrush}"
-                                IsHitTestVisible="False"
-                                Opacity="0" />
-                        <Grid x:Name="Chip"
-                              CornerRadius="8"
-                              BorderThickness="1"
-                              BorderBrush="Transparent"
-                              Background="Transparent"
-                              Padding="10,0,4,0">
-                            <ContentPresenter Content="{TemplateBinding Content}"
-                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalContentAlignment="Center" />
+                        <!-- The row itself, apart from the pieces of folders' cards put in beside it (Folders.cs),
+                             so it can fade or be pressed without them (RowDrag.cs). -->
+                        <Grid>
+                            <!-- The selected tab's shadow: a pixel of it below the card, as Arc's. -->
+                            <Border x:Name="Lift"
+                                    CornerRadius="8"
+                                    Margin="0,1,0,-1"
+                                    Background="{ThemeResource DriftSelectedShadowBrush}"
+                                    IsHitTestVisible="False"
+                                    Opacity="0" />
+                            <!-- Picked out with others (the row's tab, its Content): bound, so a recycled row never
+                                 keeps another tab's. Rows that aren't tabs have none. -->
+                            <Border Style="{StaticResource SplitFrontCardStyle}"
+                                    IsHitTestVisible="False"
+                                    Visibility="{Binding Content.PickedVisibility, RelativeSource={RelativeSource TemplatedParent}, FallbackValue=Collapsed}" />
+                            <Grid x:Name="Chip"
+                                  CornerRadius="8"
+                                  BorderThickness="1"
+                                  BorderBrush="Transparent"
+                                  Background="Transparent"
+                                  Padding="10,0,4,0">
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="Center" />
+                            </Grid>
                         </Grid>
                     </Grid>
                 </ControlTemplate>
@@ -136,13 +154,6 @@
         </Setter>
     </Style>
 
-    <!-- The half you're on of a split's row, on the row's card (Split.cs): a selected tab's card. -->
-    <Style x:Key="SplitFrontCardStyle" TargetType="Border">
-        <Setter Property="Background" Value="{ThemeResource DriftSelectedBrush}" />
-        <Setter Property="BorderBrush" Value="{ThemeResource DriftSelectedEdgeBrush}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="8" />
-    </Style>
 
     <!-- A piece of a folder's card, made for each row in code (Folders.cs, IndentFolderRow). -->
     <Style x:Key="FolderCardStyle" TargetType="Border">

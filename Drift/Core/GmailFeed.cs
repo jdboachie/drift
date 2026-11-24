@@ -13,6 +13,12 @@ public sealed record MailItem(string Sender, string Subject, string Snippet, Dat
     /// <summary>Its page, where the mail service gives one (Outlook).</summary>
     public string? Link { get; init; }
 
+    /// <summary>The conversation it's the newest unread email of (Outlook), whose senders <see cref="Sender"/> lists.</summary>
+    public string? Conversation { get; init; }
+
+    /// <summary>How many emails its conversation has, shown when more than one (Outlook's "(3)").</summary>
+    public int Count { get; init; } = 1;
+
     /// <summary>Text as one line: previews keep the email's line breaks, which a card row shouldn't.</summary>
     public static string OneLine(string? text) => text is null ? "" : Regex.Replace(text, @"\s+", " ").Trim();
 }

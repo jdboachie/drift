@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 using Drift.Models;
 using Microsoft.UI.Xaml;
@@ -21,7 +22,8 @@ namespace Drift;
 /// Folders on screen. What they hold and how they behave is FolderTree (Core, tested); this is the
 /// sidebar's side of it: the folder list, renaming in place, the menus, and dragging.
 /// <list type="bullet">
-/// <item>New folder (menu, Ctrl+Alt+N, or a tab's Add to folder) starts with its name being edited.
+/// <item>New folder (menu, Ctrl+Alt+N, a tab's Add to folder, or the menu of several tabs picked with Ctrl+click
+/// or Shift+click, Picks.cs) starts with its name being edited.
 /// Double-click a folder to rename it: Enter keeps the name, Esc puts it back.</item>
 /// <item>A folder's menu: Rename, New subfolder, Expand all, Collapse all, Close all tabs (unloads
 /// them, keeping their rows), Copy all links, Ungroup (the folder goes, what's in it moves up into
@@ -148,6 +150,8 @@ public sealed partial class MainWindow
                 CardPart.Only or CardPart.Hover => new Thickness(1),
                 _ => new Thickness(1, 0, 1, 0),
             };
+            // Mid-drag the cards are drawn whole instead (DragCards.cs).
+            card.Opacity = _dragCardsShown ? 0 : 1;
             card.Visibility = piece.Part != CardPart.Hover || row == _hoveredFolder ? Visibility.Visible : Visibility.Collapsed;
         }
     }
@@ -193,12 +197,12 @@ public sealed partial class MainWindow
 
     // ───────────────────────── Making and moving ─────────────────────────
 
-    /// <summary>A new folder, at the end of its parent (or of the folders), its name ready to type.</summary>
-    private TabFolder NewFolder(TabFolder? parent, BrowserTab? tab = null)
+    /// <summary>A new folder, at the end of its parent (or of the folders), with these tabs in it, its name ready to type.</summary>
+    private TabFolder NewFolder(TabFolder? parent, params BrowserTab[] tabs)
     {
         var folder = _folderTree.NewFolder("New folder", parent);
         if (folder.Parent is { } opened) _folderTree.SetExpanded(opened, true);
-        if (tab is not null) MoveTabToFolder(tab, folder, null);
+        foreach (var tab in tabs) MoveTabToFolder(tab, folder, null);
         RefreshFolderRows();
         SaveSessionSoon();
         BeginRename(folder);
@@ -344,6 +348,8 @@ public sealed partial class MainWindow
     private void FolderList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_syncingSelection) return;
+        // A tab's row with Ctrl or Shift held: picked out with others, not opened (Picks.cs). A header still opens or closes.
+        if (FolderList.SelectedItem is not (TabFolder or LiveNote) && PickInstead(FolderList, e)) return;
         switch (FolderList.SelectedItem)
         {
             case TabFolder folder:
@@ -408,7 +414,7 @@ public sealed partial class MainWindow
                 ending);
         else
             FillMenu(menu,
-                [Item("New tab", FolderNewTab_Click), Item("New subfolder", FolderNewSubfolder_Click), copyLinks],
+                [Item("New tab", FolderNewTab_Click), FolderTree.CanHoldSubfolder(folder) ? Item("New subfolder", FolderNewSubfolder_Click) : null, copyLinks],
                 [Item("Rename", FolderRename_Click), Item("Change icon", FolderIcon_Click)],
                 expand,
                 ending);
@@ -556,7 +562,6 @@ public sealed partial class MainWindow
 
     private void ShowFolderPreviewSoon(TabFolder folder)
     {
-        if (!Settings.Current.PreviewFolders) return;
         _folderPreviewFor = folder;
         if (_folderPreviewTimer is null)
         {
@@ -927,8 +932,12 @@ public sealed partial class MainWindow
             return;
         }
         HideFolderHighlight();
+        _folderLandingDepth = d.Into is { } folder ? folder.Depth + 1 : 0;
         ShowRowPreview(FolderList, land.Slot);
     }
+
+    /// <summary>How deep a drop at the folder list's slot would land, for its cards meanwhile (RowDrag.cs).</summary>
+    private int _folderLandingDepth;
 
     private DispatcherQueueTimer CreateSpringTimer()
     {
@@ -966,10 +975,24 @@ public sealed partial class MainWindow
         FolderDropHighlight.Width = row.ActualWidth;
         FolderDropHighlight.Height = row.ActualHeight;
         FolderDropHighlight.Visibility = Visibility.Visible;
+        _highlightedFolder = folder;
+    }
+
+    private TabFolder? _highlightedFolder;
+
+    /// <summary>The rows have changed under the highlight (its folder sprang open): it goes with its header, as the rows slide (Slides.cs).</summary>
+    private void FollowFolderHighlight()
+    {
+        if (FolderDropHighlight.Visibility != Visibility.Visible || _highlightedFolder is not { } folder) return;
+        var was = Canvas.GetTop(FolderDropHighlight);
+        ShowFolderHighlight(folder);
+        var by = was - Canvas.GetTop(FolderDropHighlight);
+        if (Math.Abs(by) >= 1) Spring.To(FolderDropHighlight, "Translation", Vector3.Zero, SlideSeconds, SlideBounce, from: new Vector3(0, (float)by, 0));
     }
 
     private void HideFolderHighlight()
     {
+        _highlightedFolder = null;
         FolderDropHighlight.Visibility = Visibility.Collapsed;
         _springFolder = null;
         _springTimer?.Stop();
@@ -986,7 +1009,7 @@ public sealed partial class MainWindow
         try
         {
             var row = await SnapshotAsync(GhostStage.Row);
-            if (_dragFolder == folder && row is { } r)
+            if (_ghostsOf == folder && row is { } r)
             {
                 _rowGhost = r.Bitmap;
                 _rowGhostAnchor = new Point(19 * r.Scale, r.Bitmap.PixelHeight / 2.0);

@@ -4,6 +4,7 @@ using System.Numerics;
 using Drift.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace Drift;
 
@@ -36,9 +37,11 @@ public sealed partial class MainWindow
             if (list.ContainerFromItem(item) is FrameworkElement row) containers.Add(row);
         for (var i = 0; i < containers.Count; i++)
         {
+            // The last row's room around it too, as the others have (to the next row's top), so a row
+            // shown after it sits as far below it as the rows above do.
             var height = i + 1 < containers.Count
                 ? containers[i + 1].ActualOffset.Y - containers[i].ActualOffset.Y
-                : containers[i].ActualHeight;
+                : containers[i].ActualHeight + containers[i].Margin.Top + containers[i].Margin.Bottom;
             var item = list.ItemFromContainer(containers[i]);
             rows.Add(new RowLayout(item, height, IsHeader: item is TabFolder));
         }
@@ -82,6 +85,9 @@ public sealed partial class MainWindow
     /// <summary>Slides a list's rows to show the dragged row at a slot (or lifted out, for null).</summary>
     private void ShowRowPreview(ListViewBase list, int? slot)
     {
+        // A list's rows have changed (a folder springing open under the drag) and aren't laid out yet: where
+        // they are isn't known until then (PlaySlides, which has them worked out again).
+        if (_slideRows is not null) return;
         if (_rowPreview.TryGetValue(list, out var showing) ? showing == slot : slot is null && DraggedRows(list).Count == 0)
             return;
         _rowPreview[list] = slot;
@@ -89,7 +95,10 @@ public sealed partial class MainWindow
 
         var (rows, top) = LayoutOf(list);
         var dragged = DraggedRows(list);
-        var arriving = dragged.Count == 0 && slot is not null ? ArrivingHeight() : 0;
+        var arrivingRow = dragged.Count == 0 && slot is not null ? ArrivingHeight() : 0;
+        var arriving = arrivingRow;
+        // The folders' cards fit the rows as they're shown.
+        var cards = list == FolderList ? PreviewFolderCards(ref rows, dragged, slot, ref arriving) : null;
         var tops = RowPreview.Tops(rows, dragged, slot, arriving);
         _previewTops[list] = tops.ToDictionary(t => t.Key, t => t.Value + top);
 
@@ -100,9 +109,31 @@ public sealed partial class MainWindow
             {
                 var by = (float)(to + top - container.ActualOffset.Y);
                 Spring.To(container, "Translation", new Vector3(0, by, 0), SlideSeconds, SlideBounce);
-                container.Opacity = dragged.Contains(row.Key) ? DraggedRowOpacity : 1;
+                FadeRow(list, container, dragged.Contains(row.Key) ? DraggedRowOpacity : 1);
             }
             else container.Opacity = 0;
+        }
+        if (cards is not null)
+        {
+            // Where each row is shown, for its card's edges; a row arriving from another list has its gap's top.
+            var heights = rows.ToDictionary(r => r.Key, r => r.Height, ReferenceEqualityComparer.Instance);
+            var shown = new List<(object? Key, double Top, double Height, CardRow Cards)>();
+            double gapTop = top, gapRoom = 0;
+            foreach (var (key, depth, cardRow) in cards)
+            {
+                if (key is null)
+                {
+                    shown.Add((null, gapTop + gapRoom, arrivingRow, cardRow));
+                    (gapTop, gapRoom) = (gapTop + gapRoom, arriving);
+                    continue;
+                }
+                if (FolderList.ContainerFromItem(key) is not ListViewItem item || !tops.TryGetValue(key, out var at)) continue;
+                shown.Add((key, at + top, item.ActualHeight, cardRow));
+                (gapTop, gapRoom) = (at + top, heights[key]);
+                // The dragged rows sit in from the side as they will where they'd land.
+                if (dragged.Contains(key)) IndentShownRow(item, depth, cardRow);
+            }
+            ShowDragCards(FolderCard.Spans(shown, CardRoom));
         }
 
         // Room at the end for a row from elsewhere; the groups below move down to make it.
@@ -113,6 +144,48 @@ public sealed partial class MainWindow
             list.MinHeight = room;
         }
     }
+
+    /// <summary>
+    /// Mid-drag in the folder list, the folders' cards as they'll be once it's dropped (FolderCard.Preview):
+    /// each card one surface round its rows, growing and shrinking with them, never going with the dragged
+    /// row. Where a card's end comes or goes, the room under it comes or goes too; a row arriving from
+    /// another list opens a row's gap, with the room under it its cards need.
+    /// </summary>
+    private List<(object? Key, int Depth, CardRow Cards)> PreviewFolderCards(ref List<RowLayout> rows, HashSet<object> dragged, int? slot, ref double arriving)
+    {
+        var inputs = rows.Select(r => CardInput(r.Key) is var (depth, isFolder, open) ? (r.Key, depth, isFolder, open) : default).ToList();
+        var shown = FolderCard.Preview(inputs, dragged, slot, _folderLandingDepth, arriving > 0);
+
+        var ends = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
+        foreach (var (key, _, cards) in shown) if (key is not null) ends[key] = cards.Ends;
+        rows = rows.Select(r => ends.TryGetValue(r.Key, out var now) && _folderCardRows.TryGetValue(r.Key, out var was)
+            ? r with { Height = r.Height + (now - was.Ends) * CardRoom }
+            : r).ToList();
+        if (shown.FindIndex(s => s.Key is null) is var at and >= 0)
+            arriving = RowGap + arriving + RowGap + shown[at].Cards.Ends * CardRoom;
+        return shown;
+    }
+
+    /// <summary>
+    /// A row shown faded (the dragged one, in its slot) or not. In the folder list, only the row itself:
+    /// its pieces of the folders' cards stay, as the cards are the folders', not the row's.
+    /// </summary>
+    private void FadeRow(ListViewBase list, UIElement container, double opacity)
+    {
+        if (list != FolderList)
+        {
+            container.Opacity = opacity;
+            return;
+        }
+        container.Opacity = 1;
+        foreach (var part in RowOwnParts(container)) part.Opacity = opacity;
+    }
+
+    /// <summary>A folder list row's own parts: all but its pieces of the cards (Folders.cs).</summary>
+    private static List<UIElement> RowOwnParts(UIElement container) =>
+        container is ListViewItem item && VisualTreeHelper.GetChildrenCount(item) > 0 && VisualTreeHelper.GetChild(item, 0) is Grid root
+            ? root.Children.Where(c => c is not Border { Tag: CardTag }).ToList()
+            : [container];
 
     private readonly Dictionary<ListViewBase, double> _baseHeights = new();
 
@@ -135,8 +208,14 @@ public sealed partial class MainWindow
                 {
                     if (animate) Spring.To(row, "Translation", Vector3.Zero, SlideSeconds, SlideBounce);
                     else Spring.Jump(row, "Translation", Vector3.Zero);
-                    row.Opacity = 1;
+                    FadeRow(list, row, 1);
                 }
+            }
+            // The rows' own sides, and their pieces drawing the cards again once they're back (DragCards.cs).
+            if (list == FolderList && _dragCardsShown)
+            {
+                foreach (var row in FolderRows) IndentFolderRow(FolderList.ContainerFromItem(row), row);
+                HandBackDragCards(animate);
             }
             if (list.MinHeight != 0)
             {

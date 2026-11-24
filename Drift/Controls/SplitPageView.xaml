@@ -8,7 +8,7 @@
 
     <Grid x:Name="Root" x:FieldModifier="internal"
           Background="Transparent" CornerRadius="8"
-          Padding="11,0,8,0" ColumnSpacing="8"
+          Padding="11,0,8,0" ColumnSpacing="16"
           AutomationProperties.Name="{x:Bind Page.Title, Mode=OneWay}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="16" />

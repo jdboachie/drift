@@ -6,7 +6,7 @@ Rules learned from building Drift, each with why. Read before building or changi
 
 - **Build from the shared pieces; never copy one.** Before writing a panel, row, card or style, look for it here:
   - `Views/`: the window's regions (caption bar, toolbar, address bar, command bar, switcher, Library, downloads peek, mini player, meeting notice, crash card, drag ghosts). A new region is a view of its own, with an `Owner` the window sets; its handlers stay in the window's code.
-  - `Controls/`: what's used in more than one place. A tab's row (`TabRowView`), an Essential's tile, a folder's header, a page's card (`PageCardView`, also Peek's), handle and divider, settings rows and groups (`SettingsRow` in a `SettingsGroup`), `Toast`, `HoverCard`. A control in a list's row finds its window with `MainWindow.Of(this)`.
+  - `Controls/`: what's used in more than one place. A tab's row (`TabRowView`), an Essential's tile, a folder's header, a page's card (`PageCardView`, also Peek's), handle and divider, settings rows and groups (`SettingsRow` in a `SettingsGroup`), a setting chosen by pictures (`PictureChoice`, as Dia shows its layouts; its pictures drawn with `PictureTabStyle` and `PictureGroupStyle`), `Toast`, `HoverCard`. A control in a list's row finds its window with `MainWindow.Of(this)`.
   - `Styles/`: colours (`Colors.xaml`, a light and a dark value for each), text, buttons, settings, the sidebar's rows, and floating surfaces (`FloatingPanelStyle`: the hairline, fill and shadow every panel over the window has).
 
   A list's template in `MainWindow.xaml` is one element; a row with more is a control. A shadow comes from `FloatingPanelStyle`, `PageControlsPillStyle` or `PageCardView`, never one made on the spot. A colour that has to be written out (a button's `ButtonBackground` and the like, which won't take an alias) is one of Drift's own, in the same theme. Checked by `Drift.Tests/ComponentRulesTests.cs`.
@@ -26,17 +26,37 @@ Rules learned from building Drift, each with why. Read before building or changi
   <!-- 2026-11-17: "the replace page icon looks like a share or pop out icon" · "replace page with a plus icon?? nah figure out something else" -->
 
 - **Anything grouping tabs in the sidebar (folders, splits) uses one card: `DriftFolderCardBrush`, a `DriftFolderCardBorderBrush` hairline, corner radius 10.**
-  The card shows only while the group is open (a folder) or in front (a split); closed or in the background, it's a plain row.
+  A folder's card shows only while it's open; closed, it's a plain row. A split's shows always, in front or not, when its pages sit one under another, since without the card they'd read as separate tabs; side by side, only while it's in front, as a folder's while open.
   Why: one card style makes groups read alike; a card on a closed group is noise.
   <!-- 2026-11-17: "the split view should have the same card treatment as the folders - just the color and border" · "the split row when it isn't open shouldn't have that folder-card treatment" -->
+- **A split's pages sit one under another in the sidebar, each a full tab row (38 tall), the left page on top, as Search Browser's do.**
+  Settings › Tabs › Split View tabs, a choice by pictures: Vertical (this, the default) or Horizontal, side by side in one row as they are on screen, each filling its share (the layout before 2026-11-24). Both stay: it's a setting, not a choice made for you. Settings words are plain: the options say "Vertical" and "Horizontal", not sentences.
+  <!-- 2026-11-24: "the split view thing should be a setting" · "use "horizontal" and "vertical". be simple silly" -->
+  <!-- 2026-11-24: "lets make split tabs's tab vertical instead of horizontal (like in the searchbrowser screenshot)" · asked whether a split in the background keeps its card: "it should get the box" -->
+
+- **Essentials tiles are 48 tall with the folder cards' corner radius, 10.** Their placeholder, drop zone and drag ghost match.
+- **Every row of Essentials fills the sidebar's width.** A short last row shares it too, so its tiles come out wider (five across three: three, then two at half the width each), never a row with a gap at its end. A tile moving between rows springs to its new width as well as its place.
+  Why: the sidebar's big shapes should share one roundness.
+  <!-- 2026-11-23: "the essentials should be as rounded as the folder cards" · "and slightly bigger" -->
 
 - **In a group, the item in front is marked with the normal selected-tab card (`SplitFrontCardStyle`: `DriftSelectedBrush`, `DriftSelectedEdgeBrush`, radius 8) on the group's card. Never a faint tint.**
   Why: you must be able to tell at a glance which one is active.
   <!-- 2026-11-17: "i can't tell which split is active by looking at the tab. look at how arc (or zen) does it" -->
 
+- **The integrations' hover cards (mail, calendar) are Arc's since its Sept 2023 redesign: no header, the content from edge to edge, and + floating round over the bottom-right corner (`HoverCard`).**
+  Emails: sender and age, the subject on one line, the start of it on up to two, a hairline between each two. Meetings: the hour grid, each meeting only its name, on a tint of the accent.
+  Why: the card had copied Arc's 2022 one (a tinted header with the site's icon, a title and a square +), which Arc had since replaced.
+  <!-- 2026-11-23: "it seems our integration's popover may be based on arc's old version. can you confirm by researching what the latest version looked like? then make ours conform." -->
+
 - **Every popup and flyout has rounded corners (8px). A custom `FlyoutPresenter` style must set `CornerRadius`**, since its own style drops the default. Checked by `Drift.Tests/PopupStyleTests.cs`.
   Why: a popup with sharp corners looks broken next to the rest.
   <!-- 2026-11-17: "it also opens with sharp borders" (the Change icon popover) -->
+
+## Text
+
+- **Drift's interface is set in Segoe UI Variable Display, falling back to Segoe UI.**
+  It's set once, in `Styles/Text.xaml` (`ContentControlThemeFontFamily`, and the TextBlock style built on it); nothing names a font of its own except emoji (Segoe UI Emoji) and icons.
+  <!-- 2026-11-23: "Segoe UI Variable Display - font it should use" -->
 
 ## Color
 

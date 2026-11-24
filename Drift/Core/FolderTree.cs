@@ -72,6 +72,9 @@ public sealed class FolderTree
         return depth;
     }
 
+    /// <summary>Whether a new folder can go inside this one: not a live one, and not at the deepest level (NewFolder would put it beside).</summary>
+    public static bool CanHoldSubfolder(TabFolder folder) => !folder.IsLive && DepthOf(folder) + 1 < MaxDepth;
+
     /// <summary>Whether a folder can go into another (or to the top, for null): not inside itself, and not past MaxDepth.</summary>
     public bool CanNest(TabFolder folder, TabFolder? into)
     {

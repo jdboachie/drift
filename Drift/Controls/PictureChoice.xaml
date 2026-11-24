@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One choice of a setting shown as pictures, as Dia's are (PictureChoice.xaml.cs): its name above, a small picture
+     of what it looks like in a frame, and a radio button under it. The frame is dark around the one that's chosen.
+     Choices with the same GroupName go together; clicking anywhere on one chooses it. -->
+<UserControl
+    x:Class="Drift.PictureChoice"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="8" Background="Transparent" Tapped="Choice_Tapped"
+                PointerEntered="Choice_PointerEntered" PointerExited="Choice_PointerExited">
+        <TextBlock x:Name="LabelText" HorizontalAlignment="Center"
+                   Style="{StaticResource SettingsDescriptionStyle}" FontSize="13" />
+        <Border x:Name="Frame" Width="88" Height="60" CornerRadius="8" BorderThickness="2" Padding="10,8"
+                Background="{ThemeResource ControlFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource ControlStrongStrokeColorDisabledBrush}">
+            <ContentPresenter x:Name="PicturePresenter" VerticalAlignment="Center" />
+        </Border>
+        <RadioButton x:Name="Radio" HorizontalAlignment="Center" MinWidth="0" Padding="0"
+                     Checked="Radio_Checked" Unchecked="Radio_Unchecked" />
+    </StackPanel>
+</UserControl>

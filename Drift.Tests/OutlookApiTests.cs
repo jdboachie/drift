@@ -111,6 +111,61 @@ public class OutlookApiTests
     }
 
     [Fact]
+    public void Unread_emails_in_one_conversation_are_one_row_as_outlook_lists_them()
+    {
+        // Two approvals on one pull request: Outlook shows the conversation once, by its newest email.
+        var json = """
+            {"value":[
+              {"Id":"A1","ConversationId":"PR","Subject":"Re: fix(users)","From":{"EmailAddress":{"Name":"Abdul"}},"ReceivedDateTime":"2026-11-23T11:56:00Z"},
+              {"Id":"J1","ConversationId":"RETRO","Subject":"2026 in retro","From":{"EmailAddress":{"Name":"Judith"}},"ReceivedDateTime":"2026-11-23T11:44:00Z"},
+              {"Id":"N1","ConversationId":"PR","Subject":"Re: fix(users)","From":{"EmailAddress":{"Name":"Nana"}},"ReceivedDateTime":"2026-11-23T11:58:00Z"}
+            ]}
+            """;
+        var items = OutlookApi.ParseMessages(json, "outlook.cloud.microsoft");
+        // Everyone in it, newest first, and how many: "Nana; Abdul", 2.
+        Assert.Equal(["Nana; Abdul", "Judith"], items.Select(i => i.Sender));
+        Assert.Equal([2, 1], items.Select(i => i.Count));
+        Assert.Equal(["PR", "RETRO"], items.Select(i => i.Conversation));
+    }
+
+    [Fact]
+    public void A_conversation_shows_everyone_in_it_and_all_its_emails_as_outlook_does()
+    {
+        var unread = """
+            {"value":[
+              {"Id":"N1","ConversationId":"PR","Subject":"Re: fix(users)","From":{"EmailAddress":{"Name":"Nana"}},"ReceivedDateTime":"2026-11-23T11:58:00Z"},
+              {"Id":"J1","ConversationId":"RETRO","Subject":"2026 in retro","From":{"EmailAddress":{"Name":"Judith"}},"ReceivedDateTime":"2026-11-23T11:44:00Z"}
+            ]}
+            """;
+        // The inbox's emails in those conversations, read ones too: Abdul's newest (already read), then Nana, then Abdul.
+        var inbox = """
+            {"value":[
+              {"Id":"A1","ConversationId":"PR","From":{"EmailAddress":{"Name":"Abdul"}},"ReceivedDateTime":"2026-11-23T11:56:00Z"},
+              {"Id":"N1","ConversationId":"PR","From":{"EmailAddress":{"Name":"Nana"}},"ReceivedDateTime":"2026-11-23T11:58:00Z"},
+              {"Id":"A2","ConversationId":"PR","From":{"EmailAddress":{"Address":"abdul@x.com"}},"ReceivedDateTime":"2026-11-23T12:10:00Z"},
+              {"Id":"A3","ConversationId":"PR","From":{"EmailAddress":{"Name":"Abdul"}},"ReceivedDateTime":"2026-11-23T12:20:00Z"}
+            ]}
+            """;
+        var rows = OutlookApi.WithConversations(OutlookApi.ParseMessages(unread, "outlook.cloud.microsoft"), inbox);
+        Assert.Equal(["Abdul; abdul@x.com; Nana", "Judith"], rows.Select(r => r.Sender));
+        Assert.Equal([4, 1], rows.Select(r => r.Count));
+        // The row is still its newest unread email.
+        Assert.Equal("N1", rows[0].MessageId);
+    }
+
+    [Fact]
+    public void Asks_for_the_emails_in_the_conversations_shown()
+    {
+        var query = Uri.UnescapeDataString(OutlookApi.ConversationEmails("outlook.cloud.microsoft", ["AAQk+a/b=", "it's"]).Query);
+        Assert.Contains("ConversationId eq 'AAQk+a/b=' or ConversationId eq 'it''s'", query);
+        Assert.Contains("$select=ConversationId,From,ReceivedDateTime", query);
+    }
+
+    [Fact]
+    public void Asks_for_up_to_fifty_unread_emails() =>
+        Assert.Contains("$top=50", Uri.UnescapeDataString(OutlookApi.UnreadMessages("outlook.cloud.microsoft").Query));
+
+    [Fact]
     public void An_emails_text_is_one_line()
     {
         var json = """
@@ -121,13 +176,6 @@ public class OutlookApiTests
         Assert.Equal("Dear all, We are excited to share the new ones. We have", item.Snippet);
         Assert.Equal("Meeting backgrounds", item.Subject);
         Assert.Equal("Katrin Hecker", item.Sender);
-    }
-
-    [Fact]
-    public void Reads_the_unread_count()
-    {
-        Assert.Equal(12, OutlookApi.ParseUnread("""{"Id":"x","UnreadItemCount":12}"""));
-        Assert.Equal(0, OutlookApi.ParseUnread("""{"error":{}}"""));
     }
 
     [Fact]

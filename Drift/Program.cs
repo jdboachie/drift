@@ -20,6 +20,7 @@ public static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        StartupTrace.Mark("main");
         WinRT.ComWrappersSupport.InitializeComWrappers();
         WaitForRestart(args);
 
@@ -34,6 +35,13 @@ public static class Program
             return 0;
         }
         main.Activated += (_, activation) => App.OnRedirected(activation);
+
+        // What the window starts from, read on other threads while XAML starts up: on the UI thread, the
+        // three files held the window's first frame up. (After WaitForRestart: a Drift restarting saves
+        // its tabs on its way out.)
+        _ = Task.Run(() => Settings.Current);
+        History.ReadSoon();
+        Session.ReadSoon();
 
         Application.Start(p =>
         {

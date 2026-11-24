@@ -15,8 +15,9 @@ namespace Drift;
 /// as the Google ones do (GoogleCalendar.cs, Gmail.cs).
 /// The data comes from Outlook's own API, the one its pages call on their own site. Outlook stays
 /// open in a hidden view (Integrations.cs), signed in as your tabs are; when it calls the API, Drift
-/// asks the same of it, with the same sign-in, which stays inside Drift. Every two minutes, on hover,
-/// and soon after either tab moves on.
+/// asks the same of it, with the same sign-in, which stays inside Drift. It asks as soon as Outlook pushes a change
+/// to its own page (OutlookPushScript: new mail, mail read anywhere), each time a card opens, soon after either tab moves
+/// on, and every two minutes in case the push was missed.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -24,6 +25,8 @@ public sealed partial class MainWindow
 
     private static readonly TimeSpan OutlookRefresh = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan OutlookRetry = TimeSpan.FromSeconds(30);
+    // The conversations whose senders and emails are asked for: more than the card shows before scrolling.
+    private const int OutlookConversationsAsked = 20;
 
     private OutlookState _outlookState = OutlookState.Loading;
     private BrowserTab? _outlookMailTab;
@@ -32,7 +35,6 @@ public sealed partial class MainWindow
     private string? _outlookCalendarUrl;
     private List<CalendarEvent> _outlookEvents = [];
     private List<MailItem> _outlookMail = [];
-    private int _outlookUnread;
     private DateTimeOffset _outlookNextFetch;
     private DateTimeOffset _outlookFetched;
     private bool _outlookFetching;
@@ -60,11 +62,17 @@ public sealed partial class MainWindow
 
     private void StopOutlook() => _outlookTimer?.Stop();
 
-    private void OutlookTick()
+    /// <summary>The pinned tabs with Outlook's mail and calendar whose previews are on: the ones with cards.</summary>
+    private (BrowserTab? Mail, BrowserTab? Calendar) PinnedOutlook()
     {
         var pinned = EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).Where(t => t.IsPinned).ToList();
-        var mail = Settings.Current.PreviewOutlookMail ? pinned.FirstOrDefault(t => OutlookApi.IsMail(PageOf(t))) : null;
-        var calendar = Settings.Current.PreviewOutlookCalendar ? pinned.FirstOrDefault(t => OutlookApi.IsCalendar(PageOf(t))) : null;
+        return (Settings.Current.PreviewOutlookMail ? pinned.FirstOrDefault(t => OutlookApi.IsMail(PageOf(t))) : null,
+            Settings.Current.PreviewOutlookCalendar ? pinned.FirstOrDefault(t => OutlookApi.IsCalendar(PageOf(t))) : null);
+    }
+
+    private void OutlookTick()
+    {
+        var (mail, calendar) = PinnedOutlook();
         if (calendar != _outlookCalendarTab)
         {
             _outlookCalendarTab?.SetMeeting(null, null);
@@ -147,10 +155,17 @@ public sealed partial class MainWindow
             var dayStart = new DateTimeOffset(DateTime.Today, TimeZoneInfo.Local.GetUtcOffset(DateTime.Today));
             var events = _outlookCalendarTab is not null ? await OutlookGetAsync(core, OutlookApi.CalendarView(host, dayStart, dayStart.AddDays(2))) : null;
             var messages = _outlookMailTab is not null ? await OutlookGetAsync(core, OutlookApi.UnreadMessages(host)) : null;
-            var count = _outlookMailTab is not null ? await OutlookGetAsync(core, OutlookApi.Inbox(host)) : null;
             if (events is not null) _outlookEvents = OutlookApi.ParseEvents(events, TimeZoneInfo.Local);
-            if (messages is not null) _outlookMail = OutlookApi.ParseMessages(messages, host);
-            if (count is not null) _outlookUnread = OutlookApi.ParseUnread(count);
+            if (messages is not null)
+            {
+                var rows = OutlookApi.ParseMessages(messages, host);
+                // Everyone in each conversation and all its emails, read ones too, as Outlook lists it; without
+                // that answer, those of its unread ones.
+                var shown = rows.Select(r => r.Conversation).OfType<string>().Take(OutlookConversationsAsked).ToList();
+                if (shown.Count > 0 && await OutlookGetAsync(core, OutlookApi.ConversationEmails(host, shown)) is { } inConversations)
+                    rows = OutlookApi.WithConversations(rows, inConversations);
+                _outlookMail = rows;
+            }
             var got = (_outlookCalendarTab is null || events is not null) && (_outlookMailTab is null || messages is not null);
             if (got)
             {
@@ -185,6 +200,78 @@ public sealed partial class MainWindow
         if (_outlookCalendarTab is { } calendar) ShowMeetings(calendar, _outlookEvents);
         ShowNoticeAndCardNow();
         if (_hoverCard == MailCard && _hoverTab == _outlookMailTab) RenderMailCard();
+        // Outlook said something changed while this was asking: asked again, for what this may have missed.
+        if (_outlookPushedMeanwhile)
+        {
+            _outlookPushedMeanwhile = false;
+            OutlookPushed();
+        }
+    }
+
+    // ---- Outlook's push ----
+
+    // A change comes in a few pieces over under a second: asked once they're in.
+    private static readonly TimeSpan OutlookPushSettle = TimeSpan.FromSeconds(1);
+    private DispatcherQueueTimer? _outlookPushTimer;
+    private bool _outlookPushedMeanwhile;
+
+    /// <summary>The most a keep-alive on Outlook's channel takes: about 21 bytes every 15–20s (a change is hundreds or more).</summary>
+    private const int OutlookKeepAliveBytes = 64;
+
+    /// <summary>
+    /// In Outlook's pages (a tab's, in InputScript, and the hidden view's): Outlook's push. One Outlook page in a
+    /// profile (your tab, or the hidden view when no tab has Outlook open) keeps a request to Outlook's notification
+    /// channel open, and Outlook sends down it as things change: new mail, mail read anywhere. Only how much arrives
+    /// is looked at, never what; more than a keep-alive tells Drift (OutlookPushed). Needs post and token.
+    /// It's in the page rather than read from Drift's side (the page's network events) because that sent Drift an
+    /// event for each of Outlook's requests, hundreds a second as it loads, and one arriving as the window closed
+    /// crashed WebView2.
+    /// </summary>
+    private static string OutlookPushScript() => """
+          if (/^outlook\.(cloud\.microsoft|office\.com|office365\.com)$/i.test(location.hostname)) {
+            const channelFetch = window.fetch;
+            const isChannel = (input, init) => {
+              try {
+                const method = String((init && init.method) || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+                const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+                return method === 'GET' && url.pathname.replace(/\/+$/, '').toLowerCase() === '/owa/notificationchannel';
+              } catch { return false; }
+            };
+            window.fetch = function (input, init) {
+              const answer = channelFetch.apply(this, arguments);
+              if (!isChannel(input, init)) return answer;
+              return answer.then((response) => {
+                try {
+                  // The page reads the channel as it arrives: each piece it reads is measured on its way past.
+                  const body = response.body, getReader = body && body.getReader;
+                  if (getReader) body.getReader = function () {
+                    const reader = getReader.apply(body, arguments), read = reader.read;
+                    reader.read = function () {
+                      return read.apply(reader, arguments).then((part) => {
+                        try { if (part && part.value && part.value.byteLength > __KEEPALIVE__) post(token + ':outlook-pushed'); } catch { }
+                        return part;
+                      });
+                    };
+                    return reader;
+                  };
+                } catch { }
+                return response;
+              });
+            };
+          }
+        """.Replace("__KEEPALIVE__", OutlookKeepAliveBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>Outlook said something changed: asked again once its pieces are in, or after the ask under way.</summary>
+    private void OutlookPushed()
+    {
+        if (_outlookMailTab is null && _outlookCalendarTab is null) return;
+        _outlookPushTimer ??= OneShot(OutlookPushSettle, () =>
+        {
+            if (_outlookFetching) _outlookPushedMeanwhile = true;
+            else _ = FetchOutlookAsync();
+        });
+        _outlookPushTimer.Stop();
+        _outlookPushTimer.Start();
     }
 
     /// <summary>
@@ -234,8 +321,26 @@ public sealed partial class MainWindow
         })();
         """;
 
-    private static async Task ListenToOutlookAsync(CoreWebView2 core) =>
+    private async Task ListenToOutlookAsync(CoreWebView2 core)
+    {
         await core.AddScriptToExecuteOnDocumentCreatedAsync(OutlookListener);
+        await core.AddScriptToExecuteOnDocumentCreatedAsync($$"""
+            (() => {
+              if (window.top !== window || !window.chrome || !window.chrome.webview) return;
+              const post = window.chrome.webview.postMessage.bind(window.chrome.webview);
+              const token = '{{ShortcutToken}}';
+            {{OutlookPushScript()}}
+            })();
+            """);
+        // Subscribed once, for the view's life (HiddenSiteAsync).
+        core.WebMessageReceived += (_, e) =>
+        {
+            string message;
+            try { message = e.TryGetWebMessageAsString(); }
+            catch { return; }
+            if (message == ShortcutToken + ":outlook-pushed") OutlookPushed();
+        };
+    }
 
     private async Task<bool> OutlookReadyAsync(CoreWebView2 core) =>
         await EvaluateAsync(core, "!!(window.__drift && window.__drift.ready())", gesture: false) is { ValueKind: System.Text.Json.JsonValueKind.True };
@@ -259,9 +364,13 @@ public sealed partial class MainWindow
 
     // ---- The cards ----
 
+    /// <summary>
+    /// Every opening of the card asks again (it shows what it has meanwhile, and changes in place), unless it's only just
+    /// asked: going from tile to tile shouldn't ask over and over.
+    /// </summary>
     private void ShowingOutlookCard()
     {
-        if (DateTimeOffset.Now - _outlookFetched > TimeSpan.FromSeconds(30) && !_outlookFetching) _ = FetchOutlookAsync();
+        if (DateTimeOffset.Now - _outlookFetched > TimeSpan.FromSeconds(5) && !_outlookFetching) _ = FetchOutlookAsync();
     }
 
     private string? OutlookMessage() => _outlookState switch

@@ -20,6 +20,9 @@ public readonly record struct CardPiece(int Level, CardPart Part, int Rank = 0);
 /// </summary>
 public sealed record CardRow(IReadOnlyList<CardPiece> Pieces, int Inside, int Ends);
 
+/// <summary>A whole card: whose (its folder), how deep, and where its top and bottom edges are.</summary>
+public readonly record struct CardSpan(object Folder, int Level, double Top, double Bottom);
+
 /// <summary>
 /// Folders are cards, as Dia's groups are: a folder's header and everything in it on one rounded
 /// surface, and a folder inside another is a card of its own on its parent's, so the nesting shows.
@@ -72,6 +75,67 @@ public static class FolderCard
             result[i] = new CardRow(list, inside[i], ends[i]);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Mid-drag, the rows as they're shown and the cards as they'll be once it's dropped (RowDrag.cs):
+    /// the dragged rows at their slot among the others, a level as deep as they'd land (a folder's
+    /// rows keep theirs under it), or left out without a slot; a row arriving from another list is a
+    /// null key. So a card grows and shrinks with its rows, and never goes with a dragged one.
+    /// </summary>
+    /// <param name="rows">Every row of the list, in order: its key, depth, whether it's a folder, and if so whether it's open.</param>
+    /// <param name="slot">Where the dragged rows go among the others (RowPreview.Landing), or null.</param>
+    /// <param name="landingDepth">The depth the dragged row (or the folder of a dragged folder's rows) would have there.</param>
+    public static List<(object? Key, int Depth, CardRow Cards)> Preview(
+        IReadOnlyList<(object Key, int Depth, bool IsFolder, bool Open)> rows, IReadOnlySet<object> dragged,
+        int? slot, int landingDepth, bool arriving)
+    {
+        var lifted = new List<(object Key, int Depth, bool IsFolder, bool Open)>();
+        foreach (var row in rows) if (dragged.Contains(row.Key)) lifted.Add(row);
+        var by = lifted.Count > 0 ? landingDepth - lifted[0].Depth : 0;
+
+        var shown = new List<(object? Key, int Depth, bool IsFolder, bool Open)>();
+        var index = 0;
+        void PlaceLifted()
+        {
+            foreach (var row in lifted) shown.Add(row with { Depth = row.Depth + by });
+            if (arriving) shown.Add((null, landingDepth, false, false));
+        }
+        foreach (var row in rows)
+        {
+            if (dragged.Contains(row.Key)) continue;
+            if (index++ == slot) PlaceLifted();
+            shown.Add(row);
+        }
+        if (slot is { } at && at >= index) PlaceLifted();
+
+        var cards = Layout(shown.ConvertAll(r => (r.Depth, r.IsFolder, r.Open)));
+        var result = new List<(object? Key, int Depth, CardRow Cards)>(shown.Count);
+        for (var i = 0; i < shown.Count; i++) result.Add((shown[i].Key, shown[i].Depth, cards[i]));
+        return result;
+    }
+
+    /// <summary>
+    /// The cards whole, from where the rows are (mid-drag, where they're shown): from the top of its
+    /// folder's header to the bottom of its last row, with the room a card's end has under it. Outer
+    /// cards first. Hover pieces (a closed folder's, only while hovered) aren't cards here.
+    /// </summary>
+    /// <param name="rows">Each row in order: its key (null for one arriving from another list), its top, its
+    /// height (without the room around it), and its pieces.</param>
+    public static List<CardSpan> Spans(IReadOnlyList<(object? Key, double Top, double Height, CardRow Cards)> rows, double room)
+    {
+        var spans = new List<CardSpan>();
+        var open = new Dictionary<int, (object Folder, double Top)>();
+        foreach (var (key, top, height, cards) in rows)
+            foreach (var piece in cards.Pieces)
+            {
+                if (piece.Part is CardPart.Top or CardPart.Only && key is not null) open[piece.Level] = (key, top);
+                if (piece.Part is CardPart.Bottom or CardPart.Only && open.Remove(piece.Level, out var start))
+                    spans.Add(new CardSpan(start.Folder, piece.Level, start.Top,
+                        top + height + (piece.Part == CardPart.Bottom ? piece.Rank * room : 0)));
+            }
+        spans.Sort((a, b) => a.Level != b.Level ? a.Level.CompareTo(b.Level) : a.Top.CompareTo(b.Top));
+        return spans;
     }
 
     private static SortedSet<int> Levels(IReadOnlyList<(int Depth, bool IsFolder, bool Open)> rows)

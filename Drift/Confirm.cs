@@ -139,6 +139,7 @@ public sealed partial class MainWindow
     /// </summary>
     private const string LeaveCheck = """
         (() => {
+          if (document.contentType === 'application/pdf') return 'pdf';
           if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return false;
           let asked = false;
           const e = new Event('beforeunload', { cancelable: true });
@@ -168,7 +169,8 @@ public sealed partial class MainWindow
         var open = tabs.Where(t => !t.IsSplitRow && !t.IsUnloaded && t.View.CoreWebView2 is not null).Distinct().ToList();
         if (open.Count == 0) return [];
         var answers = await Task.WhenAll(open.Select(WouldAskAsync));
-        return open.Where((_, i) => answers[i]).Select(t => SiteOf(t) is { Length: > 0 } site ? site : t.Title).ToList();
+        // A PDF's title without the viewer's * for unsaved edits: the question says that already.
+        return open.Where((_, i) => answers[i]).Select(t => SiteOf(t) is { Length: > 0 } site ? site : t.Title.TrimStart('*')).ToList();
     }
 
     private static async Task<bool> WouldAskAsync(BrowserTab tab)
@@ -178,7 +180,12 @@ public sealed partial class MainWindow
             var check = EvaluateAsync(tab.View.CoreWebView2, LeaveCheck, gesture: false);
             // A page that doesn't answer (busy, or showing its own dialog) isn't waited on.
             if (await Task.WhenAny(check, Task.Delay(1000)) != check) return false;
-            return await check is { ValueKind: JsonValueKind.True };
+            var answer = await check;
+            // A PDF's changes (drawn, highlighted, typed: PdfTools.cs) are the viewer's, which the page's
+            // beforeunload doesn't know about; the viewer marks them with a * before the tab's title.
+            if (answer is { ValueKind: JsonValueKind.String } && answer.Value.GetString() == "pdf")
+                return PdfViewers.HasUnsavedEdits(tab.View.CoreWebView2.DocumentTitle);
+            return answer is { ValueKind: JsonValueKind.True };
         }
         catch (Exception)
         {

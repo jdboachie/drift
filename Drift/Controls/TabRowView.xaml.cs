@@ -38,4 +38,5 @@ public sealed partial class TabRowView : UserControl
     private void TabName_LostFocus(object sender, RoutedEventArgs e) => MainWindow.Of(this).TabName_LostFocus(sender, e);
     private void TabRow_PointerEntered(object sender, PointerRoutedEventArgs e) => MainWindow.Of(this).TabRow_PointerEntered(sender, e);
     private void TabRow_PointerExited(object sender, PointerRoutedEventArgs e) => MainWindow.Of(this).TabRow_PointerExited(sender, e);
+    private void TabRow_Tapped(object sender, TappedRoutedEventArgs e) => MainWindow.Of(this).TabRow_Tapped(sender, e);
 }

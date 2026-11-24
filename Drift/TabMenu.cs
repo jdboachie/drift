@@ -31,8 +31,33 @@ public sealed partial class MainWindow
         if (sender is not MenuFlyout menu) return;
         menu.Items.Clear();
         if (menu.Target is not FrameworkElement { DataContext: BrowserTab tab }) return;
+        // One of several picked (Picks.cs): what's done with them all. Any other tab: just that one, and the picks go.
+        if (_picked.Count > 1 && _picked.Contains(tab))
+        {
+            FillPickedMenu(menu);
+            return;
+        }
+        ClearPicks();
         if (tab is { IsSplitRow: true, Split: { } split }) FillSplitRowMenu(menu, split);
         else FillTabMenu(menu, tab);
+    }
+
+    /// <summary>Several tabs picked: into a new folder together, or a folder there is, in the sidebar's order.</summary>
+    private void FillPickedMenu(MenuFlyout menu)
+    {
+        var tabs = TabPicks.InOrder(_picked, PickableTabs());
+        var folders = _folderTree.AllFolders.Where(f => !f.IsLive).ToList();
+        void Into(TabFolder folder)
+        {
+            ClearPicks();
+            foreach (var tab in tabs) MoveTabToFolder(tab, folder, null);
+        }
+        FillMenu(menu,
+        [
+            Command($"Add {tabs.Count} tabs to new folder", () => { ClearPicks(); NewFolder(null, [.. tabs]); }),
+            folders.Count == 0 ? null : Submenu($"Add {tabs.Count} tabs to folder",
+                folders.Select(f => (MenuFlyoutItemBase)Command(f.Path, () => Into(f), enabled: tabs.Any(t => t.Folder != f))).ToList()),
+        ]);
     }
 
     /// <summary>Grouped as Arc's: its link; naming it; its pinned page; opening it elsewhere; where it lives; closing it.</summary>
@@ -104,10 +129,11 @@ public sealed partial class MainWindow
         }
     }
 
-    /// <summary>Its folders, and a new one.</summary>
+    /// <summary>Its folders, and a new one: at the top, or (for a tab in a folder) inside its own.</summary>
     private MenuFlyoutSubItem FolderSubmenu(BrowserTab tab, string text)
     {
         var items = new List<MenuFlyoutItemBase> { Command("New folder", () => NewFolder(null, tab)) };
+        if (tab.Folder is { } own && FolderTree.CanHoldSubfolder(own)) items.Add(Command("New subfolder", () => NewFolder(own, tab)));
         var folders = _folderTree.AllFolders.Where(f => !f.IsLive).ToList();
         if (folders.Count > 0) items.Add(new MenuFlyoutSeparator());
         foreach (var folder in folders)

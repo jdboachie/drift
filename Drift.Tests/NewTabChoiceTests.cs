@@ -36,4 +36,17 @@ public class NewTabChoiceTests
 
     [Fact]
     public void No_press_is_never_just_now() => Assert.False(NewTabChoice.PressedJustNow(pressedAt: 0, now: 500));
+
+    [Fact]
+    public void A_window_with_no_address_is_for_the_page_to_fill_in()
+    {
+        Assert.True(NewTabChoice.PageFillsItIn("about:blank"));
+        Assert.True(NewTabChoice.PageFillsItIn("ABOUT:BLANK"));
+        Assert.True(NewTabChoice.PageFillsItIn(""));
+        Assert.True(NewTabChoice.PageFillsItIn(null));
+    }
+
+    [Fact]
+    public void A_window_with_an_address_is_not() =>
+        Assert.False(NewTabChoice.PageFillsItIn("https://example.com/"));
 }

@@ -207,6 +207,12 @@
                 <local:PageCardView x:Name="SplitCard4" Grid.Column="6" Visibility="Collapsed">
                     <Grid x:Name="SplitHost4" />
                 </local:PageCardView>
+                <!-- The page in front loading: a bar centred in the gap above it, as Arc's (Views/LoadingBarView.xaml);
+                     its page's dots make way while it shows (SplitHandles.cs), and come back over it when the pointer's near. -->
+                <local:LoadingBarView x:Name="LoadingBar"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Top"
+                                      Margin="0,-6,0,0" />
                 <!-- Each page's marker (PageMarkerView): on the page you're on, a stronger border and its handle. -->
                 <local:PageMarkerView x:Name="LeftPageMarker" Grid.Column="0" Label="Left page" Click="PageHandle_Click" />
                 <local:PageMarkerView x:Name="RightPageMarker" Grid.Column="2" Label="Right page" Click="PageHandle_Click" />
@@ -399,7 +405,8 @@
                                   Grid.Row="1"
                                   Margin="0,8,4,10" />
 
-            <!-- Essentials: favicon tiles, up to four across (LayoutEssentials). The tiles' outer edges line up
+            <!-- Essentials: favicon tiles, up to six across, every row filling the width (LayoutEssentials,
+                 EssentialsPanel). The tiles' outer edges line up
                  with the address bar's: the list reaches out by their margin on the left, and the address
                  bar stops short of the sidebar's edge on the right as they do. Below, the first row's
                  highlight sits 10 under the tiles, as far as a row of tiles from the next: their margin (5),
@@ -425,7 +432,7 @@
                 </GridView.ItemContainerTransitions>
                 <GridView.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="2" />
+                        <local:EssentialsPanel />
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
                 <GridView.ItemTemplate>
@@ -438,7 +445,7 @@
             <!-- While a tab is dragged and this group is empty: somewhere to drop it. -->
             <Grid x:Name="EssentialDropZone"
                   Grid.Row="2"
-                  Height="43"
+                  Height="48"
                   Margin="0,0,0,4"
                   AllowDrop="True"
                   Background="Transparent"
@@ -446,7 +453,7 @@
                   DragOver="Tabs_DragOver"
                   DragLeave="Tabs_DragLeave"
                   Drop="Tabs_Drop">
-                <Rectangle x:Name="EssentialDropZoneOutline" RadiusX="8" RadiusY="8"
+                <Rectangle x:Name="EssentialDropZoneOutline" RadiusX="10" RadiusY="10"
                            Stroke="{ThemeResource DriftDividerBrush}"
                            StrokeThickness="1"
                            StrokeDashArray="4,3" />
@@ -489,6 +496,8 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
+                    <!-- Mid-drag, the folders' cards drawn whole behind the folder list (DragCards.cs). -->
+                    <Canvas x:Name="FolderCardLayer" Grid.Row="0" Margin="0,4,4,0" IsHitTestVisible="False" />
                     <!-- Folders, like Arc's: between the Essentials and the pinned tabs (Folders.cs). One flat list of
                          folder headers and the tabs under them, indented a step per level. -->
                     <ListView x:Name="FolderList"
@@ -765,7 +774,7 @@
                 <!-- A folder a drag will drop into (its header, outlined). -->
                 <Border x:Name="FolderDropHighlight" CornerRadius="8" BorderThickness="2"
                         BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" Visibility="Collapsed" />
-                <Border x:Name="EssentialPlaceholder" Height="43" CornerRadius="8" Opacity="0.5"
+                <Border x:Name="EssentialPlaceholder" Height="48" CornerRadius="10" Opacity="0.5"
                         Background="{ThemeResource DriftTileBrush}" Visibility="Collapsed">
                     <Grid>
                         <FontIcon x:Name="EssentialPlaceholderGlyph" Glyph="&#xE774;" FontSize="16" Opacity="0.6"
@@ -852,7 +861,7 @@
         <local:CommandBarView x:Name="CommandLayer"
                               Grid.ColumnSpan="2" />
 
-        <!-- Hovering a pinned Google Calendar: today's meetings (GoogleCalendar.cs), beside the tab. -->
+        <!-- Hovering a pinned Google Calendar or Outlook calendar: today's meetings (GoogleCalendar.cs), beside the tab. -->
         <local:HoverCard x:Name="CalendarCard" Grid.ColumnSpan="2" Width="288"
                          ActionName="New event" ActionClick="CalendarNew_Click"
                          PointerEntered="HoverCard_PointerEntered" PointerExited="HoverCard_PointerExited">
@@ -862,7 +871,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <StackPanel x:Name="CalendarAllDay" Margin="10,8,10,0" Spacing="4" />
-                <Grid Grid.Row="1" Height="300" Margin="0,8,0,0">
+                <Grid Grid.Row="1" Height="300" Margin="0,4,0,0">
                     <ScrollViewer x:Name="CalendarScroll" VerticalScrollBarVisibility="Hidden">
                         <Canvas x:Name="CalendarTimeline" />
                     </ScrollViewer>
@@ -871,13 +880,14 @@
             </Grid>
         </local:HoverCard>
 
-        <!-- Hovering a pinned Gmail or Outlook mail: your unread emails (Gmail.cs), beside the tab. -->
+        <!-- Hovering a pinned Gmail or Outlook mail: your unread emails (Gmail.cs), beside the tab. Room under the
+             last one, so it can be scrolled clear of the + over the corner. -->
         <local:HoverCard x:Name="MailCard" Grid.ColumnSpan="2" Width="260"
-                         ActionName="Compose" ActionClick="MailCompose_Click"
+                         ActionName="New email" ActionClick="MailCompose_Click"
                          PointerEntered="HoverCard_PointerEntered" PointerExited="HoverCard_PointerExited">
             <Grid MinHeight="120">
-                <ScrollViewer x:Name="MailScroll" MaxHeight="340" VerticalScrollBarVisibility="Hidden">
-                    <StackPanel x:Name="MailList" Padding="6,6,6,6" Spacing="2" />
+                <ScrollViewer x:Name="MailScroll" MaxHeight="340" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="MailList" Padding="6,6,6,48" />
                 </ScrollViewer>
                 <local:CardMessage x:Name="MailMessage" Margin="24,12" ActionClick="MailAction_Click" />
             </Grid>

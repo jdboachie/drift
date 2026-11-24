@@ -6,7 +6,8 @@
 <UserControl
     x:Class="Drift.PageCardView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
 
     <Grid>
         <!-- Lifted by Lift (10 for a pane, more for Peek's card, which floats over the page). -->
@@ -30,6 +31,29 @@
                     <Setter Property="BorderBrush" Value="{ThemeResource DriftPageBorderBrush}" />
                 </Style>
             </Border.Style>
+            <Grid>
+                <!-- A picture of a page (SwipePage.cs): the one a two-finger swipe is going back or forward to,
+                     under the page or over it, or the page last time, faded, while it loads again. -->
+                <Grid x:Name="PictureLayer" x:FieldModifier="internal" Visibility="Collapsed" IsHitTestVisible="False">
+                    <Image x:Name="Picture" x:FieldModifier="internal" Stretch="UniformToFill"
+                           HorizontalAlignment="Left" VerticalAlignment="Top" />
+                    <!-- Dims the picture while it's under the page, less the further the page goes. -->
+                    <Border x:Name="PictureShade" x:FieldModifier="internal" Background="Black" Opacity="0" />
+                    <!-- Its shadow on the page under it, while it comes in over it (swiping forward); drawn in code. -->
+                    <Rectangle x:Name="PictureEdge" x:FieldModifier="internal" Width="81" Margin="-81,0,0,0"
+                               HorizontalAlignment="Left" Visibility="Collapsed" />
+                </Grid>
+                <!-- The page (Body), and its shadow on the picture under it while a swipe moves it aside. -->
+                <Grid x:Name="BodyHolder" x:FieldModifier="internal">
+                    <!-- Dims the page while a picture comes in over it (swiping forward). -->
+                    <Border x:Name="BodyShade" x:FieldModifier="internal" Background="Black" Opacity="0"
+                            IsHitTestVisible="False" Visibility="Collapsed" />
+                    <Rectangle x:Name="BodyEdge" x:FieldModifier="internal" Width="81" Margin="-81,0,0,0"
+                               HorizontalAlignment="Left" Visibility="Collapsed" IsHitTestVisible="False" />
+                </Grid>
+            </Grid>
         </Border>
+        <!-- A two-finger swipe's arrow, over the page (Swipe.cs). -->
+        <local:SwipeArrowView x:Name="Swipe" x:FieldModifier="internal" />
     </Grid>
 </UserControl>

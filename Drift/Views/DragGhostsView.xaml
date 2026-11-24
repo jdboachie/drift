@@ -24,8 +24,8 @@
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
             </Grid>
         </Border>
-        <Border x:Name="Tile" x:FieldModifier="internal" Canvas.Left="-4000" Canvas.Top="60" Height="43"
-                CornerRadius="8" BorderThickness="1"
+        <Border x:Name="Tile" x:FieldModifier="internal" Canvas.Left="-4000" Canvas.Top="60" Height="48"
+                CornerRadius="10" BorderThickness="1"
                 BorderBrush="{ThemeResource DriftActiveBorderBrush}"
                 Background="{ThemeResource DriftActiveBrush}">
             <Grid>

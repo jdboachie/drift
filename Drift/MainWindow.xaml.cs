@@ -145,7 +145,7 @@ public sealed partial class MainWindow : Window
               } catch { }
             __PIP__
             })();
-            """.Replace("__PIP__", PipScript() + MediaScript()).Replace("__TOKEN__", ShortcutToken).Replace("__KEYS__", keys);
+            """.Replace("__PIP__", PipScript() + MediaScript() + OutlookPushScript() + SwipeScript()).Replace("__TOKEN__", ShortcutToken).Replace("__KEYS__", keys);
     }
 
     // Each view's copy of the script, so it can be swapped when shortcuts change.
@@ -161,6 +161,9 @@ public sealed partial class MainWindow : Window
 
     internal static Task<CoreWebView2Environment> EnvironmentAsync() => _environment ??= StartEngineAsync();
 
+    /// <summary>Starts the engine as Drift starts (App.OnLaunched), while the window is being made.</summary>
+    internal static void StartEngine() => _ = EnvironmentAsync();
+
     /// <summary>
     /// The engine, on Drift's profile. The first time Drift runs, it waits for your answer about
     /// Microsoft sign-in (MicrosoftSignIn.cs), which can't be changed once the engine is going.
@@ -169,10 +172,18 @@ public sealed partial class MainWindow : Window
     {
         await SignInAnswered;
         var signIn = Settings.Current.MicrosoftSignIn;
-        try { EngineRuntime = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
-        catch { EngineRuntime = null; }
-        var videoOnCpu = VideoDecode.Choose(DisplayAdapters(), Settings.Current.VideoOnCpuFor, EngineRuntime) != VideoDecoding.Gpu;
+        // Read off the UI thread, which is making the window meanwhile.
+        var (runtime, gpus) = await Task.Run(() =>
+        {
+            string? version;
+            try { version = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+            catch { version = null; }
+            return (version, DisplayAdapters());
+        });
+        EngineRuntime = runtime;
+        var videoOnCpu = VideoDecode.Choose(gpus, Settings.Current.VideoOnCpuFor, EngineRuntime) != VideoDecoding.Gpu;
         var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, ProfileFolder(), EngineOptions(signIn, videoOnCpu));
+        StartupTrace.Mark("engine ready");
         EngineSignsIn = signIn;
         EngineVideoOnCpu = videoOnCpu;
         return environment;
@@ -373,6 +384,7 @@ public sealed partial class MainWindow : Window
             // First: a toast's time can run out while the rest closes (Press again to close's did, and crashed).
             foreach (var toast in new[] { BookmarkToast, CopiedToast, CloseAgainHint, UndoToast }) toast.Stop();
             _adBlock?.Close();
+            _pdfTools?.Close();
             StopCalendar();
             StopMail();
             StopOutlook();
@@ -432,6 +444,8 @@ public sealed partial class MainWindow : Window
         // so these listen to handled events as well.
         foreach (var list in new ListViewBase[] { EssentialList, FolderList, PinnedList, TabList })
         {
+            // Entering too, not only moving: the ghost and what a drop would do show from the start.
+            list.AddHandler(UIElement.DragEnterEvent, new DragEventHandler(Tabs_DragOver), handledEventsToo: true);
             list.AddHandler(UIElement.DragOverEvent, new DragEventHandler(Tabs_DragOver), handledEventsToo: true);
             list.AddHandler(UIElement.DropEvent, new DragEventHandler(Tabs_Drop), handledEventsToo: true);
             list.AddHandler(UIElement.DragLeaveEvent, new DragEventHandler(Tabs_DragLeave), handledEventsToo: true);
@@ -449,51 +463,31 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Essentials fill the sidebar's width, as many across as EssentialsGrid says for how many there
-    /// are and how wide it is: widening the sidebar fits more in a row. When the count across changes,
-    /// the tiles glide from where they were to their new places rather than jump.
+    /// are and how wide it is: widening the sidebar fits more in a row. A short last row fills the width
+    /// too, with wider tiles (EssentialsPanel). When the count across changes, the tiles glide from where
+    /// they were to their new places and widths rather than jump.
     /// </summary>
     private void LayoutEssentials()
     {
-        if (EssentialList.ItemsPanelRoot is not ItemsWrapGrid grid) return;
+        if (EssentialList.ItemsPanelRoot is not EssentialsPanel panel) return;
         var width = EssentialList.ActualWidth - EssentialList.Padding.Left - EssentialList.Padding.Right;
         if (width <= 0) return;
         // Counting a tab that's being dragged in, so the grid shows the layout it would get.
         var columns = EssentialsGrid.Columns(EssentialTabs.Count + _essentialsArriving, width);
-        // Not rounded down: the last tile's right edge stays on the address bar's.
-        var cell = width / columns;
-        if (grid.MaximumRowsOrColumns != columns)
+        if (panel.Columns == columns) return;
+        // (Not mid-drag: the tiles are showing where a drop would put them, springing there themselves.)
+        if (_dragTab is null && _restored)
         {
-            // (Not mid-drag: the tiles are showing where a drop would put them, springs of their own.)
-            if (_dragTab is null && _restored) GlideEssentialsAfterLayout();
-            grid.MaximumRowsOrColumns = columns;
+            // The groups below move as the rows change: they slide too.
+            NoteGroupSlideStart();
+            panel.Animate(duration: 0.3, bounce: 0);
         }
-        if (grid.ItemWidth != cell) grid.ItemWidth = cell;
-    }
-
-    /// <summary>Where each tile is now; once they're laid out again, each springs from there to its new place.</summary>
-    private void GlideEssentialsAfterLayout()
-    {
-        var before = new List<(UIElement Tile, Vector3 At)>();
-        for (var i = 0; i < EssentialList.Items.Count; i++)
-            if (EssentialList.ContainerFromIndex(i) is UIElement tile) before.Add((tile, tile.ActualOffset));
-        if (before.Count == 0) return;
-        // The groups below move as the rows change: they slide too.
-        NoteGroupSlideStart();
-        void Glide(object? sender, object e)
-        {
-            EssentialList.LayoutUpdated -= Glide;
-            foreach (var (tile, was) in before)
-            {
-                var from = was - tile.ActualOffset;
-                if (from.Length() < 1) continue;
-                Spring.To(tile, "Translation", Vector3.Zero, duration: 0.3, bounce: 0, from: new Vector3(from.X, from.Y, 0));
-            }
-        }
-        EssentialList.LayoutUpdated += Glide;
+        panel.Columns = columns;
     }
 
     private async void Root_Loaded(object sender, RoutedEventArgs e)
     {
+        StartupTrace.Mark("loaded");
         UpdateDragRegions();
         ShowDownloads();
         if (_private)
@@ -522,29 +516,40 @@ public sealed partial class MainWindow : Window
                 var folders = _folderTree.Load(session.Folders);
                 // Each saved tab's tab, by position, for putting splits back together.
                 var restoring = new Task<BrowserTab>?[session.Tabs.Count];
-                for (var i = 0; i < session.Tabs.Count; i++)
+                _restoring = true;
+                try
                 {
-                    var saved = session.Tabs[i];
-                    if (!Uri.TryCreate(saved.Url, UriKind.Absolute, out var uri)) continue;
-                    Uri.TryCreate(saved.Home, UriKind.Absolute, out var home);
-                    var place = Enum.TryParse<TabPlace>(saved.Place, out var p) ? p
-                        : saved.Pinned ? TabPlace.Essential : TabPlace.Regular;
-                    TabFolder? folder = null;
-                    if (place == TabPlace.Folder && (saved.Folder is null || !folders.TryGetValue(saved.Folder, out folder)))
-                        place = TabPlace.Pinned;
-                    opening.Add(restoring[i] = CreateTabAsync(uri, place, activate: i == session.Active,
-                        deferLoad: true, title: saved.Title, home: home, folder: folder, name: saved.Name, icon: saved.Icon));
-                    // It's in its folder already (added before the first await): note where it goes.
-                    if (folder is not null) _folderTree.AddSaved((IFolderTab)folder.Children[^1], folder, saved.Position);
+                    for (var i = 0; i < session.Tabs.Count; i++)
+                    {
+                        var saved = session.Tabs[i];
+                        if (!Uri.TryCreate(saved.Url, UriKind.Absolute, out var uri)) continue;
+                        Uri.TryCreate(saved.Home, UriKind.Absolute, out var home);
+                        var place = Enum.TryParse<TabPlace>(saved.Place, out var p) ? p
+                            : saved.Pinned ? TabPlace.Essential : TabPlace.Regular;
+                        TabFolder? folder = null;
+                        if (place == TabPlace.Folder && (saved.Folder is null || !folders.TryGetValue(saved.Folder, out folder)))
+                            place = TabPlace.Pinned;
+                        opening.Add(restoring[i] = CreateTabAsync(uri, place, activate: i == session.Active,
+                            deferLoad: true, title: saved.Title, home: home, folder: folder, name: saved.Name, icon: saved.Icon));
+                        // It's in its folder already (added before the first await): note where it goes.
+                        if (folder is not null) _folderTree.AddSaved((IFolderTab)folder.Children[^1], folder, saved.Position);
+                    }
                 }
+                finally
+                {
+                    _restoring = false;
+                }
+                // The tab you were on didn't come back (its address no longer reads): the first one is in front.
+                if (_active is null && AllTabs.FirstOrDefault() is { } first) Activate(first);
                 _folderTree.Arrange();
                 RefreshFolderRows();
+                StartupTrace.Mark($"{opening.Count} tabs in the sidebar");
                 await Task.WhenAll(opening);
                 RestoreSplits(restoring.Select(t => t?.Result).ToList(), session);
             }
             await Task.WhenAll(opening);
             _restored = true;
-            // The first tab put back was in front a moment, till the one you were on came: it wasn't visited.
+            // Of the tabs put back, only the one in front has been visited.
             _recentTabs.Clear();
             if (_active is not null) NoteRecentTab(_active);
             // The first Peek starts loading at once too, once the tabs have had their start.
@@ -657,9 +662,12 @@ public sealed partial class MainWindow : Window
     /// <param name="folder">For a tab in a folder (Place Folder), the folder.</param>
     /// <param name="name">The name you gave it (Rename…).</param>
     /// <param name="icon">The icon you chose for it (Change icon…).</param>
+    /// <param name="forPage">A page's own window (OpenTabForPage): handed to the page, which says where it goes.</param>
+    /// <param name="openedFrom">The tab whose link opened it (BrowserTab.OpenedFrom).</param>
     private async Task<BrowserTab> CreateTabAsync(Uri uri, TabPlace place, bool activate,
         bool deferLoad = false, string? title = null, Uri? home = null, int? index = null, TabFolder? folder = null,
-        string? name = null, string? icon = null)
+        string? name = null, string? icon = null, CoreWebView2NewWindowRequestedEventArgs? forPage = null,
+        BrowserTab? openedFrom = null)
     {
         if (place == TabPlace.Folder && folder is null) place = TabPlace.Pinned;
         var view = NewTabView();
@@ -670,9 +678,10 @@ public sealed partial class MainWindow : Window
         {
             Title = string.IsNullOrWhiteSpace(title) ? uri.Host : title,
             HomeUri = place == TabPlace.Regular ? null : (home ?? uri),
-            PendingUri = uri,
+            PendingUri = forPage is null ? uri : null,
             IsUnloaded = deferLoad,
             Name = name,
+            OpenedFrom = openedFrom is null ? null : new WeakReference<BrowserTab>(openedFrom),
         };
         if (icon is not null) _ = SetTabIconAsync(tab, icon);
         if (folder is not null && place == TabPlace.Folder)
@@ -686,12 +695,19 @@ public sealed partial class MainWindow : Window
             if (index is { } at) list.Insert(Math.Clamp(at, 0, list.Count), tab);
             else list.Add(tab);
         }
-        var starting = StartTabViewAsync(tab, load: !deferLoad);
-        if (activate || _active is null) Activate(tab);
+        // While the session is being put back, only the tab you were on comes to the front, not the first one back.
+        var show = activate || (_active is null && !_restoring);
+        // Put back asleep, a tab starts its engine only when it's first shown (LoadShown), like an unloaded
+        // tab: when every restored tab started one, the page in front waited behind all of them.
+        var starting = deferLoad && !show && forPage is null ? Task.CompletedTask : StartTabViewAsync(tab, load: !deferLoad, forPage);
+        if (show) Activate(tab);
         if (deferLoad) ShowSavedIcon(tab, uri);
         await starting;
         return tab;
     }
+
+    // Set while Root_Loaded puts the session back (CreateTabAsync).
+    private bool _restoring;
 
     // Kept invisible while the engine starts so it doesn't flash over the current tab.
     private static WebView2 NewTabView() => new()
@@ -705,7 +721,8 @@ public sealed partial class MainWindow : Window
     private readonly HashSet<WebView2> _startingViews = new();
 
     /// <summary>Starts a tab's engine, and loads its page if it's to load now or is in front by then.</summary>
-    private async Task StartTabViewAsync(BrowserTab tab, bool load)
+    /// <param name="forPage">A page's own window: handed to the page instead, which navigates it.</param>
+    private async Task StartTabViewAsync(BrowserTab tab, bool load, CoreWebView2NewWindowRequestedEventArgs? forPage = null)
     {
         var view = tab.View;
         _startingViews.Add(view);
@@ -727,7 +744,13 @@ public sealed partial class MainWindow : Window
         RevealWhenLoaded(view);
         view.IsHitTestVisible = true;
         WireTab(tab);
-        if (load || tab == _active) LoadPending(tab);
+        if (forPage is not null)
+        {
+            // Before it has been anywhere, as the engine requires; the page sends it where it's going.
+            forPage.NewWindow = view.CoreWebView2;
+            tab.OpenedByPage = true;
+        }
+        else if (load || tab == _active) LoadPending(tab);
         SaveSessionSoon();
     }
 
@@ -737,6 +760,7 @@ public sealed partial class MainWindow : Window
         if (tab.PendingUri is not { } uri || tab.View.CoreWebView2 is null) return;
         tab.PendingUri = null;
         tab.IsUnloaded = false;
+        StartupTrace.Mark($"navigate {uri.Host}");
         Navigate(tab, uri);
     }
 
@@ -762,6 +786,8 @@ public sealed partial class MainWindow : Window
         if (await History.IconAsync(uri.Authority) is { } icon && tab.Favicon is null) tab.Favicon = icon;
     }
 
+    private PdfTools? _pdfTools;
+
     private async Task InitWebViewAsync(WebView2 view)
     {
         // Files dragged in from Explorer or another app reach the page (WinUI's WebView2 turns them away by default).
@@ -773,6 +799,8 @@ public sealed partial class MainWindow : Window
         if (_private) Extensions.AttachPrivate(core.Profile);
         else Extensions.Attach(core.Profile);
         Downloads.UseProfile(core.Profile);
+        // Draw, Erase, Highlight and Add text in PDFs (PdfTools.cs): watching from the window's first page on.
+        (_pdfTools ??= new PdfTools(WinRT.Interop.WindowNative.GetWindowHandle(this), _private)).Start();
         core.DownloadStarting += (_, e) =>
         {
             var path = e.ResultFilePath;
@@ -828,6 +856,7 @@ public sealed partial class MainWindow : Window
         {
             if (revealed) return;
             revealed = true;
+            StartupTrace.Done($"shown {view.Source?.Host}");
             view.Opacity = 1;
             if (cover is null) return;
             PeekTrace("revealed");
@@ -852,11 +881,46 @@ public sealed partial class MainWindow : Window
         return RevealDrawn;
     }
 
-    private void OpenInNewTab(Uri uri) => _ = CreateTabAsync(uri, TabPlace.Regular, activate: true);
+    private void OpenInNewTab(Uri uri) => OpenInNewTab(uri, from: null);
+
+    /// <param name="from">The tab whose link opened it, if a link did.</param>
+    private void OpenInNewTab(Uri uri, BrowserTab? from) => _ = CreateTabAsync(uri, TabPlace.Regular, activate: true, openedFrom: from);
 
     /// <summary>A link you chose to open in a new tab: in front or behind, as the setting says (Shift turns it round).</summary>
-    private void OpenLinkInNewTab(Uri uri, bool shift = false) =>
-        _ = CreateTabAsync(uri, TabPlace.Regular, activate: NewTabChoice.ComesToFront(chosen: true, Settings.Current.SwitchToNewTabs, shift));
+    /// <param name="from">The tab the link was in; null from Peek and bookmarks.</param>
+    private void OpenLinkInNewTab(Uri uri, bool shift = false, BrowserTab? from = null) =>
+        _ = CreateTabAsync(uri, TabPlace.Regular, activate: NewTabChoice.ComesToFront(chosen: true, Settings.Current.SwitchToNewTabs, shift),
+            openedFrom: from);
+
+    /// <summary>
+    /// A page opening a window with no address, to fill in itself (window.open(), then where it goes): a new tab,
+    /// handed back to the page as that window, so it can. A tab of Drift's own left the page with nothing back, and
+    /// the tab stayed blank, with no name.
+    /// </summary>
+    /// <param name="from">The tab whose page asked, for a Ctrl+click's choice; null from Peek.</param>
+    private async void OpenTabForPage(CoreWebView2NewWindowRequestedEventArgs e, BrowserTab? from)
+    {
+        // The page waits for its window until the deferral completes.
+        var deferral = e.GetDeferral();
+        try
+        {
+            var chosen = from is not null && NewTabChoice.PressedJustNow(from.AsidePressTime, Environment.TickCount64);
+            var shift = from?.AsidePressShift ?? false;
+            if (from is not null) from.AsidePressTime = 0;
+            await CreateTabAsync(new Uri("about:blank"), TabPlace.Regular,
+                activate: NewTabChoice.ComesToFront(chosen, Settings.Current.SwitchToNewTabs, shift), forPage: e, openedFrom: from);
+        }
+        catch (Exception error)
+        {
+            App.LogCrash(error);
+        }
+        finally
+        {
+            // Without a window (its engine didn't start), the page gets none, rather than the engine's own.
+            e.Handled = true;
+            deferral.Complete();
+        }
+    }
 
     private void WireTab(BrowserTab tab)
     {
@@ -881,6 +945,12 @@ public sealed partial class MainWindow : Window
             NoteLivePage(before, core.Source);
         };
         core.ProcessFailed += (_, e) => OnProcessFailed(tab, e);
+        // window.close() in a tab a page opened as its window (OpenTabForPage), as sign-ins do when they're done.
+        // After the event, not in it: closing a view while it's calling its handlers can crash the engine.
+        core.WindowCloseRequested += (_, _) =>
+        {
+            if (tab.OpenedByPage) DispatcherQueue.TryEnqueue(() => { if (AllTabs.Contains(tab)) RemoveTab(tab); });
+        };
         // The engine shows its own warning page; if you go on to the site anyway, the site info says so.
         core.ServerCertificateErrorDetected += (_, e) =>
         {
@@ -909,14 +979,19 @@ public sealed partial class MainWindow : Window
                 PopupWindow.Show(e, this, OpenInNewTab, _private);
                 return;
             }
+            if (NewTabChoice.PageFillsItIn(e.Uri))
+            {
+                OpenTabForPage(e, tab);
+                return;
+            }
             e.Handled = true;
             if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var target)) return;
             // A Ctrl+click or middle-click just now (the page said so as it was pressed): you chose a new tab.
             var aside = NewTabChoice.PressedJustNow(tab.AsidePressTime, Environment.TickCount64);
             tab.AsidePressTime = 0;
             if (tab.IsPinned) OpenPeek(target, tab);
-            else if (aside) OpenLinkInNewTab(target, tab.AsidePressShift);
-            else OpenInNewTab(target);
+            else if (aside) OpenLinkInNewTab(target, tab.AsidePressShift, from: tab);
+            else OpenInNewTab(target, from: tab);
         };
 
         // Same-tab link clicks. In a pinned tab, a click that leaves the tab's site
@@ -937,6 +1012,7 @@ public sealed partial class MainWindow : Window
         };
         // After the Peek interception, so it sees whether that cancelled the navigation.
         WireLoading(tab, core);
+        WireHistoryPictures(tab, core);
     }
 
     /// <summary>
@@ -977,7 +1053,7 @@ public sealed partial class MainWindow : Window
             if (items[i].Name != "openLinkInNewWindow") continue;
             if (!Uri.TryCreate(e.ContextMenuTarget.LinkUri, UriKind.Absolute, out var link)) return;
             var item = core.Environment.CreateContextMenuItem("Open link in new tab", null, CoreWebView2ContextMenuItemKind.Command);
-            item.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenLinkInNewTab(link));
+            item.CustomItemSelected += (_, _) => DispatcherQueue.TryEnqueue(() => OpenLinkInNewTab(link, from: tab));
             items.RemoveAt(i);
             items.Insert(i, item);
             if (tab is null || link.Scheme is not ("http" or "https")) return;
@@ -1025,6 +1101,8 @@ public sealed partial class MainWindow : Window
         }
         NoteRecentTab(tab);
         PictureActiveSoon();
+        // Before they start loading: an unloaded page's last look, under it till it's drawn (SwipePage.cs).
+        ShowLastLooks();
         foreach (var page in _shownPages) LoadShown(page);
         SaveSessionSoon();
 
@@ -1163,6 +1241,7 @@ public sealed partial class MainWindow : Window
 
         (tab.View.Parent as Panel)?.Children.Remove(tab.View);
         try { tab.View.Close(); } catch { }
+        Unpick(tab);
         _recentTabs.Remove(tab);
         _shownPages.Remove(tab);
         UpdateMediaBar();
@@ -1331,6 +1410,12 @@ public sealed partial class MainWindow : Window
             if (PopupWindow.IsPopup(e))
             {
                 PopupWindow.Show(e, this, OpenInNewTab, _private);
+                return;
+            }
+            // A window the page fills in itself can't be Peek's own page, the very page that's to fill it.
+            if (NewTabChoice.PageFillsItIn(e.Uri))
+            {
+                OpenTabForPage(e, null);
                 return;
             }
             e.Handled = true;
@@ -2337,6 +2422,12 @@ public sealed partial class MainWindow : Window
         if (!message.StartsWith(prefix, StringComparison.Ordinal)) return;
 
         var command = message[prefix.Length..];
+        // Outlook pushed a change to a tab of it (OutlookPushScript).
+        if (command == "outlook-pushed")
+        {
+            OutlookPushed();
+            return;
+        }
         if (command.StartsWith("link:", StringComparison.Ordinal))
         {
             if (source is not null)
@@ -2361,6 +2452,12 @@ public sealed partial class MainWindow : Window
         if (command.StartsWith("zoom:", StringComparison.Ordinal))
         {
             OnZoomMessage(source, command["zoom:".Length..]);
+            return;
+        }
+
+        if (command.StartsWith("swipe:", StringComparison.Ordinal))
+        {
+            OnSwipeMessage(source, command["swipe:".Length..]);
             return;
         }
 
@@ -2469,6 +2566,8 @@ public sealed partial class MainWindow : Window
         Downloads.ArchiveOld();
         if (_downloadPeekShown) RefreshDownloadPeek();
         ShowNewTabHint();
+        // Split View pages one under another or side by side (Settings › Tabs): every split's row, at once.
+        PlaceSplitCards();
         // Pages loaded from now on keep the new shortcuts from the page too; pages already open
         // pass them on anyway (InputScript), only without holding them back from the page.
         foreach (var view in AllTabs.Select(t => t.View).Append(_peekView).Append(_sparePeekView))
@@ -2739,6 +2838,12 @@ public sealed partial class MainWindow : Window
     {
         _environment = null;
         Extensions.Detach();
+        // Its hidden view went with the engine; the next page to start brings a new one.
+        foreach (var window in OpenWindows)
+        {
+            window._pdfTools?.Close();
+            window._pdfTools = null;
+        }
     }
 
     private bool _crashShown;
@@ -3300,11 +3405,18 @@ public sealed partial class MainWindow : Window
             ClosePeek(animate: true);
             e.Handled = true;
         }
+        else if (e.Key == VirtualKey.Escape && _picked.Count > 0)
+        {
+            ClearPicks();
+            e.Handled = true;
+        }
     }
 
     private void TabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_syncingSelection) return;
+        // Ctrl or Shift held: picked out with others, not opened (Picks.cs).
+        if (PickInstead((ListViewBase)sender, e)) return;
         if (((ListViewBase)sender).SelectedItem is not BrowserTab tab) return;
         if (tab != _active) Activate(tab);
         // The tab in front already, clicked where it's kept (an Essential in a split): the split's row
@@ -3346,14 +3458,20 @@ public sealed partial class MainWindow : Window
         {
             if (e.Cancel) return;
             tab.Load.Started(e.NavigationId);
-            if (tab == _active) ShowLoadButton();
+            if (tab == _active) ShowLoadButton(animate: true);
             WatchSignIn(tab, e);
+        };
+        // The new page has come: the loading bar goes from waiting to drawing it.
+        core.ContentLoading += (_, _) =>
+        {
+            tab.Load.Committed();
+            if (tab == _active) ShowLoadButton(animate: true);
         };
         WatchSignInRequests(tab, core);
         core.NavigationCompleted += (_, e) =>
         {
             tab.Load.Finished(e.NavigationId);
-            if (tab == _active) ShowLoadButton();
+            if (tab == _active) ShowLoadButton(animate: true);
         };
     }
 
@@ -3361,9 +3479,21 @@ public sealed partial class MainWindow : Window
     private const string ReloadGlyphText = "\uE72C";
     private const string StopGlyphText = "\uE711";
 
-    /// <summary>The reload button, or while the tab in front is loading, a stop button in its place.</summary>
-    private void ShowLoadButton()
+    /// <summary>
+    /// The reload button, or while the tab in front is loading, a stop button in its place; and the loading bar above
+    /// the page (<paramref name="animate"/>: as the page in front loads, not as another tab comes to the front).
+    /// </summary>
+    private void ShowLoadButton(bool animate = false)
     {
+        // Over the page in front: in a split, that page's column.
+        if (_panes.Length > 0)
+        {
+            var front = _shownSplit is { } split ? Math.Max(0, split.IndexOf(FrontOf(split))) : 0;
+            Grid.SetColumn(LoadingBar, Grid.GetColumn(_panes[Math.Min(front, _panes.Length - 1)].Marker));
+        }
+        LoadingBar.Show(_active?.Load.Phase ?? LoadPhase.None, animate);
+        // Its page's dots make way for it, and come back once it's gone.
+        ShowPageFocus();
         var loading = _active?.Load.IsLoading == true;
         Toolbar.ReloadGlyph.Glyph = loading ? StopGlyphText : ReloadGlyphText;
         var name = loading ? "Stop loading" : "Reload";
@@ -3410,6 +3540,48 @@ public sealed partial class MainWindow : Window
     private Windows.Graphics.Imaging.SoftwareBitmap? _rowGhost, _tileGhost, _pageGhost;
     private Point _rowGhostAnchor, _tileGhostAnchor, _pageGhostAnchor;
 
+    /// <summary>The tab or folder the ghosts are of (or being made of), and when they're done.</summary>
+    private object? _ghostsOf;
+    private Task? _ghostsReady;
+
+    /// <summary>The ghosts of a tab or folder: made once a drag, by whichever of its starts asks first.</summary>
+    private Task GhostsFor(object item)
+    {
+        if (_ghostsOf == item && _ghostsReady is not null) return _ghostsReady;
+        _ghostsOf = item;
+        return _ghostsReady = item switch
+        {
+            TabFolder folder => RenderFolderGhostAsync(folder),
+            BrowserTab tab => RenderGhostsAsync(tab),
+            _ => Task.CompletedTask,
+        };
+    }
+
+    /// <summary>
+    /// A row's drag starts with our ghost of it, not the list's own picture: that's the row as drawn, with
+    /// its piece of a folder's card and its buttons, and Windows shows it again anywhere there's nothing to
+    /// drop on. Held back the moment the ghost takes to make.
+    /// </summary>
+    private async void Row_DragStarting(UIElement sender, DragStartingEventArgs e)
+    {
+        if (sender is not ListViewItem { Content: { } item } || ItemsControl.ItemsControlFromItemContainer(sender) is not ListViewBase list) return;
+        var deferral = e.GetDeferral();
+        try
+        {
+            await GhostsFor(item);
+            var (ghost, anchor) = list == EssentialList ? (_tileGhost, _tileGhostAnchor) : (_rowGhost, _rowGhostAnchor);
+            if (ghost is not null) e.DragUI.SetContentFromSoftwareBitmap(ghost, anchor);
+        }
+        catch
+        {
+            // The list's own picture, then.
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
     private void Tabs_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
     {
         // A drag whose end went unreported (its row was replaced as it moved) mustn't linger.
@@ -3421,7 +3593,7 @@ public sealed partial class MainWindow : Window
             if (folder.IsRenaming) { e.Cancel = true; return; }
             _dragFolder = folder;
             e.Data.RequestedOperation = DataPackageOperation.Move;
-            _ = RenderFolderGhostAsync(folder);
+            _ = GhostsFor(folder);
             return;
         }
         // A split's row in the pinned list stays in its pinned tab's place (Split.cs); its halves move by their own menus.
@@ -3431,6 +3603,10 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (e.Items.FirstOrDefault() is not BrowserTab tab) { e.Cancel = true; return; }
+        // The press this drag began with switched to it (TabPressing.cs): the tab you were on comes back, so dropped
+        // on the page, this one goes beside that one.
+        if (_pressSwitchedFrom is { } was && AllTabs.Contains(was)) Activate(was);
+        _pressSwitchedFrom = null;
         _dragTab = tab;
         e.Data.RequestedOperation = DataPackageOperation.Move;
         // Empty groups get a place to drop into.
@@ -3438,7 +3614,7 @@ public sealed partial class MainWindow : Window
         PinnedDropZone.Visibility = PinnedTabs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         // And the page, to split with (Split.cs).
         ShowSplitDrop(tab);
-        _ = RenderGhostsAsync(tab);
+        _ = GhostsFor(tab);
     }
 
     private void Tabs_DragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs args)
@@ -3446,6 +3622,8 @@ public sealed partial class MainWindow : Window
         _dragTab = null;
         _dragFolder = null;
         _rowGhost = _tileGhost = _pageGhost = null;
+        _ghostsOf = null;
+        _ghostsReady = null;
         if (_slideRows is null) _slideExcept = null;
         // Let go somewhere else, or cancelled: the rows go back.
         if (_rowPreviewShown) ClearRowPreviews(animate: true);
@@ -3473,13 +3651,13 @@ public sealed partial class MainWindow : Window
         GhostStage.RowGlyph.Visibility = GhostStage.TileGlyph.Visibility = GhostStage.PageGlyph.Visibility = tab.PlaceholderVisibility;
         GhostStage.RowTitle.Text = GhostStage.PageTitle.Text = tab.Title;
         GhostStage.Row.Width = Math.Max(120, TabList.ActualWidth);
-        GhostStage.Tile.Width = EssentialList.ItemsPanelRoot is ItemsWrapGrid { ItemWidth: > 8 and var cell } ? cell - 8 : 88;
+        GhostStage.Tile.Width = EssentialList.ItemsPanelRoot is EssentialsPanel { CellWidth: > 8 and var cell } ? cell - 8 : 88;
         try
         {
             var row = await SnapshotAsync(GhostStage.Row);
             var tile = await SnapshotAsync(GhostStage.Tile);
             var page = await SnapshotAsync(GhostStage.Page);
-            if (_dragTab != tab) return;
+            if (_ghostsOf != tab) return;
             // The pointer holds a row by its icon, so the drop line shows to its left. A tile hangs
             // just below the pointer, so the bar's ring and top show above it.
             if (row is { } r) { _rowGhost = r.Bitmap; _rowGhostAnchor = new Point(19 * r.Scale, r.Bitmap.PixelHeight / 2.0); }
@@ -3661,8 +3839,6 @@ public sealed partial class MainWindow : Window
 
     // ── Essentials preview: the tiles move to the order a drop would give ──
 
-    // Tiles are 46 high with 4 around them.
-    private const double EssentialCellHeight = 53; // a 43-tall tile and 10 between, as Arc's
     private int _essentialsArriving;            // 1 while a tab from another group is over Essentials
     private int? _essentialLanding;             // where the dragged tab would land, while over them
     private (int Land, int Columns, double Width)? _essentialPreview;
@@ -3681,46 +3857,40 @@ public sealed partial class MainWindow : Window
             _essentialsArriving = 1;
             LayoutEssentials();
         }
-        if (EssentialList.ItemsPanelRoot is not ItemsWrapGrid { ItemWidth: > 0 and var width } grid) return;
-        var columns = grid.MaximumRowsOrColumns;
+        if (EssentialList.ItemsPanelRoot is not EssentialsPanel { ActualWidth: > 0 and var width } panel) return;
+        var columns = panel.Columns;
         var count = EssentialTabs.Count + (arriving ? 1 : 0);
 
-        // The slot under the pointer, from the grid's cells (the tiles themselves may be mid-move).
-        var at = e.GetPosition(grid);
-        var column = Math.Clamp((int)Math.Floor(at.X / width), 0, columns - 1);
-        var row = Math.Max(0, (int)Math.Floor(at.Y / EssentialCellHeight));
-        var land = Math.Clamp(row * columns + column, 0, count - 1);
+        // The slot under the pointer, from the cells the drop would give (the tiles may be mid-move).
+        var at = e.GetPosition(panel);
+        var land = Math.Clamp(EssentialsGrid.SlotAt(at.X, at.Y, count, columns, width), 0, count - 1);
         _essentialLanding = land;
         if (_essentialPreview == (land, columns, width)) return;
         _essentialPreview = (land, columns, width);
 
-        // Room for a row the arriving tab would start.
-        var rows = (count + columns - 1) / columns;
-        EssentialList.MinHeight = rows * EssentialCellHeight;
-
-        Vector3 Slot(int i) => new((float)(i % columns * width), (float)(i / columns * EssentialCellHeight), 0);
         var order = EssentialTabs.Where(t => t != tab).ToList();
         order.Insert(land, tab);
         for (var i = 0; i < EssentialTabs.Count; i++)
-        {
-            if (EssentialList.ContainerFromIndex(i) is not UIElement tile) continue;
-            Spring.To(tile, "Translation", Slot(order.IndexOf(EssentialTabs[i])) - Slot(i), duration: 0.3, bounce: 0.15);
-            tile.Opacity = EssentialTabs[i] == tab ? 0.4 : 1;
-        }
+            if (EssentialList.ContainerFromIndex(i) is UIElement tile) tile.Opacity = EssentialTabs[i] == tab ? 0.4 : 1;
 
         if (arriving)
         {
-            var origin = grid.TransformToVisual(DropIndicatorLayer).TransformPoint(new Point(4, 4));
-            var first = EssentialPlaceholder.Visibility == Visibility.Collapsed;
-            Canvas.SetLeft(EssentialPlaceholder, origin.X);
-            Canvas.SetTop(EssentialPlaceholder, origin.Y);
-            EssentialPlaceholder.Width = width - 8;
             EssentialPlaceholderIcon.Source = tab.Favicon;
             EssentialPlaceholderGlyph.Visibility = tab.PlaceholderVisibility;
-            EssentialPlaceholder.Visibility = Visibility.Visible;
-            if (first) Spring.Jump(EssentialPlaceholder, "Translation", Slot(land));
-            else Spring.To(EssentialPlaceholder, "Translation", Slot(land), duration: 0.3, bounce: 0.15);
+            panel.PlaceExtra = PlaceEssentialPlaceholder;
         }
+        panel.ShowOrder([.. EssentialTabs.Select(t => order.IndexOf(t))], count, arriving ? land : null, duration: 0.3, bounce: 0.15);
+    }
+
+    /// <summary>The arriving tab's faded tile, over its slot in the Essentials (<paramref name="cell"/>, in their panel).</summary>
+    private void PlaceEssentialPlaceholder(Rect cell)
+    {
+        if (EssentialList.ItemsPanelRoot is not EssentialsPanel panel || _essentialPreview is null) return;
+        var origin = panel.TransformToVisual(DropIndicatorLayer).TransformPoint(new Point(cell.X + 4, cell.Y + 4));
+        Canvas.SetLeft(EssentialPlaceholder, origin.X);
+        Canvas.SetTop(EssentialPlaceholder, origin.Y);
+        EssentialPlaceholder.Width = Math.Max(0, cell.Width - 8);
+        EssentialPlaceholder.Visibility = Visibility.Visible;
     }
 
     /// <summary>The tiles back in their own places, and the grid back to its own size.</summary>
@@ -3729,17 +3899,12 @@ public sealed partial class MainWindow : Window
         if (_essentialPreview is null && _essentialsArriving == 0) return;
         _essentialPreview = null;
         _essentialLanding = null;
-        if (EssentialList.ItemsPanelRoot is { } panel)
+        if (EssentialList.ItemsPanelRoot is EssentialsPanel panel)
         {
-            foreach (var tile in panel.Children)
-            {
-                if (animate) Spring.To(tile, "Translation", Vector3.Zero, duration: 0.3, bounce: 0.15);
-                else Spring.Jump(tile, "Translation", Vector3.Zero);
-                tile.Opacity = 1;
-            }
+            foreach (var tile in panel.Children) tile.Opacity = 1;
+            panel.ClearOrder(animate);
         }
         EssentialPlaceholder.Visibility = Visibility.Collapsed;
-        EssentialList.MinHeight = 0;
         if (_essentialsArriving != 0)
         {
             _essentialsArriving = 0;
@@ -4161,6 +4326,9 @@ public sealed partial class MainWindow : Window
         // Containers are recycled; wire each one once.
         if (args.InRecycleQueue || _pressFeedback.Contains(args.ItemContainer)) return;
         AddPressFeedback(args.ItemContainer, sender == EssentialList ? 0.96f : 0.98f);
+        args.ItemContainer.DragStarting += Row_DragStarting;
+        // A plain press switches at once (TabPressing.cs); the list's own selection comes on release.
+        args.ItemContainer.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Row_PointerPressed), true);
     }
 
     internal void Menu_Opening(object? sender, object e)

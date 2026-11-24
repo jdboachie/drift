@@ -42,15 +42,10 @@
             <!-- Where a dragged tab will land beside the page (split view). -->
             <SolidColorBrush x:Key="DriftIconBrush" Color="#474747" />
             <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#888888" />
-            <!-- A meeting on the calendar card: solid, with a hairline and a faint shadow under it. -->
-            <!-- The hover cards' header (Gmail, calendar): a tint of the accent, as Arc's is of the Space. -->
-            <SolidColorBrush x:Key="DriftCardHeaderBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.12" />
-            <SolidColorBrush x:Key="DriftCardHeaderButtonBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.16" />
-            <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="#F5F5F5" />
-            <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="#EFEFEF" />
-            <SolidColorBrush x:Key="DriftCalendarEventBorderBrush" Color="#14000000" />
-            <SolidColorBrush x:Key="DriftCalendarEventShadowBrush" Color="#0F000000" />
+            <!-- A meeting on the calendar card: a tint of the accent, as Arc's are of the Space's colour. -->
+            <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.16" />
+            <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.24" />
+            <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.2" />
             <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#F3F3F3" />
             <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#EBEBEB" />
@@ -92,13 +87,9 @@
             <SolidColorBrush x:Key="DriftDividerBrush" Color="#1FFFFFFF" />
             <SolidColorBrush x:Key="DriftIconBrush" Color="#D3D3D3" />
             <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#969696" />
-            <SolidColorBrush x:Key="DriftCardHeaderBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.22" />
-            <SolidColorBrush x:Key="DriftCardHeaderButtonBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.3" />
-            <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="#3A3A3A" />
-            <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="#434343" />
-            <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="#3E3E3E" />
-            <SolidColorBrush x:Key="DriftCalendarEventBorderBrush" Color="#1FFFFFFF" />
-            <SolidColorBrush x:Key="DriftCalendarEventShadowBrush" Color="#40000000" />
+            <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.28" />
+            <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.38" />
+            <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.33" />
             <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#2D2D2D" />
             <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#383838" />
             <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#323232" />

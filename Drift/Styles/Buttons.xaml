@@ -77,9 +77,9 @@
         </Setter>
     </Style>
 
-    <!-- A meeting on the calendar card (GoogleCalendar.cs): a solid card that follows light/dark
-         mode, with a faint shadow. Its text and Join button sit on top as siblings, so Join isn't
-         a button inside a button. -->
+    <!-- A meeting on the calendar card (GoogleCalendar.cs): a tint of the accent, as Arc's are of the
+         Space's colour, with no edge or shadow. Its text and Join button sit on top as siblings, so Join
+         isn't a button inside a button. -->
     <Style x:Key="CalendarEventButtonStyle" TargetType="Button">
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="VerticalAlignment" Value="Stretch" />
@@ -104,15 +104,8 @@
                                 <VisualState x:Name="Disabled" />
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
-                        <!-- The shadow: a little of it showing below the card. -->
-                        <Border CornerRadius="6"
-                                Margin="0,1,0,-1.5"
-                                Background="{ThemeResource DriftCalendarEventShadowBrush}"
-                                IsHitTestVisible="False" />
                         <Border x:Name="Surface"
                                 CornerRadius="6"
-                                BorderThickness="1"
-                                BorderBrush="{ThemeResource DriftCalendarEventBorderBrush}"
                                 Background="{ThemeResource DriftCalendarEventBrush}" />
                     </Grid>
                 </ControlTemplate>

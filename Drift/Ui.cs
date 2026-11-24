@@ -56,5 +56,16 @@ public static class Ui
         board.Begin();
     }
 
+    /// <summary>Stops a fade under way, if there is one, and leaves the element at a value of its own.</summary>
+    public static void StopFade(UIElement element, double value)
+    {
+        if (Fades.TryGetValue(element, out var running))
+        {
+            Fades.Remove(element);
+            running.Stop();
+        }
+        element.Opacity = value;
+    }
+
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<UIElement, Storyboard> Fades = new();
 }

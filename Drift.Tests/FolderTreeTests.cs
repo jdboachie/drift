@@ -476,4 +476,25 @@ public class FolderDetachTests
         Assert.Equal(["One"], _tree.Folders.Select(f => f.Name));
         Assert.Null(one.Parent);
     }
+
+    [Fact]
+    public void A_folder_can_hold_a_subfolder_until_the_deepest_level()
+    {
+        var folder = _tree.NewFolder("1");
+        for (var depth = 1; depth < FolderTree.MaxDepth; depth++)
+        {
+            Assert.True(FolderTree.CanHoldSubfolder(folder));
+            folder = _tree.NewFolder($"{depth + 1}", folder);
+        }
+        // The deepest: a new folder there would have to go beside it.
+        Assert.False(FolderTree.CanHoldSubfolder(folder));
+    }
+
+    [Fact]
+    public void A_live_folder_holds_no_subfolders()
+    {
+        var pulls = _tree.NewFolder("Pull requests");
+        pulls.Live = new LiveSource();
+        Assert.False(FolderTree.CanHoldSubfolder(pulls));
+    }
 }

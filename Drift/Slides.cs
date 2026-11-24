@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 
 
 namespace Drift;
@@ -112,13 +113,24 @@ public sealed partial class MainWindow
             var planned = new HashSet<object>(plan.Select(s => s.Key));
             foreach (var (item, _) in now)
             {
-                // A new row in a recycled container mustn't carry on its last row's slide.
+                // A new row in a recycled container mustn't carry on its last row's slide, or its fading.
                 if (!known.Contains(item) && !planned.Contains(item) && list.ContainerFromItem(item) is UIElement row)
+                {
                     Spring.Jump(row, "Translation", Vector3.Zero);
+                    if (!_rowPreviewShown) FadeRow(list, row, 1);
+                }
             }
             foreach (var slide in plan)
                 if (list.ContainerFromItem(slide.Key) is UIElement row) SlideFrom(row, slide);
         }
+        // Mid-drag, the folders' cards drawn whole go with the rows to their places (DragCards.cs).
+        if (_dragCardsShown)
+        {
+            var wasAt = rowsWere?.GetValueOrDefault(FolderList)?.ToDictionary(r => r.Item1, r => r.Item2, ReferenceEqualityComparer.Instance);
+            PlaceDragCards(RestingCardSpans(), animate: true, headerWas: f => wasAt is not null && wasAt.TryGetValue(f, out var t) ? t : null);
+        }
+        // The folder a drop would go into, lit up: with its header as it slides.
+        FollowFolderHighlight();
         // After the rows' own slides and jumps, which would otherwise stop it.
         GlideDropped();
 
@@ -134,23 +146,25 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Hidden while it's still under the row above (it's drawn over it), then in. Through the
-    /// element's own Opacity: animating its composition visual as well as its Translation (the
-    /// springs) isn't allowed, and throws the next time either is used.
+    /// Hidden while it's still under the row above (it's drawn over it), then in: an animation over its own
+    /// Opacity, which stays 1 all along, so a fade that's cut short still leaves the row showing. (Set to 0 and
+    /// put back by a timer, a row whose timer was missed stayed invisible, and so did every row given its
+    /// place after: a folder's new pull request showed as an empty card.) Not through its composition visual:
+    /// animating that as well as its Translation (the springs) isn't allowed, and throws the next time either is used.
     /// </summary>
-    private void FadeIn(UIElement element)
+    private static void FadeIn(UIElement element)
     {
         element.OpacityTransition = null;
-        element.Opacity = 0;
-        var timer = DispatcherQueue.CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(70);
-        timer.IsRepeating = false;
-        timer.Tick += (t, _) =>
-        {
-            t.Stop();
-            element.OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(170) };
-            element.Opacity = 1;
-        };
-        timer.Start();
+        element.Opacity = 1;
+        var fade = new DoubleAnimationUsingKeyFrames();
+        fade.KeyFrames.Add(new DiscreteDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.Zero), Value = 0 });
+        fade.KeyFrames.Add(new DiscreteDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70)), Value = 0 });
+        fade.KeyFrames.Add(new LinearDoubleKeyFrame { KeyTime = KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(240)), Value = 1 });
+        Storyboard.SetTarget(fade, element);
+        Storyboard.SetTargetProperty(fade, "Opacity");
+        // Stop: once it's done, the row's own value (1) shows, not the animation's.
+        var story = new Storyboard { FillBehavior = FillBehavior.Stop };
+        story.Children.Add(fade);
+        story.Begin();
     }
 }

@@ -41,20 +41,32 @@ internal static class History
 
     private static bool _loaded;
 
+    // history.json as Drift started, read on another thread while the window was being made (ReadSoon).
+    private static Task<List<HistoryEntry>?>? _reading;
+
+    /// <summary>Starts reading history.json on another thread, for Load to pick up.</summary>
+    public static void ReadSoon() => _reading ??= Task.Run(Read);
+
     public static void Load()
     {
         if (_loaded) return;
         _loaded = true;
+        var list = _reading is { } reading ? reading.Result : Read();
+        _reading = null;
+        if (list is null) return;
+        foreach (var entry in list.Where(e => !string.IsNullOrEmpty(e.Url))) Entries[entry.Url] = entry;
+    }
+
+    private static List<HistoryEntry>? Read()
+    {
         try
         {
-            if (!File.Exists(FilePath)) return;
-            var list = JsonSerializer.Deserialize<List<HistoryEntry>>(File.ReadAllText(FilePath));
-            if (list is null) return;
-            foreach (var entry in list.Where(e => !string.IsNullOrEmpty(e.Url))) Entries[entry.Url] = entry;
+            return File.Exists(FilePath) ? JsonSerializer.Deserialize<List<HistoryEntry>>(File.ReadAllText(FilePath)) : null;
         }
         catch
         {
             // A damaged file just means starting over.
+            return null;
         }
     }
 

@@ -73,7 +73,7 @@ Same split as Arc: an unmodified engine with your own UI on top.
   archives…) show there. The library's list has progress and time left, pause and resume, cancel,
   open a file (click it), show it in its folder, remove it from the list, or drag it out; right-click
   one to copy its link or move the file itself to the Recycle Bin. Files go to your Downloads folder,
-  or the one chosen in Settings › Downloads, where you also choose how long finished downloads stay
+  or the one chosen in Settings › General › Downloads, where you also choose how long finished downloads stay
   in the list (a month at first; the files stay). The list is kept in `downloads.json`. WebView2
   doesn't always say when a download has finished, so once every byte is in, Drift also counts it
   done when the file is saved under its final name.
@@ -121,6 +121,10 @@ Same split as Arc: an unmodified engine with your own UI on top.
 - **Extensions** (Settings › Extensions): add Chrome or Edge extensions from their unpacked
   folder, switch them on and off, remove them. They work in pages, but Drift has no toolbar, so
   their buttons and popups don't show.
+- **PDFs**, as in Edge: Draw, Erase, Highlight and Add text, and Save writes them into the file.
+  WebView2 ships Edge's viewer with these switched off, so Drift turns them on as each PDF opens.
+  Closing a PDF with unsaved edits asks first. How it works, and what to check when a WebView2
+  update breaks it: `docs/pdf-annotations.md`.
 - **Tabs from the keyboard**: Ctrl+Tab, as in Arc, works like Alt+Tab for tabs: a quick press goes
   back to the tab you were on last; hold Ctrl and a bar of your open tabs comes up, most recently used
   first, with a picture of each; Tab moves along (Ctrl+Shift+Tab back), and letting go of Ctrl goes
@@ -292,6 +296,7 @@ Under `Drift/`:
 | `Program.cs` | Entry point: one Drift at a time, later launches hand their links to it |
 | `CommandLine.cs` | Turns launch arguments (links, .html files) into pages to open |
 | `DefaultBrowser.cs` | Registers Drift with Windows as a browser; checks whether it's the default |
+| `StartAtSignIn.cs` | Opening Drift when you sign in to Windows: its line in Windows' startup apps (Core/StartupEntry.cs reads it) |
 | `Extensions.cs` | Extensions, the ad blocker's download and install, and the profile's password and form settings |
 | `Downloads.cs` | Downloads: following each one, the saved list, opening and showing files |
 | `Library.cs` | The library: opening and closing it (a spring the compositor runs), the swipe, Downloads and History |
@@ -300,12 +305,13 @@ Under `Drift/`:
 | `GoogleCalendar.cs` | Google Calendar: fetching your calendars, the tile's countdown and Join, the hover card, the reminder (Core/CalendarFeed.cs reads the export, Core/MeetingClock.cs times things) |
 | `Gmail.cs` | Gmail: fetching your unread emails (Core/GmailFeed.cs reads the feed) and the hover card |
 | `Integrations.cs` | What the integrations share: hidden signed-in views on their sites, and the card hovering their tab shows |
-| `Outlook.cs` | Outlook mail and calendar: the hidden Outlook page, its API (Core/OutlookApi.cs reads it), shared cards |
+| `Outlook.cs` | Outlook mail and calendar: the hidden Outlook page, its API (Core/OutlookApi.cs reads it), Outlook's push to its own pages (OutlookPushScript, in the page), shared cards |
 | `TabSwitcher.cs` | Ctrl+Tab's switcher: tabs by use (Core/TabCycle.cs), the bar while Ctrl is held, each tab's picture |
 | `Taskbar.cs` | Keeps the picture-in-picture windows (Drift's and Chromium's) off the taskbar |
 | `GhostPopups.cs` | Keeps menus as native windows without the empty "ghost" WinUI can leave after minimizing |
 | `PlayerWindow.cs` | The always-on-top window a page floating itself (a Meet call) lives in |
 | `SiteAdBlock.cs` | The site settings panel's ad blocking switch, and the hidden view on uBlock Origin Lite's dashboard that changes a site's filtering level |
+| `PdfTools.cs` | Draw, Erase, Highlight and Add text in PDFs: a hidden view that turns them on in each PDF viewer as it starts (Core/PdfViewers.cs tells the viewer's targets apart; `docs/pdf-annotations.md` explains it all) |
 | `Zoom.cs` | The address pill's zoom level, and resetting it |
 | `MicrosoftSignIn.cs` | Signing in to Microsoft sites with the Windows account: the first-run card, noticing the first time (Core/MicrosoftSignIn.cs), another account, signing out, restarting, the Windows account's details |
 | `Split.cs` | Split view: putting two to four tabs side by side and back, the dividers, dropping a tab on the page |

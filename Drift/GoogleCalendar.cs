@@ -45,6 +45,8 @@ public sealed partial class MainWindow
     private DateTime _calendarDay;
     private DateTimeOffset _calendarNextFetch;
     private bool _calendarFetching;
+    // The card opened and should show now; done once its timeline has been laid out (ScrollCalendarToNow).
+    private bool _calendarScrollPending;
     private BrowserTab? _calendarTab;
     private string? _calendarTabUrl;
     private DispatcherQueueTimer? _calendarTimer;
@@ -271,11 +273,10 @@ public sealed partial class MainWindow
 
     private void RenderCalendarCard(bool scroll)
     {
+        if (scroll) _calendarScrollPending = true;
         var now = DateTimeOffset.Now;
         var dayStart = new DateTimeOffset(DateTime.Today, TimeZoneInfo.Local.GetUtcOffset(DateTime.Today));
         var dayEnd = dayStart.AddDays(1);
-        CalendarCard.Title = now.ToString("dddd, MMMM d", CultureInfo.CurrentCulture);
-        CalendarCard.Icon = _hoverTab?.Favicon;
         CalendarAllDay.Children.Clear();
         CalendarTimeline.Children.Clear();
 
@@ -291,7 +292,9 @@ public sealed partial class MainWindow
         var accent = ThemeBrush("AccentFillColorDefaultBrush");
 
         foreach (var e in today.Where(e => e.AllDay))
-            CalendarAllDay.Children.Add(EventBlock(e, now, primary, secondary, height: 24, showTime: false));
+            CalendarAllDay.Children.Add(EventBlock(e, now, primary, height: 24));
+        // With none, the hours start at the card's top, as Arc's do.
+        CalendarAllDay.Visibility = CalendarAllDay.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         // The hours, each with its line.
         var width = CalendarCard.Width - 2;
@@ -327,7 +330,7 @@ public sealed partial class MainWindow
             var to = e.End > dayEnd ? dayEnd : e.End;
             var top = (from - dayStart).TotalHours * HourHeight + 4;
             var height = Math.Max(22, (to - from).TotalHours * HourHeight - 2);
-            var block = EventBlock(e, now, primary, secondary, height, showTime: height >= 38);
+            var block = EventBlock(e, now, primary, height);
             block.Width = area / count - 2;
             Canvas.SetLeft(block, TimeColumn + 2 + lane * area / count);
             Canvas.SetTop(block, top + 1);
@@ -349,33 +352,46 @@ public sealed partial class MainWindow
         {
             CalendarMessage.Show("Nothing today", null);
         }
-        // Opens on the hour before now.
-        if (scroll) CalendarScroll.ChangeView(null, Math.Max(0, nowY - HourHeight), null, disableAnimation: true);
+        ScrollCalendarToNow();
     }
 
     /// <summary>
-    /// A meeting on the card: its name, its time if there's room, and Join when it can be joined. The
-    /// whole block is a button that opens the meeting's page; Join sits over it, not inside it.
+    /// Opens the timeline on the hour before now, once it's been laid out. Before that (the card's first showing,
+    /// or while "Loading…" stood in for it) the scroller has no height yet, and would stay at midnight.
     /// </summary>
-    private Grid EventBlock(CalendarEvent e, DateTimeOffset now, Brush primary, Brush secondary, double height, bool showTime)
+    private void ScrollCalendarToNow()
     {
-        var text = new StackPanel { VerticalAlignment = height < 30 ? VerticalAlignment.Center : VerticalAlignment.Top, IsHitTestVisible = false };
-        text.Children.Add(new TextBlock
+        CalendarScroll.LayoutUpdated -= CalendarScroll_LayoutUpdated;
+        if (!_calendarScrollPending || CalendarScroll.Visibility != Visibility.Visible) return;
+        if (CalendarScroll.ExtentHeight <= 0 || CalendarScroll.ViewportHeight <= 0)
+        {
+            CalendarScroll.LayoutUpdated += CalendarScroll_LayoutUpdated;
+            return;
+        }
+        _calendarScrollPending = false;
+        var dayStart = new DateTimeOffset(DateTime.Today, TimeZoneInfo.Local.GetUtcOffset(DateTime.Today));
+        var nowY = (DateTimeOffset.Now - dayStart).TotalHours * HourHeight + 4;
+        CalendarScroll.ChangeView(null, Math.Max(0, nowY - HourHeight), null, disableAnimation: true);
+    }
+
+    private void CalendarScroll_LayoutUpdated(object? sender, object e) => ScrollCalendarToNow();
+
+    /// <summary>
+    /// A meeting on the card, as Arc's: only its name, on a tint of the theme's colour (the hour grid says when),
+    /// and Join when it can be joined. The whole block is a button that opens the meeting's page; Join sits over
+    /// it, not inside it.
+    /// </summary>
+    private Grid EventBlock(CalendarEvent e, DateTimeOffset now, Brush primary, double height)
+    {
+        var text = new TextBlock
         {
             Text = e.Title,
             FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
             Foreground = primary,
             TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        if (showTime)
-            text.Children.Add(new TextBlock
-            {
-                Text = $"{e.Start.ToLocalTime():h:mm} – {e.End.ToLocalTime():h:mm tt}",
-                FontSize = 11,
-                Foreground = secondary,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            });
+            VerticalAlignment = height < 30 ? VerticalAlignment.Center : VerticalAlignment.Top,
+            IsHitTestVisible = false,
+        };
         var top = height >= 30 ? 4 : 1;
         text.Margin = new Thickness(8, top, 0, 1);
         var row = new Grid { ColumnSpacing = 6 };

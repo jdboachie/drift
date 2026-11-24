@@ -385,8 +385,6 @@ public sealed partial class MainWindow
         var pill = new Border
         {
             Tag = front ? new FrontHalf() : new HoverHalf(),
-            Margin = new Thickness(0, 3, 0, 3),
-            HorizontalAlignment = HorizontalAlignment.Left,
             IsHitTestVisible = false,
             Opacity = 0,
             OpacityTransition = new ScalarTransition { Duration = System.TimeSpan.FromMilliseconds(front ? 150 : 100) },
@@ -397,10 +395,58 @@ public sealed partial class MainWindow
             pill.CornerRadius = new CornerRadius(8);
             pill.Background = (Brush)Application.Current.Resources["DriftHoverBrush"];
         }
+        Grid.SetRowSpan(pill, 4);
         Grid.SetColumnSpan(pill, 7);
         // Just above the row's card (its first child), under the pages.
         row.Children.Insert(1, pill);
         return pill;
+    }
+
+    private static bool SideBySide => Settings.Current.SplitPagesSideBySide;
+
+    /// <summary>
+    /// A split row's pages in their places (each a tab row, 38 tall): one under another, or side by side in the
+    /// row's columns, each filling its own (Settings › Tabs). Setting what's already set changes nothing, so it's
+    /// done every time the row's card is placed.
+    /// </summary>
+    private static void LayOutSplitRow(Grid row)
+    {
+        var side = SideBySide;
+        var i = 0;
+        foreach (var half in row.Children.OfType<SplitPageView>())
+        {
+            Grid.SetRow(half, side ? 0 : i);
+            Grid.SetColumn(half, side ? i * 2 : 0);
+            Grid.SetColumnSpan(half, side ? 1 : 7);
+            FitHalf(half);
+            i++;
+        }
+    }
+
+    /// <summary>
+    /// A pill (the selected card, or the hover) on a page's place, a few pixels in from its edges: along the
+    /// row's length when the pages are one under another, across its width when they're side by side.
+    /// </summary>
+    private static void PlacePill(Border pill, SplitPageView half)
+    {
+        if (SideBySide)
+        {
+            pill.Margin = new Thickness(0, 3, 0, 3);
+            pill.HorizontalAlignment = HorizontalAlignment.Left;
+            pill.VerticalAlignment = VerticalAlignment.Stretch;
+            pill.Height = double.NaN;
+            pill.Width = System.Math.Max(0, half.ActualWidth - 4);
+            Spring.Jump(pill, "Translation", new Vector3((float)half.ActualOffset.X + 2, 0, 0));
+        }
+        else
+        {
+            pill.Margin = new Thickness(3, 0, 3, 0);
+            pill.HorizontalAlignment = HorizontalAlignment.Stretch;
+            pill.VerticalAlignment = VerticalAlignment.Top;
+            pill.Width = double.NaN;
+            pill.Height = System.Math.Max(0, half.ActualHeight - 6);
+            Spring.Jump(pill, "Translation", new Vector3(0, (float)half.ActualOffset.Y + 3, 0));
+        }
     }
 
     /// <summary>A page's place in a split's row: that page.</summary>
@@ -445,7 +491,9 @@ public sealed partial class MainWindow
         Grid.SetColumnSpan(half.Icon, narrow ? 2 : 1);
         half.Icon.HorizontalAlignment = narrow ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
         half.Root.Padding = narrow ? new Thickness(0) : new Thickness(11, 0, 8, 0);
-        half.Root.ColumnSpacing = narrow ? 0 : 8;
+        // One under another, 16: a tab row's icon-to-title gap (its 10, and 6 beside its speaker's empty column), so
+        // titles line up with the tabs'. Side by side there's nothing to line up with, and less room: 8.
+        half.Root.ColumnSpacing = narrow ? 0 : SideBySide ? 8 : 16;
     }
 
     /// <summary>
@@ -465,10 +513,9 @@ public sealed partial class MainWindow
         var carded = page.Split is { } split && split == _shownSplit && FrontOf(split) == page;
         // The hover's the size of the selected card on a page (a couple of pixels in), not its whole place.
         var fill = HalfPill(row, typeof(HoverHalf));
-        if (over && !carded && hovered.ActualWidth > 0)
+        if (over && !carded && hovered.ActualHeight > 0 && hovered.ActualWidth > 0)
         {
-            fill.Width = System.Math.Max(0, hovered.ActualWidth - 4);
-            Spring.Jump(fill, "Translation", new Vector3((float)hovered.ActualOffset.X + 2, 0, 0));
+            PlacePill(fill, hovered);
             fill.Opacity = 1;
         }
         else if (!over) fill.Opacity = 0;
@@ -518,23 +565,25 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// While the split's the tab you're on, it's on a card of its own, the folders' (their colour and
-    /// border), and the page you're on has a selected tab's card on it, a couple of pixels in, there at
-    /// once when you switch pages. Otherwise it's a row as any tab's is: both cards fade away. No line
-    /// between the pages.
+    /// A split's pages are on a card of their own, the folders' (their colour and border) (DESIGN.md › Surfaces).
+    /// One under another, always, so they read as one tab, in front or not; side by side, only while the split's
+    /// the tab you're on, otherwise it's a row as any tab's is. While the split's the tab you're on, the page
+    /// you're on has a selected tab's card on it, a few pixels in, there at once when you switch pages; it fades
+    /// away when you leave the split. No line between the pages.
     /// </summary>
     private void PlaceSplitCard(Border card)
     {
-        if (card.Tag is not BrowserTab { Split: { } split } || card.Parent is not Grid row || row.ActualWidth <= 0) return;
+        if (card.Tag is not BrowserTab { Split: { } split } || card.Parent is not Grid row) return;
+        LayOutSplitRow(row);
+        if (row.ActualWidth <= 0) return;
         var shown = split == _shownSplit;
         card.Width = row.ActualWidth;
         Spring.Jump(card, "Translation", Vector3.Zero);
-        card.Opacity = shown ? 1 : 0;
-        if (row.Children.OfType<SplitPageView>().FirstOrDefault(h => h.Tag == FrontOf(split)) is { ActualWidth: > 0 } half)
+        card.Opacity = SideBySide && !shown ? 0 : 1;
+        if (row.Children.OfType<SplitPageView>().FirstOrDefault(h => h.Tag == FrontOf(split)) is { ActualHeight: > 0, ActualWidth: > 0 } half)
         {
             var pill = HalfPill(row, typeof(FrontHalf));
-            pill.Width = System.Math.Max(0, half.ActualWidth - 4);
-            Spring.Jump(pill, "Translation", new Vector3((float)half.ActualOffset.X + 2, 0, 0));
+            PlacePill(pill, half);
             pill.Opacity = shown ? 1 : 0;
         }
         // The selected card's arrived (you've just picked a page): its hover goes.

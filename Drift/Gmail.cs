@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using Microsoft.Web.WebView2.Core;
 
 namespace Drift;
@@ -30,7 +31,6 @@ public sealed partial class MainWindow
 
     private MailState _mailState = MailState.Loading;
     private List<MailItem> _mailItems = [];
-    private int _mailUnread;
     private DateTimeOffset _mailNextFetch;
     private DateTimeOffset _mailFetched;
     private bool _mailFetching;
@@ -105,7 +105,6 @@ public sealed partial class MainWindow
             if (xml is not null && GmailFeed.Parse(xml) is { } feed)
             {
                 _mailItems = feed.Items;
-                _mailUnread = feed.Unread;
                 _mailState = MailState.Ready;
                 _mailNextFetch = DateTimeOffset.Now + MailRefresh;
             }
@@ -160,35 +159,40 @@ public sealed partial class MainWindow
     }
 
     /// <summary>What the mail card shows for the tab it's for: its unread emails, or why there aren't any and what to do about it.</summary>
-    private (List<MailItem> Items, int Unread, string? Message, string? Action) MailCardData()
+    private (List<MailItem> Items, string? Message, string? Action) MailCardData()
     {
-        if (_hoverTab is { } tab && tab == _outlookMailTab) return (_outlookMail, _outlookUnread, OutlookMessage(), OutlookAction());
+        if (_hoverTab is { } tab && tab == _outlookMailTab) return (_outlookMail, OutlookMessage(), OutlookAction());
         return _mailState switch
         {
-            MailState.SignedOut => (_mailItems, _mailUnread, "You're signed out of Gmail", "Sign in"),
-            MailState.Failed => (_mailItems, _mailUnread, "We couldn't reach Gmail", "Try again"),
-            MailState.Loading => (_mailItems, _mailUnread, "Loading…", null),
-            _ => (_mailItems, _mailUnread, null, null),
+            MailState.SignedOut => (_mailItems, "You're signed out of Gmail", "Sign in"),
+            MailState.Failed => (_mailItems, "We couldn't reach Gmail", "Try again"),
+            MailState.Loading => (_mailItems, "Loading…", null),
+            _ => (_mailItems, null, null),
         };
     }
 
+    /// <summary>The emails, a hairline between each two, as Arc's card lists them.</summary>
     private void RenderMailCard()
     {
         MailList.Children.Clear();
-        var (items, unread, message, action) = MailCardData();
-        MailCard.Title = message is null && unread > 0 ? $"{unread} unread" : "Inbox";
-        MailCard.Icon = _hoverTab?.Favicon;
+        var (items, message, action) = MailCardData();
         if (message is null && items.Count == 0) message = "No unread email";
         MailMessage.Show(message, action);
         if (message is not null) return;
 
         var primary = ThemeBrush("TextFillColorPrimaryBrush");
         var secondary = ThemeBrush("DriftSecondaryTextBrush");
+        var divider = ThemeBrush("DriftDividerBrush");
         var now = DateTimeOffset.Now;
-        foreach (var item in items) MailList.Children.Add(MailRow(item, now, primary, secondary));
+        foreach (var item in items)
+        {
+            if (MailList.Children.Count > 0)
+                MailList.Children.Add(new Rectangle { Height = 1, Fill = divider, Margin = new Thickness(8, 2, 8, 2) });
+            MailList.Children.Add(MailRow(item, now, primary, secondary));
+        }
     }
 
-    /// <summary>An email, as Arc's: who it's from and when; its subject, up to two lines; and the start of it.</summary>
+    /// <summary>An email, as Arc's: who it's from and when; its subject, on one line; and the start of it, up to two.</summary>
     private Button MailRow(MailItem item, DateTimeOffset now, Brush primary, Brush secondary)
     {
         var grid = new Grid { RowSpacing = 1, ColumnSpacing = 8 };
@@ -200,10 +204,18 @@ public sealed partial class MainWindow
         var sender = new TextBlock { Text = item.Sender, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = primary, TextTrimming = TextTrimming.CharacterEllipsis };
         var age = new TextBlock { Text = GmailFeed.Age(item.Received, now), FontSize = 12, Foreground = secondary, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(age, 1);
-        var subject = new TextBlock { Text = item.Subject, FontSize = 13, Foreground = primary, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+        var subject = new TextBlock { Text = item.Subject, FontSize = 13, Foreground = primary, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetRow(subject, 1);
-        Grid.SetColumnSpan(subject, 2);
-        var snippet = new TextBlock { Text = item.Snippet, FontSize = 12, Foreground = secondary, TextTrimming = TextTrimming.CharacterEllipsis };
+        // A conversation of several (Outlook): how many, after its subject, as Outlook shows it.
+        if (item.Count > 1)
+        {
+            var count = new TextBlock { Text = $"({item.Count})", FontSize = 13, Foreground = primary, VerticalAlignment = VerticalAlignment.Top };
+            Grid.SetRow(count, 1);
+            Grid.SetColumn(count, 1);
+            grid.Children.Add(count);
+        }
+        else Grid.SetColumnSpan(subject, 2);
+        var snippet = new TextBlock { Text = item.Snippet, FontSize = 12, Foreground = secondary, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetRow(snippet, 2);
         Grid.SetColumnSpan(snippet, 2);
         grid.Children.Add(sender);
@@ -212,7 +224,7 @@ public sealed partial class MainWindow
         if (item.Snippet.Length > 0) grid.Children.Add(snippet);
 
         var row = new Button { Style = (Style)Application.Current.Resources["CardRowButtonStyle"], Content = grid };
-        AutomationProperties.SetName(row, $"{item.Sender}: {item.Subject}");
+        AutomationProperties.SetName(row, item.Count > 1 ? $"{item.Sender}: {item.Subject}, {item.Count} emails" : $"{item.Sender}: {item.Subject}");
         var tab = _hoverTab;
         row.Click += (_, _) =>
         {

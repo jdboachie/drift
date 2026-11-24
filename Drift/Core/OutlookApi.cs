@@ -28,15 +28,16 @@ public static class OutlookApi
         $"https://{host}/api/beta/me/calendarview?startDateTime={Iso(from)}&endDateTime={Iso(to)}&$top=200"
         + "&$select=Subject,Start,End,IsAllDay,IsCancelled,ResponseStatus,OnlineMeeting,OnlineMeetingUrl,Location,BodyPreview,WebLink");
 
+    /// <summary>The most unread emails one ask brings.</summary>
+    public const int UnreadTop = 50;
+
     public static Uri UnreadMessages(string host) => new(
-        $"https://{host}/api/beta/me/mailfolders/inbox/messages?$filter=IsRead%20eq%20false&$top=20"
+        $"https://{host}/api/beta/me/mailfolders/inbox/messages?$filter=IsRead%20eq%20false&$top={UnreadTop}"
         + "&$select=Subject,From,ReceivedDateTime,BodyPreview,WebLink,ConversationId");
 
     /// <summary>An email's conversation, open in the inbox's reading pane (not on a page of its own, as its WebLink is).</summary>
     public static Uri Conversation(string host, string conversationId) =>
         new($"https://{host}/mail/inbox/id/{Uri.EscapeDataString(conversationId)}");
-
-    public static Uri Inbox(string host) => new($"https://{host}/api/beta/me/mailfolders/inbox?$select=UnreadItemCount");
 
     public static Uri NewEvent(string host) => new($"https://{host}/calendar/deeplink/compose");
 
@@ -79,41 +80,65 @@ public static class OutlookApi
         return events.OrderBy(e => e.Start).ToList();
     }
 
-    /// <summary>The inbox's unread emails, newest first, each opening in the inbox on <paramref name="host"/>.</summary>
+    /// <summary>
+    /// The inbox's unread emails, newest first, each opening in the inbox on <paramref name="host"/>. A conversation
+    /// with several is one row, by its newest, as Outlook lists it: its senders, newest first, and how many there are.
+    /// </summary>
     public static List<MailItem> ParseMessages(string json, string host) =>
-        Values(json).Select(m =>
+        Values(json).GroupBy(m => Str(m, "ConversationId") is { Length: > 0 } c ? c : Str(m, "Id") ?? Guid.NewGuid().ToString())
+        .Select(g =>
         {
-            string? name = null, address = null;
-            if (m.TryGetProperty("From", out var from) && from.ValueKind == JsonValueKind.Object
-                && from.TryGetProperty("EmailAddress", out var ea) && ea.ValueKind == JsonValueKind.Object)
-            {
-                name = Str(ea, "Name");
-                address = Str(ea, "Address");
-            }
-            var received = DateTimeOffset.TryParse(Str(m, "ReceivedDateTime"), CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal, out var r) ? r : DateTimeOffset.MinValue;
+            var m = g.MaxBy(Received);
+            var conversation = Str(m, "ConversationId") is { Length: > 0 } c ? c : null;
             return new MailItem(
-                MailItem.OneLine(name is { Length: > 0 } ? name : address),
+                Senders(g),
                 MailItem.OneLine(Str(m, "Subject")) is { Length: > 0 } s ? s : "(no subject)",
                 MailItem.OneLine(Str(m, "BodyPreview")),
-                received,
+                Received(m),
                 Str(m, "Id"))
             {
-                Link = Str(m, "ConversationId") is { Length: > 0 } conversation
-                    ? Conversation(host, conversation).AbsoluteUri
-                    : Str(m, "WebLink"),
+                Link = conversation is not null ? Conversation(host, conversation).AbsoluteUri : Str(m, "WebLink"),
+                Conversation = conversation,
+                Count = g.Count(),
             };
         }).OrderByDescending(i => i.Received).ToList();
 
-    public static int ParseUnread(string json)
+    /// <summary>The inbox's emails in these conversations, read or not: who's in each and how many it has (WithConversations).</summary>
+    public static Uri ConversationEmails(string host, IEnumerable<string> conversations)
     {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty("UnreadItemCount", out var n) && n.TryGetInt32(out var count) ? count : 0;
-        }
-        catch (JsonException) { return 0; }
+        var filter = string.Join(" or ", conversations.Select(c => $"ConversationId eq '{c.Replace("'", "''")}'"));
+        return new($"https://{host}/api/beta/me/mailfolders/inbox/messages?$filter={Uri.EscapeDataString(filter)}&$top=200"
+            + "&$select=ConversationId,From,ReceivedDateTime");
     }
+
+    /// <summary>
+    /// Rows with everyone in their conversations and all their emails, read ones too, as Outlook lists them ("Abdul;
+    /// Nana", 3), from the inbox's emails in them (ConversationEmails). A row stays its newest unread email; one with
+    /// none in the answer keeps what it had.
+    /// </summary>
+    public static List<MailItem> WithConversations(List<MailItem> rows, string json)
+    {
+        var emails = Values(json).Where(m => Str(m, "ConversationId") is { Length: > 0 })
+            .GroupBy(m => Str(m, "ConversationId")!).ToDictionary(g => g.Key, g => g.ToList());
+        return rows.Select(r => r.Conversation is { } c && emails.TryGetValue(c, out var all)
+            ? r with { Sender = Senders(all), Count = Math.Max(all.Count, r.Count) }
+            : r).ToList();
+    }
+
+    /// <summary>Who emails are from, newest first, each once: "Abdul; Nana".</summary>
+    private static string Senders(IEnumerable<JsonElement> emails) =>
+        string.Join("; ", emails.OrderByDescending(Received).Select(SenderOf).Where(s => s.Length > 0).Distinct());
+
+    private static string SenderOf(JsonElement m)
+    {
+        if (!m.TryGetProperty("From", out var from) || from.ValueKind != JsonValueKind.Object
+            || !from.TryGetProperty("EmailAddress", out var ea) || ea.ValueKind != JsonValueKind.Object) return "";
+        return MailItem.OneLine(Str(ea, "Name") is { Length: > 0 } name ? name : Str(ea, "Address"));
+    }
+
+    private static DateTimeOffset Received(JsonElement m) =>
+        DateTimeOffset.TryParse(Str(m, "ReceivedDateTime"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var r)
+            ? r : DateTimeOffset.MinValue;
 
     private static List<JsonElement> Values(string json)
     {

@@ -125,8 +125,21 @@ internal static class Session
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Drift", "session.json");
 
+    // The file as Drift started, read on another thread while the window was being made (ReadSoon).
+    private static Task<SessionData?>? _reading;
+
+    /// <summary>Starts reading the session on another thread, for the next Load to pick up.</summary>
+    public static void ReadSoon() => _reading ??= Task.Run(Read);
+
     /// <summary>Null on first launch (no file yet), so the default pinned tabs open instead.</summary>
     public static SessionData? Load()
+    {
+        var reading = _reading;
+        _reading = null;
+        return reading is not null ? reading.Result : Read();
+    }
+
+    private static SessionData? Read()
     {
         try
         {

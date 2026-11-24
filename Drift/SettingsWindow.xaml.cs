@@ -40,6 +40,8 @@ public sealed partial class SettingsWindow : Window
     // The shortcut being recorded, and the row it's on.
     private ShortcutAction? _recording;
     private readonly Dictionary<string, (Button Button, SettingsRow Row, Button Reset)> _rows = new();
+    // Each group's section (its caption and card) and its shortcuts, for the search to hide.
+    private readonly List<(StackPanel Section, SettingsGroup Card, List<ShortcutAction> Actions)> _shortcutSections = [];
 
     // The window that opened Settings: pages picked from History open there.
     private MainWindow? _owner;
@@ -105,10 +107,16 @@ public sealed partial class SettingsWindow : Window
         StartupPageBox.Text = settings.StartupPage;
         StartupPagePanel.Visibility = settings.OnStartup == StartupBehavior.Page ? Visibility.Visible : Visibility.Collapsed;
         AdBlockToggle.IsOn = settings.BlockAds;
+        // Windows keeps this one (it can be turned off in Task Manager too), so it's read from there.
+        StartAtSignInToggle.IsOn = StartAtSignIn.IsOn;
         PipToggle.IsOn = settings.AutoPictureInPicture;
         CloseTwiceToggle.IsOn = settings.CloseTwice;
         LoadEssentialsToggle.IsOn = settings.LoadEssentialsAtStart;
+        SplitVerticalChoice.IsChecked = !settings.SplitPagesSideBySide;
+        SplitHorizontalChoice.IsChecked = settings.SplitPagesSideBySide;
         RecentTabsToggle.IsOn = settings.CtrlTabRecentOrder;
+        SwipePageToggle.IsOn = settings.SwipeMovesPage;
+        SwipeClosesToggle.IsOn = settings.SwipeBackClosesOpened;
         SwitchToNewTabsToggle.IsOn = settings.SwitchToNewTabs;
         RemindersToggle.IsOn = settings.MeetingReminders;
         PasswordsToggle.IsOn = settings.SavePasswords;
@@ -153,7 +161,6 @@ public sealed partial class SettingsWindow : Window
         AccountsPage.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         if (page == "accounts") _ = ShowAccountAsync();
         TabsPage.Visibility = page == "tabs" ? Visibility.Visible : Visibility.Collapsed;
-        DownloadsPage.Visibility = page == "downloads" ? Visibility.Visible : Visibility.Collapsed;
         AiPage.Visibility = page == "ai" ? Visibility.Visible : Visibility.Collapsed;
         ShortcutsPage.Visibility = page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
         ExtensionsPage.Visibility = page == "extensions" ? Visibility.Visible : Visibility.Collapsed;
@@ -165,9 +172,38 @@ public sealed partial class SettingsWindow : Window
 
     // ───────────────────────── Downloads ─────────────────────────
 
+    // The most the path takes; and what the rest of its row needs beside it (its label, Change…, the gaps and the
+    // row's padding), so the label never has to wrap.
+    private const double DownloadFolderMost = 280;
+    private const double DownloadFolderRowRest = 320;
+
+    /// <summary>The whole path, its middle given up if it's too long for the row (MiddleTruncate); whole on hover.</summary>
     private void ShowDownloadFolder()
     {
-        DownloadFolderText.Text = Downloads.Folder;
+        var folder = Downloads.Folder;
+        var room = DownloadFolderRow.ActualWidth > 0
+            ? Math.Clamp(DownloadFolderRow.ActualWidth - DownloadFolderRowRest, 60, DownloadFolderMost)
+            : DownloadFolderMost;
+        var measurer = new TextBlock
+        {
+            FontFamily = DownloadFolderText.FontFamily,
+            FontSize = DownloadFolderText.FontSize,
+            FontWeight = DownloadFolderText.FontWeight,
+        };
+        double Measure(string text)
+        {
+            measurer.Text = text;
+            measurer.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            return measurer.DesiredSize.Width;
+        }
+        var shown = MiddleTruncate.Fit(folder, Measure, room);
+        DownloadFolderText.Text = shown;
+        ToolTipService.SetToolTip(DownloadFolderText, shown == folder ? null : folder);
+    }
+
+    private void DownloadFolderRow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width != e.PreviousSize.Width) ShowDownloadFolder();
     }
 
     private async void DownloadFolder_Click(object sender, RoutedEventArgs e)
@@ -221,6 +257,24 @@ public sealed partial class SettingsWindow : Window
 
     private void ShowDefaultBrowserNote(string note) => DefaultBrowserRow.Description = note;
 
+    private void StartAtSignInToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || StartAtSignInToggle.IsOn == StartAtSignIn.IsOn) return;
+        try
+        {
+            StartAtSignIn.Set(StartAtSignInToggle.IsOn);
+            StartAtSignInRow.Description = null;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(ex);
+            StartAtSignInRow.Description = "We couldn't change this. Please try again.";
+            _loading = true;
+            StartAtSignInToggle.IsOn = StartAtSignIn.IsOn;
+            _loading = false;
+        }
+    }
+
     private void CloseTwiceToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_loading || CloseTwiceToggle.IsOn == Settings.Current.CloseTwice) return;
@@ -254,6 +308,27 @@ public sealed partial class SettingsWindow : Window
         if (_loading || RecentTabsToggle.IsOn == Settings.Current.CtrlTabRecentOrder) return;
         var on = RecentTabsToggle.IsOn;
         Settings.Update(s => s.CtrlTabRecentOrder = on);
+    }
+
+    private void SwipePageToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || SwipePageToggle.IsOn == Settings.Current.SwipeMovesPage) return;
+        var on = SwipePageToggle.IsOn;
+        Settings.Update(s => s.SwipeMovesPage = on);
+    }
+
+    private void SplitRowsChoice_Picked(object? sender, EventArgs e)
+    {
+        var sideBySide = sender == SplitHorizontalChoice;
+        if (_loading || sideBySide == Settings.Current.SplitPagesSideBySide) return;
+        Settings.Update(s => s.SplitPagesSideBySide = sideBySide);
+    }
+
+    private void SwipeClosesToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading || SwipeClosesToggle.IsOn == Settings.Current.SwipeBackClosesOpened) return;
+        var on = SwipeClosesToggle.IsOn;
+        Settings.Update(s => s.SwipeBackClosesOpened = on);
     }
 
     // ---- Accounts ----
@@ -628,7 +703,6 @@ public sealed partial class SettingsWindow : Window
 
     private static readonly (PreviewKind Kind, string App, string What)[] PreviewChoices =
     [
-        (PreviewKind.Folders, "Folders", "The tabs inside"),
         (PreviewKind.Gmail, "Gmail", "Unread emails"),
         (PreviewKind.GoogleCalendar, "Google Calendar", "Today's events"),
         (PreviewKind.OutlookMail, "Outlook", "Unread emails"),
@@ -702,55 +776,93 @@ public sealed partial class SettingsWindow : Window
 
     private void BuildShortcuts()
     {
-        ShortcutList.Children.Clear();
+        ShortcutSections.Children.Clear();
         _rows.Clear();
-        foreach (var action in Settings.Actions)
+        _shortcutSections.Clear();
+        foreach (var group in Settings.Actions.GroupBy(a => a.Group))
         {
-            // One card for all of them, a hairline between rows; a message (a clash) under its name.
-            var row = new SettingsRow { Header = action.Name };
-
-            var button = new Button
-            {
-                MinWidth = 120,
-                MinHeight = 32,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
-            };
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{action.Name} shortcut");
-            button.Click += (_, _) =>
-            {
-                if (_recording == action) StopRecording();
-                else StartRecording(action);
-            };
-            button.PreviewKeyDown += Shortcut_PreviewKeyDown;
-            // While recording, Space and Enter are keys to record, not clicks.
-            button.PreviewKeyUp += (_, e) => { if (_recording is not null) e.Handled = true; };
-            button.LostFocus += (_, _) => { if (_recording == action) StopRecording(); };
-
-            var reset = new Button
-            {
-                Content = new FontIcon { Glyph = ResetGlyph, FontSize = 12 },
-                Width = 32,
-                Height = 32,
-                Padding = new Thickness(0),
-                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                BorderThickness = new Thickness(0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            ToolTipService.SetToolTip(reset, $"Reset to {action.Default}");
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(reset, $"Reset {action.Name} shortcut");
-            reset.Click += (_, _) =>
-            {
-                StopRecording();
-                Settings.SetShortcut(action, null);
-                ShowShortcut(action);
-            };
-            row.Trailing = WithSlot(button, reset);
-
-            ShortcutList.Children.Add(row);
-            _rows[action.Id] = (button, row, reset);
-            ShowShortcut(action);
+            // A card per group, under its caption, a hairline between rows; a message (a clash) under a row's name.
+            var card = new SettingsGroup();
+            var section = new StackPanel { Spacing = 12 };
+            section.Children.Add(new TextBlock { Text = group.Key, Style = (Style)Application.Current.Resources["SettingsCaptionStyle"] });
+            section.Children.Add(card);
+            ShortcutSections.Children.Add(section);
+            _shortcutSections.Add((section, card, group.ToList()));
+            foreach (var action in group) AddShortcutRow(card, action);
         }
+        ShowShortcutSearch();
+    }
+
+    private void AddShortcutRow(SettingsGroup card, ShortcutAction action)
+    {
+        var row = new SettingsRow { Header = action.Name };
+
+        var button = new Button
+        {
+            MinWidth = 120,
+            MinHeight = 32,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{action.Name} shortcut");
+        button.Click += (_, _) =>
+        {
+            if (_recording == action) StopRecording();
+            else StartRecording(action);
+        };
+        button.PreviewKeyDown += Shortcut_PreviewKeyDown;
+        // While recording, Space and Enter are keys to record, not clicks.
+        button.PreviewKeyUp += (_, e) => { if (_recording is not null) e.Handled = true; };
+        button.LostFocus += (_, _) => { if (_recording == action) StopRecording(); };
+
+        var reset = new Button
+        {
+            Content = new FontIcon { Glyph = ResetGlyph, FontSize = 12 },
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(reset, $"Reset to {action.Default}");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(reset, $"Reset {action.Name} shortcut");
+        reset.Click += (_, _) =>
+        {
+            StopRecording();
+            Settings.SetShortcut(action, null);
+            ShowShortcut(action);
+        };
+        row.Trailing = WithSlot(button, reset);
+
+        card.Children.Add(row);
+        _rows[action.Id] = (button, row, reset);
+        ShowShortcut(action);
+    }
+
+    private void ShortcutSearch_TextChanged(object sender, TextChangedEventArgs e) => ShowShortcutSearch();
+
+    /// <summary>
+    /// Only the shortcuts whose name, group or keys match what's typed (ShortcutSearch); a group with none goes, and
+    /// with none at all, a line says so.
+    /// </summary>
+    private void ShowShortcutSearch()
+    {
+        var query = ShortcutSearchBox.Text;
+        var any = false;
+        foreach (var (section, card, actions) in _shortcutSections)
+        {
+            var shown = 0;
+            foreach (var action in actions)
+            {
+                var matches = ShortcutSearch.Matches(query, action.Name, action.Group, Settings.ShortcutFor(action).ToString());
+                _rows[action.Id].Row.Visibility = matches ? Visibility.Visible : Visibility.Collapsed;
+                if (matches) shown++;
+            }
+            section.Visibility = shown > 0 ? Visibility.Visible : Visibility.Collapsed;
+            any |= shown > 0;
+        }
+        ShortcutsEmpty.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>The row at rest: its keys as keycaps, and the reset button if it's been changed.</summary>

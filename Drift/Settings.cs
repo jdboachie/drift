@@ -81,7 +81,8 @@ internal readonly record struct Shortcut(VirtualKey Key, bool Ctrl, bool Shift, 
     public bool IsFunctionKey => Key is >= VirtualKey.F1 and <= VirtualKey.F12;
 }
 
-internal sealed record ShortcutAction(string Id, string Name, Shortcut Default);
+/// <summary>A command with a shortcut; <paramref name="Group"/> heads its section in Settings › Shortcuts.</summary>
+internal sealed record ShortcutAction(string Id, string Name, Shortcut Default, string Group);
 
 internal sealed class SettingsData
 {
@@ -95,8 +96,7 @@ internal sealed class SettingsData
     /// <summary>Ad blocking, with uBlock Origin Lite (Extensions).</summary>
     public bool BlockAds { get; set; } = true;
 
-    /// <summary>The previews hovering a pinned tab or a folder shows (Settings › General › Previews).</summary>
-    public bool PreviewFolders { get; set; } = true;
+    /// <summary>The previews hovering a pinned tab shows (Settings › General › Previews). A folder's is always on.</summary>
     public bool PreviewGmail { get; set; } = true;
     public bool PreviewGoogleCalendar { get; set; } = true;
     public bool PreviewOutlookMail { get; set; } = true;
@@ -106,7 +106,6 @@ internal sealed class SettingsData
 
     public bool Shows(PreviewKind kind) => kind switch
     {
-        PreviewKind.Folders => PreviewFolders,
         PreviewKind.Gmail => PreviewGmail,
         PreviewKind.GoogleCalendar => PreviewGoogleCalendar,
         PreviewKind.OutlookMail => PreviewOutlookMail,
@@ -117,7 +116,6 @@ internal sealed class SettingsData
     {
         switch (kind)
         {
-            case PreviewKind.Folders: PreviewFolders = on; break;
             case PreviewKind.Gmail: PreviewGmail = on; break;
             case PreviewKind.GoogleCalendar: PreviewGoogleCalendar = on; break;
             case PreviewKind.OutlookMail: PreviewOutlookMail = on; break;
@@ -135,6 +133,21 @@ internal sealed class SettingsData
     public bool SwitchToNewTabs { get; set; }
     /// <summary>Ctrl+Tab goes by the tabs used last (TabSwitcher.cs); off, down the sidebar.</summary>
     public bool CtrlTabRecentOrder { get; set; } = true;
+    /// <summary>
+    /// A two-finger swipe back or forward moves the page with the fingers, over a picture of the page it's going to, as
+    /// Safari does (SwipePage.cs); off, an arrow comes in from the edge, as in Chrome (Swipe.cs).
+    /// </summary>
+    public bool SwipeMovesPage { get; set; }
+    /// <summary>
+    /// Swiping back on a tab a link opened, from its first page (nowhere back to go), closes it and brings back the
+    /// tab whose link opened it, as Safari and Arc do (Swipe.cs).
+    /// </summary>
+    public bool SwipeBackClosesOpened { get; set; }
+    /// <summary>
+    /// A split's pages side by side in one sidebar row, as they are on screen, instead of one under another
+    /// (Split.cs LayOutSplitRow).
+    /// </summary>
+    public bool SplitPagesSideBySide { get; set; }
     /// <summary>Offer to save passwords, and fill them in (WebView2's password manager).</summary>
     public bool SavePasswords { get; set; } = true;
     /// <summary>Fill in addresses and other form data seen before.</summary>
@@ -180,21 +193,21 @@ internal static class Settings
 {
     public static readonly ShortcutAction[] Actions =
     {
-        new("newtab", "New tab", new Shortcut(VirtualKey.T, true, false, false)),
-        new("closetab", "Close tab", new Shortcut(VirtualKey.W, true, false, false)),
-        new("reopen", "Reopen closed tab", new Shortcut(VirtualKey.T, true, true, false)),
-        new("folder", "New folder", new Shortcut(VirtualKey.N, true, false, true)),
-        new("nexttab", "Next tab", new Shortcut(VirtualKey.Tab, true, false, false)),
-        new("prevtab", "Previous tab", new Shortcut(VirtualKey.Tab, true, true, false)),
-        new("address", "Edit address", new Shortcut(VirtualKey.L, true, false, false)),
-        new("copyurl", "Copy link", new Shortcut(VirtualKey.C, true, true, false)),
-        new("bookmark", "Bookmark page", new Shortcut(VirtualKey.D, true, false, false)),
-        new("private", "New private window", new Shortcut(VirtualKey.N, true, true, false)),
-        new("downloads", "Downloads", new Shortcut(VirtualKey.J, true, false, false)),
-        new("history", "History", new Shortcut(VirtualKey.H, true, false, false)),
-        new("bookmarks", "Bookmarks", new Shortcut(VirtualKey.O, true, true, false)),
-        new("sidebar", "Show or hide sidebar", new Shortcut(VirtualKey.S, true, false, false)),
-        new("settings", "Settings", new Shortcut((VirtualKey)188, true, false, false)),
+        new("newtab", "New tab", new Shortcut(VirtualKey.T, true, false, false), "Tabs"),
+        new("closetab", "Close tab", new Shortcut(VirtualKey.W, true, false, false), "Tabs"),
+        new("reopen", "Reopen closed tab", new Shortcut(VirtualKey.T, true, true, false), "Tabs"),
+        new("folder", "New folder", new Shortcut(VirtualKey.N, true, false, true), "Tabs"),
+        new("nexttab", "Next tab", new Shortcut(VirtualKey.Tab, true, false, false), "Tabs"),
+        new("prevtab", "Previous tab", new Shortcut(VirtualKey.Tab, true, true, false), "Tabs"),
+        new("address", "Edit address", new Shortcut(VirtualKey.L, true, false, false), "Page"),
+        new("copyurl", "Copy link", new Shortcut(VirtualKey.C, true, true, false), "Page"),
+        new("bookmark", "Bookmark page", new Shortcut(VirtualKey.D, true, false, false), "Page"),
+        new("downloads", "Downloads", new Shortcut(VirtualKey.J, true, false, false), "Library"),
+        new("history", "History", new Shortcut(VirtualKey.H, true, false, false), "Library"),
+        new("bookmarks", "Bookmarks", new Shortcut(VirtualKey.O, true, true, false), "Library"),
+        new("private", "New private window", new Shortcut(VirtualKey.N, true, true, false), "Window"),
+        new("sidebar", "Show or hide sidebar", new Shortcut(VirtualKey.S, true, false, false), "Window"),
+        new("settings", "Settings", new Shortcut((VirtualKey)188, true, false, false), "Window"),
     };
 
     private static readonly string FilePath = Path.Combine(

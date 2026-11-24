@@ -7,7 +7,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Drift">
 
-    <Grid Height="43" Background="Transparent"
+    <Grid Height="48" Background="Transparent"
           AutomationProperties.Name="{x:Bind Tab.Title, Mode=OneWay}"
           ToolTipService.ToolTip="{x:Bind Tab.Title, Mode=OneWay}"
           PointerEntered="IntegrationAnchor_PointerEntered"

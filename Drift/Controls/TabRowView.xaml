@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- A row in the sidebar's tab lists (TabRowTemplate), pinned (PinnedList) and regular (TabList): favicon and title,
-     or a split's pages side by side (Split.cs); on hover, its end button (RowAction_Click). A split with a pinned tab
+     or a split's pages one under another (Split.cs); on hover, its end button (RowAction_Click). A split with a pinned tab
      has its row in PinnedList, in that tab's place. Tabs in folders use it too (FolderList), with a dot while a live
      folder's tab is new. What's done in it is the window's (MainWindow.Of). -->
 <UserControl
@@ -12,7 +12,8 @@
     <Grid ColumnSpacing="10" Background="Transparent"
           AutomationProperties.Name="{x:Bind Tab.Title, Mode=OneWay}"
           PointerEntered="TabRow_PointerEntered"
-          PointerExited="TabRow_PointerExited">
+          PointerExited="TabRow_PointerExited"
+          Tapped="TabRow_Tapped">
         <Grid.ContextFlyout>
             <MenuFlyout ShouldConstrainToRootBounds="False" Opening="TabMenu_Opening" Opened="SidebarMenu_Opened" Closed="SidebarMenu_Closed" />
         </Grid.ContextFlyout>
@@ -74,11 +75,19 @@
                  Visibility="{x:Bind Tab.NewVisibility, Mode=OneWay}"
                  AutomationProperties.Name="New" />
         </Grid>
-        <!-- Split view (Split.cs): one row for both pages, side by side as they are on screen, each half
-             filling its side of the row. While the split is the tab you're on, the selected-tab card
-             sits on the half you're on, and is on the other at once when you switch (PlaceSplitCard). On hover
-             a half's favicon becomes its ×, as Safari's tabs do, so the title keeps its room. -->
+        <!-- Split view (Split.cs): one box for all its pages, one under another, each a tab's row of its own, as
+             Search Browser's are (the left page on top); or, if Settings › Tabs says so, side by side in one row
+             as they are on screen, each filling its column (LayOutSplitRow puts them in their rows or columns;
+             as written here, they're one under another). While the split is the tab you're on, the selected-tab
+             card sits on the page you're on, and is on the other at once when you switch (PlaceSplitCard). On
+             hover a page shows its × at its end. -->
         <Grid Grid.ColumnSpan="2" Visibility="{x:Bind Tab.SplitVisibility, Mode=OneWay}" SizeChanged="SplitRow_SizeChanged">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="3" />
@@ -88,7 +97,7 @@
                 <ColumnDefinition Width="{x:Bind Tab.Split.Gap4Width, Mode=OneWay}" />
                 <ColumnDefinition Width="{x:Bind Tab.Split.Slot4Width, Mode=OneWay}" />
             </Grid.ColumnDefinitions>
-            <Border Grid.ColumnSpan="7" HorizontalAlignment="Left" Tag="{x:Bind Tab, Mode=OneWay}"
+            <Border Grid.RowSpan="4" Grid.ColumnSpan="7" HorizontalAlignment="Left" Tag="{x:Bind Tab, Mode=OneWay}"
                     CornerRadius="10" BorderThickness="1" IsHitTestVisible="False" Opacity="0"
                     Background="{ThemeResource DriftFolderCardBrush}"
                     BorderBrush="{ThemeResource DriftFolderCardBorderBrush}"
@@ -97,16 +106,16 @@
                     <ScalarTransition Duration="0:0:0.15" />
                 </Border.OpacityTransition>
             </Border>
-            <local:SplitPageView Grid.Column="0" Page="{x:Bind Tab.Split.Page1, Mode=OneWay}"
+            <local:SplitPageView Grid.Row="0" Grid.ColumnSpan="7" Height="38" Page="{x:Bind Tab.Split.Page1, Mode=OneWay}"
                                  Loaded="SplitHalf_Loaded" Tapped="SplitHalf_Tapped" CloseClick="CloseSplitHalf_Click"
                                  PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited" />
-            <local:SplitPageView Grid.Column="2" Page="{x:Bind Tab.Split.Page2, Mode=OneWay}"
+            <local:SplitPageView Grid.Row="1" Grid.ColumnSpan="7" Height="38" Page="{x:Bind Tab.Split.Page2, Mode=OneWay}"
                                  Loaded="SplitHalf_Loaded" Tapped="SplitHalf_Tapped" CloseClick="CloseSplitHalf_Click"
                                  PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited" />
-            <local:SplitPageView Grid.Column="4" Page="{x:Bind Tab.Split.Page3, Mode=OneWay}" Visibility="{x:Bind Tab.Split.Slot3Visibility, Mode=OneWay}"
+            <local:SplitPageView Grid.Row="2" Grid.ColumnSpan="7" Height="38" Page="{x:Bind Tab.Split.Page3, Mode=OneWay}" Visibility="{x:Bind Tab.Split.Slot3Visibility, Mode=OneWay}"
                                  Loaded="SplitHalf_Loaded" Tapped="SplitHalf_Tapped" CloseClick="CloseSplitHalf_Click"
                                  PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited" />
-            <local:SplitPageView Grid.Column="6" Page="{x:Bind Tab.Split.Page4, Mode=OneWay}" Visibility="{x:Bind Tab.Split.Slot4Visibility, Mode=OneWay}"
+            <local:SplitPageView Grid.Row="3" Grid.ColumnSpan="7" Height="38" Page="{x:Bind Tab.Split.Page4, Mode=OneWay}" Visibility="{x:Bind Tab.Split.Slot4Visibility, Mode=OneWay}"
                                  Loaded="SplitHalf_Loaded" Tapped="SplitHalf_Tapped" CloseClick="CloseSplitHalf_Click"
                                  PointerEntered="SplitHalf_PointerEntered" PointerExited="SplitHalf_PointerExited" />
         </Grid>

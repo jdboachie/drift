@@ -5,10 +5,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Drift">
 
-    <!-- Drift's font: Segoe UI Variable (Windows 11), else Segoe UI. Controls take it from
-         ContentControlThemeFontFamily; plain text from the TextBlock style below, which Drift's
+    <!-- Drift's font: Segoe UI Variable Display (Windows 11), else Segoe UI (DESIGN.md › Text). Controls
+         take it from ContentControlThemeFontFamily; plain text from the TextBlock style below, which Drift's
          own text styles build on (a style of their own would otherwise drop it). -->
-    <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI Variable Display, Segoe UI</FontFamily>
 
     <Style x:Key="DriftTextStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource ContentControlThemeFontFamily}" />

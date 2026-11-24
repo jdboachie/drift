@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The arrow a two-finger swipe brings in from a page's edge (Swipe.cs), as Chromium's: a round disc with the back or
+     forward arrow, which slides in with the fingers, a ring of the accent growing around it, and the accent filling it
+     once letting go would go back or forward. Over its page's card (PageCardView), clipped to it, never hit. -->
+<UserControl
+    x:Class="Drift.SwipeArrowView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsHitTestVisible="False"
+    Visibility="Collapsed">
+
+    <Grid x:Name="Stage" SizeChanged="Stage_SizeChanged">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ReadyStates">
+                <VisualState x:Name="Waiting" />
+                <VisualState x:Name="Ready">
+                    <VisualState.Setters>
+                        <Setter Target="Disc.Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <Setter Target="Disc.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <Setter Target="Arrow.Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <!-- Room for the ring at its widest (48 across the middle), off the page's edge until it moves. -->
+        <Grid x:Name="Bubble" Width="96" Height="96" HorizontalAlignment="Left" VerticalAlignment="Center"
+              Translation="-96,0,0">
+            <!-- 40 across, shown from half that (the disc's own size) as the swipe goes. -->
+            <Ellipse x:Name="Ripple" Width="80" Height="80"
+                     Fill="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.3"
+                     Scale="0.5,0.5,1" CenterPoint="40,40,0" />
+            <Border x:Name="Disc" Style="{StaticResource FloatingPanelStyle}"
+                    Width="40" Height="40" CornerRadius="20" Translation="0,0,16">
+                <FontIcon x:Name="Arrow" Glyph="&#xE72B;" FontSize="16"
+                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

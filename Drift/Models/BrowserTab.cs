@@ -100,18 +100,19 @@ public sealed class TabSplit : INotifyPropertyChanged
     /// <summary>Its row in the tab list (a BrowserTab with IsSplitRow, standing for all its pages).</summary>
     public BrowserTab? Row { get; set; }
 
-    // The row's places for its pages (MainWindow.xaml): the page in each, or none, and their columns'
-    // widths, a place with no page taking no room.
+    // The row's places for its pages (TabRowView.xaml): the page in each, or none, a place with no page hidden.
+    // One under another, or side by side in columns (Settings › Tabs; Split.cs LayOutSplitRow), where a place
+    // with no page takes no room.
     public BrowserTab? Page1 => At(0);
     public BrowserTab? Page2 => At(1);
     public BrowserTab? Page3 => At(2);
     public BrowserTab? Page4 => At(3);
+    public Visibility Slot3Visibility => _pages.Count > 2 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility Slot4Visibility => _pages.Count > 3 ? Visibility.Visible : Visibility.Collapsed;
     public GridLength Slot3Width => SlotWidth(2);
     public GridLength Slot4Width => SlotWidth(3);
     public GridLength Gap3Width => new(_pages.Count > 2 ? 3 : 0);
     public GridLength Gap4Width => new(_pages.Count > 3 ? 3 : 0);
-    public Visibility Slot3Visibility => _pages.Count > 2 ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility Slot4Visibility => _pages.Count > 3 ? Visibility.Visible : Visibility.Collapsed;
 
     private BrowserTab? At(int i) => i < _pages.Count ? _pages[i] : null;
 
@@ -120,7 +121,8 @@ public sealed class TabSplit : INotifyPropertyChanged
     private void Changed()
     {
         foreach (var name in new[] { nameof(Pages), nameof(Count), nameof(Page1), nameof(Page2), nameof(Page3), nameof(Page4),
-                     nameof(Slot3Width), nameof(Slot4Width), nameof(Gap3Width), nameof(Gap4Width), nameof(Slot3Visibility), nameof(Slot4Visibility) })
+                     nameof(Slot3Width), nameof(Slot4Width), nameof(Gap3Width), nameof(Gap4Width),
+                     nameof(Slot3Visibility), nameof(Slot4Visibility) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }
@@ -334,6 +336,19 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     /// <summary>Shift was held with it, which turns the setting around for that click.</summary>
     public bool AsidePressShift { get; set; }
 
+    /// <summary>
+    /// A page opened it as its own window, to fill in (window.open() with no address), so the page may close it
+    /// again (window.close()), as it would its window anywhere else.
+    /// </summary>
+    public bool OpenedByPage { get; set; }
+
+    /// <summary>
+    /// The tab whose link opened this one (a new-tab link, Ctrl+click, middle-click, Open link in new tab), so swiping
+    /// back from its first page can close it and take you back there (Settings › Tabs, Swipe.cs). Weak: closing
+    /// that tab lets it go.
+    /// </summary>
+    public WeakReference<BrowserTab>? OpenedFrom { get; set; }
+
     private bool _isPlayingAudio;
     private bool _isMuted;
 
@@ -526,6 +541,23 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     }
 
     public Visibility NewVisibility => _isNew ? Visibility.Visible : Visibility.Collapsed;
+
+    private bool _isPicked;
+
+    /// <summary>Picked out with others in the sidebar, Ctrl+click or Shift+click (Picks.cs): its row shows as the tab in front's.</summary>
+    public bool IsPicked
+    {
+        get => _isPicked;
+        set
+        {
+            if (_isPicked == value) return;
+            _isPicked = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PickedVisibility));
+        }
+    }
+
+    public Visibility PickedVisibility => _isPicked ? Visibility.Visible : Visibility.Collapsed;
 
     private string? _meetingText;
 

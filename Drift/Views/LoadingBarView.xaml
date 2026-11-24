@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The page's loading bar (LoadingBarView.xaml.cs), as Arc's: a 4-high bar centred in the margin above the page.
+     Waiting for the site, a short pill pulses; once the page comes, it widens to a faint track with a brighter piece
+     sweeping along it; loaded, the track lights up, shrinks towards its middle and fades. Never hit. -->
+<UserControl
+    x:Class="Drift.LoadingBarView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsHitTestVisible="False"
+    Visibility="Collapsed">
+
+    <Grid Width="130" Height="4">
+        <!-- The pill, then the track: one bar, widening. -->
+        <Border x:Name="Bar" Width="48" Height="4" CornerRadius="2" HorizontalAlignment="Center"
+                Background="{ThemeResource DriftIconBrush}" Opacity="0" />
+        <!-- The piece sweeping along the track, cut off at its ends. -->
+        <Grid x:Name="SweepRoom" Width="130" Height="4" Visibility="Collapsed">
+            <Grid.Clip>
+                <RectangleGeometry Rect="0,0,130,4" />
+            </Grid.Clip>
+            <Border x:Name="Sweep" Width="40" Height="4" CornerRadius="2" HorizontalAlignment="Left"
+                    Background="{ThemeResource DriftIconBrush}" Opacity="0.76">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="SweepAt" X="-40" />
+                </Border.RenderTransform>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

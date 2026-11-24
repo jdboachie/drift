@@ -18,6 +18,5 @@ public class PreviewsTests
         Assert.Null(Previews.Trouble(PreviewKind.Gmail, hasTab: true, PreviewState.Ready));
         Assert.Null(Previews.Trouble(PreviewKind.Gmail, hasTab: true, PreviewState.Loading));
         Assert.Null(Previews.Trouble(PreviewKind.Gmail, hasTab: false, PreviewState.SignedOut));
-        Assert.Null(Previews.Trouble(PreviewKind.Folders, hasTab: true, PreviewState.Failed));
     }
 }

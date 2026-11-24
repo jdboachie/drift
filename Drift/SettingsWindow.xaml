@@ -45,13 +45,6 @@
                     <TextBlock Text="Tabs" FontSize="12" HorizontalAlignment="Center" />
                 </StackPanel>
             </RadioButton>
-            <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="downloads"
-                         AutomationProperties.Name="Downloads" Checked="Page_Checked">
-                <StackPanel Spacing="3">
-                    <FontIcon Glyph="&#xEBD3;" FontSize="18" />
-                    <TextBlock Text="Downloads" FontSize="12" HorizontalAlignment="Center" />
-                </StackPanel>
-            </RadioButton>
             <RadioButton Style="{StaticResource SettingsTabStyle}" GroupName="SettingsPages" Tag="ai"
                          AutomationProperties.Name="AI" Checked="Page_Checked">
                 <StackPanel Spacing="3">
@@ -100,15 +93,45 @@
                             <local:SettingsRow x:Name="DefaultBrowserRow" Header="Open links from other apps in Drift">
                                 <Button x:Name="DefaultBrowserButton" Content="Make default" Click="DefaultBrowser_Click" />
                             </local:SettingsRow>
+                            <!-- In Windows' own list too (Task Manager › Startup apps): StartAtSignIn.cs. -->
+                            <local:SettingsRow x:Name="StartAtSignInRow" Header="Open Drift when you start your PC">
+                                <ToggleSwitch x:Name="StartAtSignInToggle" Toggled="StartAtSignInToggle_Toggled" />
+                            </local:SettingsRow>
                             <local:SettingsRow x:Name="AdBlockRow" Header="Block ads and trackers"
                                                Description="Drift uses uBlock Origin Lite to block them">
                                 <ToggleSwitch x:Name="AdBlockToggle" Toggled="AdBlockToggle_Toggled" />
                             </local:SettingsRow>
                         </local:SettingsGroup>
-                        <!-- Previews: what hovering a pinned tab or a folder shows, each on or off (ShowPreviews). -->
+                        <!-- Downloads: where they're saved, and how long they stay in the list. -->
+                        <StackPanel Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="Downloads" Style="{StaticResource SettingsCaptionStyle}" />
+                            <local:SettingsGroup>
+                                <local:SettingsRow x:Name="DownloadFolderRow" Header="Save downloads to" SizeChanged="DownloadFolderRow_SizeChanged">
+                                    <!-- Where they go now, on the right as every row's value is: the whole path, losing its middle
+                                         when it's too long, as iOS does (ShowDownloadFolder), so the label keeps its line. Then a
+                                         button to change it. -->
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <TextBlock x:Name="DownloadFolderText" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <Button Content="Change…" Click="DownloadFolder_Click" />
+                                    </StackPanel>
+                                </local:SettingsRow>
+                                <!-- Each choice finishes the sentence, so none dangles ("…after Never"), and "keep… in
+                                     the list" says the files aren't touched, with no line under it to take back "remove". -->
+                                <local:SettingsRow Header="Keep downloads in the list">
+                                    <ComboBox x:Name="KeepDownloadsCombo" Width="200" SelectionChanged="KeepDownloadsCombo_SelectionChanged">
+                                        <ComboBoxItem Content="For a day" />
+                                        <ComboBoxItem Content="For a week" />
+                                        <ComboBoxItem Content="For a month" />
+                                        <ComboBoxItem Content="Forever" />
+                                    </ComboBox>
+                                </local:SettingsRow>
+                            </local:SettingsGroup>
+                        </StackPanel>
+                        <!-- Previews: what hovering a pinned tab shows, each on or off (ShowPreviews). A folder's is always on. -->
                         <StackPanel x:Name="PreviewsSection" Spacing="12" Margin="0,12,0,0">
                             <TextBlock Text="Previews" Style="{StaticResource SettingsCaptionStyle}" />
-                            <TextBlock Style="{StaticResource SettingsIntroStyle}" Text="Hover a folder or a pinned tab to see what's in it, without opening it." />
+                            <TextBlock Style="{StaticResource SettingsIntroStyle}" Text="Hover a pinned tab to see what's in it, without opening it." />
                             <local:SettingsGroup x:Name="PreviewList" />
                             <!-- Not a preview (it comes by itself), so a group of its own. -->
                             <local:SettingsGroup>
@@ -162,79 +185,117 @@
 
                     <!-- Tabs -->
                     <StackPanel x:Name="TabsPage" Spacing="12" Visibility="Collapsed">
-                        <local:SettingsGroup>
-                            <local:SettingsRow Header="When Drift closes, keep">
-                                <ComboBox x:Name="CloseCombo" Width="220" SelectionChanged="CloseCombo_SelectionChanged">
-                                    <ComboBoxItem Content="All my tabs" />
-                                    <ComboBoxItem Content="Only Essentials and pinned tabs" />
-                                </ComboBox>
-                            </local:SettingsRow>
-                            <local:SettingsRow Header="Load Essentials as soon as Drift opens">
-                                <ToggleSwitch x:Name="LoadEssentialsToggle" Toggled="LoadEssentialsToggle_Toggled" />
-                            </local:SettingsRow>
-                            <local:SettingsRow Header="Warn before closing Drift">
-                                <ToggleSwitch x:Name="CloseTwiceToggle" Toggled="CloseTwiceToggle_Toggled" />
-                            </local:SettingsRow>
-                            <local:SettingsRow Header="Keep videos playing in a small window when you switch tabs">
-                                <ToggleSwitch x:Name="PipToggle" Toggled="PipToggle_Toggled" />
-                            </local:SettingsRow>
-                            <local:SettingsRow Header="Ctrl+Tab switches to recently used tabs"
-                                               Description="When off, it goes in sidebar order">
-                                <ToggleSwitch x:Name="RecentTabsToggle" Toggled="RecentTabsToggle_Toggled" />
-                            </local:SettingsRow>
-                            <local:SettingsRow Header="Switch to links you open in a new tab"
-                                               Description="This applies to Ctrl+click, middle-click and Open link in new tab">
-                                <ToggleSwitch x:Name="SwitchToNewTabsToggle" Toggled="SwitchToNewTabsToggle_Toggled" />
-                            </local:SettingsRow>
-                            <local:SettingsRow Header="When Drift opens, show">
-                                <ComboBox x:Name="StartupCombo" Width="220" SelectionChanged="StartupCombo_SelectionChanged">
-                                    <ComboBoxItem Content="The tab I was on" />
-                                    <ComboBoxItem Content="A new tab" />
-                                    <ComboBoxItem Content="A page I choose" />
-                                </ComboBox>
-                                <local:SettingsRow.Below>
-                                    <StackPanel x:Name="StartupPagePanel" Spacing="4" Visibility="Collapsed">
-                                        <TextBox x:Name="StartupPageBox"
-                                                 PlaceholderText="https://example.com"
-                                                 AutomationProperties.Name="Startup page"
-                                                 IsSpellCheckEnabled="False"
-                                                 LostFocus="StartupPageBox_LostFocus"
-                                                 KeyDown="StartupPageBox_KeyDown" />
-                                        <TextBlock x:Name="StartupPageError" Style="{StaticResource SettingsDescriptionStyle}"
-                                                   Foreground="{ThemeResource SystemFillColorCriticalBrush}" Visibility="Collapsed"
-                                                   Text="Enter a web address, like example.com" />
+                        <!-- What Drift opens with, and what it keeps when it closes. -->
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Opening and closing" Style="{StaticResource SettingsCaptionStyle}" />
+                            <local:SettingsGroup>
+                                <local:SettingsRow Header="When Drift opens, show">
+                                    <ComboBox x:Name="StartupCombo" Width="220" SelectionChanged="StartupCombo_SelectionChanged">
+                                        <ComboBoxItem Content="The tab I was on" />
+                                        <ComboBoxItem Content="A new tab" />
+                                        <ComboBoxItem Content="A page I choose" />
+                                    </ComboBox>
+                                    <local:SettingsRow.Below>
+                                        <StackPanel x:Name="StartupPagePanel" Spacing="4" Visibility="Collapsed">
+                                            <TextBox x:Name="StartupPageBox"
+                                                     PlaceholderText="https://example.com"
+                                                     AutomationProperties.Name="Startup page"
+                                                     IsSpellCheckEnabled="False"
+                                                     LostFocus="StartupPageBox_LostFocus"
+                                                     KeyDown="StartupPageBox_KeyDown" />
+                                            <TextBlock x:Name="StartupPageError" Style="{StaticResource SettingsDescriptionStyle}"
+                                                       Foreground="{ThemeResource SystemFillColorCriticalBrush}" Visibility="Collapsed"
+                                                       Text="Enter a web address, like example.com" />
+                                        </StackPanel>
+                                    </local:SettingsRow.Below>
+                                </local:SettingsRow>
+                                <local:SettingsRow Header="Load Essentials as soon as Drift opens">
+                                    <ToggleSwitch x:Name="LoadEssentialsToggle" Toggled="LoadEssentialsToggle_Toggled" />
+                                </local:SettingsRow>
+                                <local:SettingsRow Header="When Drift closes, keep">
+                                    <ComboBox x:Name="CloseCombo" Width="220" SelectionChanged="CloseCombo_SelectionChanged">
+                                        <ComboBoxItem Content="All my tabs" />
+                                        <ComboBoxItem Content="Only Essentials and pinned tabs" />
+                                    </ComboBox>
+                                </local:SettingsRow>
+                                <local:SettingsRow Header="Warn before closing Drift">
+                                    <ToggleSwitch x:Name="CloseTwiceToggle" Toggled="CloseTwiceToggle_Toggled" />
+                                </local:SettingsRow>
+                            </local:SettingsGroup>
+                        </StackPanel>
+                        <!-- Going from tab to tab, and what comes with you. -->
+                        <StackPanel Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="Switching tabs" Style="{StaticResource SettingsCaptionStyle}" />
+                            <local:SettingsGroup>
+                                <local:SettingsRow Header="Ctrl+Tab switches to recently used tabs"
+                                                   Description="When off, it goes in sidebar order">
+                                    <ToggleSwitch x:Name="RecentTabsToggle" Toggled="RecentTabsToggle_Toggled" />
+                                </local:SettingsRow>
+                                <local:SettingsRow Header="Switch to links you open in a new tab"
+                                                   Description="This applies to Ctrl+click, middle-click and Open link in new tab">
+                                    <ToggleSwitch x:Name="SwitchToNewTabsToggle" Toggled="SwitchToNewTabsToggle_Toggled" />
+                                </local:SettingsRow>
+                                <local:SettingsRow Header="Keep videos playing in a small window when you switch tabs">
+                                    <ToggleSwitch x:Name="PipToggle" Toggled="PipToggle_Toggled" />
+                                </local:SettingsRow>
+                            </local:SettingsGroup>
+                        </StackPanel>
+                        <!-- Two-finger swipes on a touchpad (Swipe.cs). -->
+                        <StackPanel Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="Swiping" Style="{StaticResource SettingsCaptionStyle}" />
+                            <local:SettingsGroup>
+                                <local:SettingsRow Header="Slide the page with your fingers when you swipe back or forward"
+                                                   Description="When off, an arrow shows at the side instead">
+                                    <ToggleSwitch x:Name="SwipePageToggle" Toggled="SwipePageToggle_Toggled" />
+                                </local:SettingsRow>
+                                <local:SettingsRow Header="Swipe back closes a tab a link opened"
+                                                   Description="Back to the tab you were on, as Safari and Arc do">
+                                    <ToggleSwitch x:Name="SwipeClosesToggle" Toggled="SwipeClosesToggle_Toggled" />
+                                </local:SettingsRow>
+                            </local:SettingsGroup>
+                        </StackPanel>
+                        <!-- How a split's tabs sit in the sidebar. -->
+                        <StackPanel Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="Split View" Style="{StaticResource SettingsCaptionStyle}" />
+                            <local:SettingsGroup>
+                                <!-- Pictures of the sidebar (a tab, the split's box, a tab), as Dia shows its layouts. -->
+                                <local:SettingsRow Header="Split View tabs">
+                                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,4">
+                                        <local:PictureChoice x:Name="SplitVerticalChoice" Label="Vertical" GroupName="SplitRows" Picked="SplitRowsChoice_Picked">
+                                            <StackPanel Spacing="3">
+                                                <Border Style="{StaticResource PictureTabStyle}" Width="36" HorizontalAlignment="Left" Margin="3,0,0,0" />
+                                                <Border Style="{StaticResource PictureGroupStyle}">
+                                                    <StackPanel Spacing="3">
+                                                        <Border Style="{StaticResource PictureGroupTabStyle}" />
+                                                        <Border Style="{StaticResource PictureGroupTabStyle}" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <Border Style="{StaticResource PictureTabStyle}" Width="28" HorizontalAlignment="Left" Margin="3,0,0,0" />
+                                            </StackPanel>
+                                        </local:PictureChoice>
+                                        <local:PictureChoice x:Name="SplitHorizontalChoice" Label="Horizontal" GroupName="SplitRows" Picked="SplitRowsChoice_Picked">
+                                            <StackPanel Spacing="3">
+                                                <Border Style="{StaticResource PictureTabStyle}" Width="36" HorizontalAlignment="Left" Margin="3,0,0,0" />
+                                                <Border Style="{StaticResource PictureGroupStyle}">
+                                                    <Grid ColumnSpacing="3">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Style="{StaticResource PictureGroupTabStyle}" />
+                                                        <Border Grid.Column="1" Style="{StaticResource PictureGroupTabStyle}" />
+                                                    </Grid>
+                                                </Border>
+                                                <Border Style="{StaticResource PictureTabStyle}" Width="28" HorizontalAlignment="Left" Margin="3,0,0,0" />
+                                            </StackPanel>
+                                        </local:PictureChoice>
                                     </StackPanel>
-                                </local:SettingsRow.Below>
-                            </local:SettingsRow>
-                        </local:SettingsGroup>
+                                </local:SettingsRow>
+                            </local:SettingsGroup>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- AI: Ask AI in the command bar (AskAiBar.cs), with the Claude Code or Codex you have. -->
-                    <!-- Downloads -->
-                    <StackPanel x:Name="DownloadsPage" Spacing="12" Visibility="Collapsed">
-                        <local:SettingsGroup>
-                            <local:SettingsRow Header="Save downloads to">
-                                <!-- Where they go now, on the right as every row's value is, and a button to change it. -->
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <TextBlock x:Name="DownloadFolderText" MaxWidth="320" Margin="0,0,12,0" VerticalAlignment="Center"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <Button Content="Change…" Click="DownloadFolder_Click" />
-                                </StackPanel>
-                            </local:SettingsRow>
-                            <!-- Each choice finishes the sentence, so none dangles ("…after Never"), and "keep… in
-                                 the list" says the files aren't touched, with no line under it to take back "remove". -->
-                            <local:SettingsRow Header="Keep downloads in the list">
-                                <ComboBox x:Name="KeepDownloadsCombo" Width="200" SelectionChanged="KeepDownloadsCombo_SelectionChanged">
-                                    <ComboBoxItem Content="For a day" />
-                                    <ComboBoxItem Content="For a week" />
-                                    <ComboBoxItem Content="For a month" />
-                                    <ComboBoxItem Content="Forever" />
-                                </ComboBox>
-                            </local:SettingsRow>
-                        </local:SettingsGroup>
-                    </StackPanel>
-
                     <StackPanel x:Name="AiPage" Spacing="12" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource SettingsIntroStyle}"
                                    Text="Ask AI right from the command bar. Drift uses Claude Code or Codex, if you have them on this PC." />
@@ -273,7 +334,12 @@
                     <StackPanel x:Name="ShortcutsPage" Spacing="12" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource SettingsIntroStyle}"
                                    Text="Click a shortcut, then press the keys you'd like instead. Press Esc to cancel." />
-                        <local:SettingsGroup x:Name="ShortcutList" />
+                        <TextBox x:Name="ShortcutSearchBox" PlaceholderText="Search shortcuts" IsSpellCheckEnabled="False"
+                                 AutomationProperties.Name="Search shortcuts" TextChanged="ShortcutSearch_TextChanged" />
+                        <!-- A section per group (ShortcutAction.Group), each a caption over its card (BuildShortcuts). -->
+                        <StackPanel x:Name="ShortcutSections" Spacing="12" />
+                        <TextBlock x:Name="ShortcutsEmpty" Style="{StaticResource SettingsIntroStyle}" HorizontalAlignment="Center"
+                                   Margin="0,24,0,0" Text="No shortcuts match" Visibility="Collapsed" />
                         <Button x:Name="ResetAllButton" Content="Reset all shortcuts" HorizontalAlignment="Right" Margin="0,8,0,0"
                                 Click="ResetAll_Click" />
                     </StackPanel>
