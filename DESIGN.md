@@ -6,7 +6,7 @@ Rules learned from building Drift, each with why. Read before building or changi
 
 - **Build from the shared pieces; never copy one.** Before writing a panel, row, card or style, look for it here:
   - `Views/`: the window's regions (caption bar, toolbar, address bar, command bar, switcher, Library, downloads peek, mini player, meeting notice, crash card, drag ghosts). A new region is a view of its own, with an `Owner` the window sets; its handlers stay in the window's code.
-  - `Controls/`: what's used in more than one place. A tab's row (`TabRowView`), an Essential's tile, a folder's header, a page's card (`PageCardView`, also Peek's), handle and divider, settings rows and groups (`SettingsRow` in a `SettingsGroup`), a setting chosen by pictures (`PictureChoice`, as Dia shows its layouts; its pictures drawn with `PictureTabStyle` and `PictureGroupStyle`), `Toast`, `HoverCard`. A control in a list's row finds its window with `MainWindow.Of(this)`.
+  - `Controls/`: what's used in more than one place. A tab's row (`TabRowView`), an Essential's tile, a folder's header, a page's card (`PageCardView`, also Peek's), a Profile's sidebar (`ProfilePageView`), handle and divider, settings rows and groups (`SettingsRow` in a `SettingsGroup`), a setting chosen by pictures (`PictureChoice`, as Dia shows its layouts; its pictures drawn with `PictureTabStyle` and `PictureGroupStyle`), `Toast`, `HoverCard`. A control in a list's row finds its window with `MainWindow.Of(this)`.
   - `Styles/`: colours (`Colors.xaml`, a light and a dark value for each), text, buttons, settings, the sidebar's rows, and floating surfaces (`FloatingPanelStyle`: the hairline, fill and shadow every panel over the window has).
 
   A list's template in `MainWindow.xaml` is one element; a row with more is a control. A shadow comes from `FloatingPanelStyle`, `PageControlsPillStyle` or `PageCardView`, never one made on the spot. A colour that has to be written out (a button's `ButtonBackground` and the like, which won't take an alias) is one of Drift's own, in the same theme. Checked by `Drift.Tests/ComponentRulesTests.cs`.
@@ -25,7 +25,7 @@ Rules learned from building Drift, each with why. Read before building or changi
   Why: people read the icon before the tooltip, so a wrong one misleads.
   <!-- 2026-11-17: "the replace page icon looks like a share or pop out icon" · "replace page with a plus icon?? nah figure out something else" -->
 
-- **Anything grouping tabs in the sidebar (folders, splits) uses one card: `DriftFolderCardBrush`, a `DriftFolderCardBorderBrush` hairline, corner radius 10.**
+- **Anything grouping tabs in the sidebar (tab groups, splits) uses one card: `DriftFolderCardBrush`, a `DriftFolderCardBorderBrush` hairline, corner radius 10.** Tab groups are what folders were, designed exactly as they were ("tab groups are designed the exact same way as folders"), pinned with the pinned tabs or unpinned above the others ("they behave like folders except you can have them unpinned").
   A folder's card shows only while it's open; closed, it's a plain row. A split's shows always, in front or not, one under another or side by side, since it's what makes the pages read as one tab (the user, 2026-11-24, of side by side without it: "the horizontal split view tab doesn't have the folder background").
   Why: one card style makes groups read alike; a card on a closed group is noise.
   <!-- 2026-11-17: "the split view should have the same card treatment as the folders - just the color and border" · "the split row when it isn't open shouldn't have that folder-card treatment" -->
@@ -48,6 +48,11 @@ Rules learned from building Drift, each with why. Read before building or changi
   Why: the card had copied Arc's 2022 one (a tinted header with the site's icon, a title and a square +), which Arc had since replaced.
   <!-- 2026-11-23: "it seems our integration's popover may be based on arc's old version. can you confirm by researching what the latest version looked like? then make ours conform." -->
 
+- **Profiles are Dia's, laid out as Arc's Spaces: there are no Spaces, only Profiles, each its own sidebar and its own data. The Profile's name heads its tabs, under its own Essentials, and its icons sit between the Library button and + at the foot of the sidebar.** The one you're on is drawn full; a Profile with no icon of its own, and every Profile when there isn't room, is a dot (two globes side by side can't be told apart). Creating one takes the sidebar's place, as Arc's Create a Space does, without Arc's picture. Switching pages, as Arc's and Zen's sidebars do: every Profile has its own live sidebar (`ProfilePageView`), Essentials and all, side by side a 16px gap apart, cut off at the sidebar's edges, never drawn over the page. What slides in is that Profile's real sidebar, never a picture of it ("it should feel as natural as sliding a piece of paper across a table. why tf are we using a picture?"); its Essentials slide with it ("the essentials are supposed to move along with the sidebar as i swipe"). A swipe moves them with the fingers, 1:1, on the compositor, the next Profile coming in beside the one you're on at full strength (nothing fades); a click, Ctrl+1–9 or a mouse button slides the same way, at rest in about 160ms. Past the first or last Profile the sidebar stays put: no rubber band (the user tried one and didn't like it). The selected tab doesn't animate.
+  <!-- 2026-11-26: "i think we should unify spaces and profiles. and just call it profiles. like how dia and safari do it" · "no more 'Space' just Profile" -->
+  Why: the user asked for Arc's latest Spaces, copied; its layout and words were read from Arc for Windows 1.133, and its paging recorded frame by frame against it (the first slide drew over the page, faded, left the sidebar empty, then popped the next Space in nearly finished).
+  <!-- 2026-11-24: "lets work on spaces ... see how arc did it (in the latest one) and copy it" · "go ahead with the paging rework. also, lets add rubber banding between the boundaries to its clear" · then "remove the rubber banding... i don't like your implementation" -->
+
 - **Every popup and flyout has rounded corners (8px). A custom `FlyoutPresenter` style must set `CornerRadius`**, since its own style drops the default. Checked by `Drift.Tests/PopupStyleTests.cs`.
   Why: a popup with sharp corners looks broken next to the rest.
   <!-- 2026-11-17: "it also opens with sharp borders" (the Change icon popover) -->
@@ -58,11 +63,21 @@ Rules learned from building Drift, each with why. Read before building or changi
   It's set once, in `Styles/Text.xaml` (`ContentControlThemeFontFamily`, and the TextBlock style built on it); nothing names a font of its own except emoji (Segoe UI Emoji) and icons.
   <!-- 2026-11-23: "Segoe UI Variable Display - font it should use" -->
 
+- **Three sizes for words in the sidebar and its surfaces: 14 for what you pick by name (tabs, folders, menu rows), 13 for labels over a group and lines under a title, 12 for counts, badges and timecodes. Nothing you read is smaller than 12.**
+  A label heading a group (the Space's name over its tabs) is 13 SemiBold in the secondary grey: the weight, not a smaller size, sets it apart from the tabs. Its area is Zen's: 44 tall with a 16 icon, and a tab's hover fill (36 tall, radius 8) inset within it (2026-11-25, at 28 tall with a 14 icon: "the space's title area is too small ... see how zen does it"). Still under 12, to bring up when next touched: the Library's tab captions and its history and bookmark sites, the mini player's timecodes, the calendar card's hours and Join (11), and an Essential's meeting countdown (10).
+  Why: at 12 regular in a light grey the Space's name was hard to read; Arc's is 12 SemiBold and darker, and Drift goes a size up.
+  <!-- 2026-11-24: "the text sizing for the space label... seems small and difficult to read. if there's no guidance in design.md, lets decide on something" -->
+
 ## Color
 
 - **Cards in the sidebar are translucent white over the window's backdrop: `DriftFolderCardBrush` (#59FFFFFF light, #0EFFFFFF dark). Never in-app acrylic in the sidebar.**
   Why: the look wanted is "kinda transparent, kinda like acrylic"; in-app acrylic can't see the window's own backdrop (`DesktopAcrylicBackdrop`), so it renders solid white.
   <!-- 2026-11-17: "noo it should be kinda transparent (kinda like acrylic)" · "make it a bit more transparent" -->
+
+- **Text reads at 4.5:1 or better against what's under it, on a hovered row too; icons, dots and other marks at 3:1. Checked by `Drift.Tests/ContrastTests.cs`.**
+  Secondary text is `DriftSecondaryTextBrush` (#666666 light, #A0A0A0 dark), never a lighter grey or text faded with Opacity. A Profile you're not on is its icon at 60% (`ProfileOrder.IconStrength`).
+  Why: the old grey (#888888) was 3.4:1 on the light sidebar, and the other Spaces' icons at 45% were 2.2:1.
+  <!-- 2026-11-24: "check the spacing, color contrasts" -->
 
 ## Spacing & layout
 
@@ -87,6 +102,10 @@ Rules learned from building Drift, each with why. Read before building or changi
 - **Popups open at once, even the first time.** Load their data and fonts at idle soon after start (as `WarmIconPickerSoon` does for the icon picker).
   Why: a slow first open feels broken.
   <!-- 2026-11-17: "the 'change icon' popover takes too long to load the first time (can we preload it?)" -->
+
+- **The Library opens like a drawer, one thing after another: the tabs fade out (about 60ms), then the Library slides in from wholly off the window at full strength, never faded (about 250ms, easing out).** Shutting is quicker (Library gone in about 105ms, tabs back by about 220ms). A button or key never bounces; only fingers that let go moving do, a little (`LibrarySwipe.Motion`, tested by stepping the spring).
+  Why: crossing its width in 90ms it seemed to appear rather than slide, and fading in across the tabs looked like two things on top of each other.
+  <!-- 2026-11-24: "the library should slide in. not just appear"; "the sidebar should be almost faded out completely before the library comes sliding in. currently it looks like its overlapping and its ugly"; 2026-11-25: "refine the animation timing" -->
 
 ## Interaction
 

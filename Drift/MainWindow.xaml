@@ -105,11 +105,6 @@
                 </DoubleAnimationUsingKeyFrames>
             </Storyboard>
 
-            <!-- A tab's row (Controls/TabRowView.xaml): pinned (PinnedList), regular (TabList) and in folders (FolderList). -->
-            <DataTemplate x:Key="TabRowTemplate" x:DataType="models:BrowserTab">
-                <local:TabRowView Tab="{x:Bind}" />
-            </DataTemplate>
-
         </Grid.Resources>
 
         <!-- Keyboard shortcuts are added in code (ApplyShortcuts), from Settings. They fire while focus
@@ -405,268 +400,31 @@
                                   Grid.Row="1"
                                   Margin="0,8,4,10" />
 
-            <!-- Essentials: favicon tiles, up to six across, every row filling the width (LayoutEssentials,
-                 EssentialsPanel). The tiles' outer edges line up
-                 with the address bar's: the list reaches out by their margin on the left, and the address
-                 bar stops short of the sidebar's edge on the right as they do. Below, the first row's
-                 highlight sits 10 under the tiles, as far as a row of tiles from the next: their margin (5),
-                 less 2 here, and the list's 4 and the row's 3 there. -->
-            <GridView x:Name="EssentialList"
-                      Grid.Row="2"
-                      Margin="-5,-5,0,-2"
-                      Padding="0"
-                      SizeChanged="EssentialList_SizeChanged"
-                      ItemsSource="{x:Bind EssentialTabs}"
-                      ItemContainerStyle="{StaticResource PinnedTileStyle}"
-                      SelectionMode="Single"
-                      IsItemClickEnabled="False"
-                      CanDragItems="True"
-                      CanReorderItems="False"
-                      AllowDrop="True"
-                      DragItemsStarting="Tabs_DragItemsStarting"
-                      DragItemsCompleted="Tabs_DragItemsCompleted"
-                      SelectionChanged="TabList_SelectionChanged">
-                <GridView.ItemContainerTransitions>
-                    <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
-                    <TransitionCollection />
-                </GridView.ItemContainerTransitions>
-                <GridView.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <local:EssentialsPanel />
-                    </ItemsPanelTemplate>
-                </GridView.ItemsPanel>
-                <GridView.ItemTemplate>
-                    <DataTemplate x:DataType="models:BrowserTab">
-                        <local:EssentialTileView Tab="{x:Bind}" />
-                    </DataTemplate>
-                </GridView.ItemTemplate>
-            </GridView>
-
-            <!-- While a tab is dragged and this group is empty: somewhere to drop it. -->
-            <Grid x:Name="EssentialDropZone"
-                  Grid.Row="2"
-                  Height="48"
-                  Margin="0,0,0,4"
-                  AllowDrop="True"
-                  Background="Transparent"
-                  Visibility="Collapsed"
-                  DragOver="Tabs_DragOver"
-                  DragLeave="Tabs_DragLeave"
-                  Drop="Tabs_Drop">
-                <Rectangle x:Name="EssentialDropZoneOutline" RadiusX="10" RadiusY="10"
-                           Stroke="{ThemeResource DriftDividerBrush}"
-                           StrokeThickness="1"
-                           StrokeDashArray="4,3" />
-                <TextBlock Text="Drop here to add to Essentials"
-                           FontSize="12"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
-            </Grid>
-
-            <!-- Folders, pinned tabs, New Tab and the tabs scroll together under the Essentials, as in Arc,
-                 so a long pinned list never hides the tabs. The tab list takes whatever height is left
-                 below the tabs (SidebarScroll_SizeChanged), so a tab can still be dropped there. -->
-            <!-- Always scrollable (Enabled, not Auto), even with too few tabs to scroll: a touchpad swipe over
-                 the sidebar reaches the library's swipe (Library.cs) only by chaining sideways out of a list
-                 that scrolls. With nothing to scroll, the swipe open never reached it, and stalled. -->
-            <ScrollViewer x:Name="SidebarScroll"
-                          Grid.Row="3"
-                          Grid.RowSpan="5"
-                          HorizontalScrollMode="Disabled"
-                          HorizontalScrollBarVisibility="Disabled"
-                          VerticalScrollMode="Enabled"
-                          VerticalScrollBarVisibility="Auto"
-                          SizeChanged="SidebarScroll_SizeChanged">
+            <!-- Each Profile's sidebar (Controls/ProfilePageView.xaml), its Essentials at the top, side by side a gap apart on
+                 ProfileStrip, as Arc's and Zen's are: the one you're on in view, the others cut off at the sidebar's edges
+                 (ProfileViewport's clip). Going to another, or swiping, slides the strip (ProfilePages.cs). It reaches out 5
+                 left and up, for the Essentials' tiles; the sidebars are inset by as much. -->
+            <Grid x:Name="ProfileViewport" Grid.Row="2" Grid.RowSpan="6" Margin="-5,-5,0,0">
                 <!-- Right-click below the tabs: what the + button offers (ToolbarMenus.cs). Rows have menus of their own. -->
-                <ScrollViewer.ContextFlyout>
-                    <MenuFlyout Opening="SidebarSpaceMenu_Opening" Opened="SidebarMenu_Opened" Closed="SidebarSpaceMenu_Closed">
-                        <MenuFlyoutItem x:Name="SpaceNewTabItem" Text="New tab" Click="NewTab_Click" />
-                        <MenuFlyoutItem x:Name="SpaceNewFolderItem" Text="New folder" Click="NewFolder_Click" />
-                        <MenuFlyoutSubItem x:Name="SpaceLiveFolderItem" Text="New live folder">
-                            <MenuFlyoutItem x:Name="SpaceGitHubItem" Text="GitHub pull requests" Click="NewPullsFolder_Click" />
+                <Grid.ContextFlyout>
+                    <MenuFlyout Opening="SidebarProfileMenu_Opening" Opened="SidebarMenu_Opened" Closed="SidebarProfileMenu_Closed">
+                        <MenuFlyoutItem x:Name="ProfileNewTabItem" Text="New tab" Click="NewTab_Click" />
+                        <MenuFlyoutItem x:Name="ProfileNewFolderItem" Text="New tab group" Click="NewFolder_Click" />
+                        <MenuFlyoutSubItem x:Name="ProfileLiveFolderItem" Text="New live folder">
+                            <MenuFlyoutItem x:Name="ProfileGitHubItem" Text="GitHub pull requests" Click="NewPullsFolder_Click" />
                         </MenuFlyoutSubItem>
+                        <!-- The Profile's own, as Arc's Space's (Profiles.cs). -->
+                        <MenuFlyoutSeparator x:Name="ProfileMenuSeparator" />
+                        <MenuFlyoutItem x:Name="ProfileRenameItem" Text="Rename Profile" Click="ProfileRename_Click" />
+                        <MenuFlyoutItem x:Name="ProfileIconItem" Text="Change Profile icon…" Click="ProfileChangeIcon_Click" />
+                        <!-- The Profiles, the Profile's checked, then New Profile… (ProfileData.cs). -->
+                        <MenuFlyoutItem x:Name="ProfileHeaderItem" Text="Hide Profile header" Click="ProfileHeaderToggle_Click" />
+                        <MenuFlyoutSeparator x:Name="ProfileDeleteSeparator" />
+                        <MenuFlyoutItem x:Name="ProfileDeleteItem" Text="Delete Profile…" Click="ProfileDelete_Click" />
                     </MenuFlyout>
-                </ScrollViewer.ContextFlyout>
-                <Grid x:Name="SidebarScrollContent">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <!-- Mid-drag, the folders' cards drawn whole behind the folder list (DragCards.cs). -->
-                    <Canvas x:Name="FolderCardLayer" Grid.Row="0" Margin="0,4,4,0" IsHitTestVisible="False" />
-                    <!-- Folders, like Arc's: between the Essentials and the pinned tabs (Folders.cs). One flat list of
-                         folder headers and the tabs under them, indented a step per level. -->
-                    <ListView x:Name="FolderList"
-                              Grid.Row="0"
-                              Margin="0,4,4,0"
-                              Padding="0"
-                              Visibility="Collapsed"
-                              ItemsSource="{x:Bind FolderRows}"
-                              SelectionMode="Single"
-                              CanDragItems="True"
-                              CanReorderItems="False"
-                              AllowDrop="True"
-                              DragItemsStarting="Tabs_DragItemsStarting"
-                              DragItemsCompleted="Tabs_DragItemsCompleted"
-                              SelectionChanged="FolderList_SelectionChanged">
-                        <ListView.ItemContainerTransitions>
-                            <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
-                            <TransitionCollection />
-                        </ListView.ItemContainerTransitions>
-                        <ListView.ItemContainerStyleSelector>
-                            <local:FolderRowStyleSelector FolderStyle="{StaticResource FolderHeaderRowStyle}" RowStyle="{StaticResource TabRowStyle}" />
-                        </ListView.ItemContainerStyleSelector>
-                        <ListView.ItemTemplateSelector>
-                            <local:FolderRowTemplateSelector TabTemplate="{StaticResource TabRowTemplate}">
-                                <local:FolderRowTemplateSelector.FolderTemplate>
-                                    <DataTemplate x:DataType="models:TabFolder">
-                                        <local:FolderHeaderView Folder="{x:Bind}" />
-                                    </DataTemplate>
-                                </local:FolderRowTemplateSelector.FolderTemplate>
-                                <!-- A live folder's note (LiveFolders.cs): signed out, or nothing in it. In line with the tabs' titles. -->
-                                <local:FolderRowTemplateSelector.NoteTemplate>
-                                    <DataTemplate x:DataType="models:LiveNote">
-                                        <TextBlock Text="{x:Bind Text, Mode=OneWay}"
-                                                   Margin="26,0,0,0"
-                                                   FontSize="14"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{ThemeResource DriftSecondaryTextBrush}" />
-                                    </DataTemplate>
-                                </local:FolderRowTemplateSelector.NoteTemplate>
-                            </local:FolderRowTemplateSelector>
-                        </ListView.ItemTemplateSelector>
-                    </ListView>
-
-                    <!-- Pinned tabs: rows under the folders, with their titles (like Zen's). -->
-                    <ListView x:Name="PinnedList"
-                              Grid.Row="1"
-                              Margin="0,4,4,0"
-                              Padding="0"
-                              ItemsSource="{x:Bind PinnedTabs}"
-                              ItemContainerStyle="{StaticResource TabRowStyle}"
-                              ItemTemplate="{StaticResource TabRowTemplate}"
-                              SelectionMode="Single"
-                              CanDragItems="True"
-                              CanReorderItems="False"
-                              AllowDrop="True"
-                              DragItemsStarting="Tabs_DragItemsStarting"
-                              DragItemsCompleted="Tabs_DragItemsCompleted"
-                              SelectionChanged="TabList_SelectionChanged">
-                        <ListView.ItemContainerTransitions>
-                            <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
-                            <TransitionCollection />
-                        </ListView.ItemContainerTransitions>
-                    </ListView>
-
-
-
-                    <!-- While a tab is dragged and this group is empty: somewhere to drop it. -->
-                    <Grid x:Name="PinnedDropZone"
-                          Grid.Row="1"
-                          Height="36"
-                          Margin="0,4,4,0"
-                          AllowDrop="True"
-                          Background="Transparent"
-                          Visibility="Collapsed"
-                          DragOver="Tabs_DragOver"
-                          DragLeave="Tabs_DragLeave"
-                          Drop="Tabs_Drop">
-                        <Rectangle x:Name="PinnedDropZoneOutline" RadiusX="8" RadiusY="8"
-                                   Stroke="{ThemeResource DriftDividerBrush}"
-                                   StrokeThickness="1"
-                                   StrokeDashArray="4,3" />
-                        <TextBlock Text="Drop here to pin"
-                                   FontSize="12"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource DriftSecondaryTextBrush}" />
-                    </Grid>
-
-                    <!-- Arc's: 15 under the last pinned tab's card, 13 above New Tab's, as wide as they are. -->
-                    <Border Grid.Row="2" Height="1" Margin="0,12,4,13"
-                            Background="{ThemeResource DriftDividerBrush}" />
-
-                    <Button x:Name="NewTabButton"
-                            Grid.Row="3"
-                            Margin="0,0,4,3"
-                            Height="38"
-                            Style="{StaticResource SubtleButtonStyle}"
-                            CornerRadius="8"
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Stretch"
-                            Padding="11,0"
-                            Foreground="{ThemeResource DriftSecondaryTextBrush}"
-                            AutomationProperties.Name="New Tab"
-                            PointerEntered="NewTabButton_PointerEntered"
-                            PointerExited="NewTabButton_PointerExited"
-                            Click="NewTab_Click">
-                        <!-- Hovered or pressed, the tabs' own hover fill (DriftHoverBrush), not the button's white,
-                             and its words stay grey, as a tab's do. -->
-                        <Button.Resources>
-                            <ResourceDictionary>
-                                <ResourceDictionary.ThemeDictionaries>
-                                    <ResourceDictionary x:Key="Light">
-                                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#14000000" />
-                                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#14000000" />
-                                        <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#888888" />
-                                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#888888" />
-                                    </ResourceDictionary>
-                                    <ResourceDictionary x:Key="Dark">
-                                        <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#1AFFFFFF" />
-                                        <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#1AFFFFFF" />
-                                        <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#969696" />
-                                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#969696" />
-                                    </ResourceDictionary>
-                                </ResourceDictionary.ThemeDictionaries>
-                            </ResourceDictionary>
-                        </Button.Resources>
-                        <!-- Its shortcut shows at the end while hovered, like Arc's (ShowNewTabHint). -->
-                        <Grid ColumnSpacing="8" HorizontalAlignment="Stretch">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <FontIcon Glyph="&#xE710;" FontSize="12" />
-                                <TextBlock Text="New Tab" FontSize="14" />
-                            </StackPanel>
-                            <TextBlock x:Name="NewTabHint" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Opacity="0">
-                                <TextBlock.OpacityTransition>
-                                    <ScalarTransition Duration="0:0:0.15" />
-                                </TextBlock.OpacityTransition>
-                            </TextBlock>
-                        </Grid>
-                    </Button>
-
-                    <!-- Regular tabs -->
-                    <ListView x:Name="TabList"
-                              Grid.Row="4"
-                              ScrollViewer.VerticalScrollMode="Disabled"
-                              ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                              Margin="0,0,4,0"
-                              Padding="0"
-                              ItemsSource="{x:Bind Tabs}"
-                              ItemContainerStyle="{StaticResource TabRowStyle}"
-                              ItemTemplate="{StaticResource TabRowTemplate}"
-                              SelectionMode="Single"
-                              CanDragItems="True"
-                              CanReorderItems="False"
-                              AllowDrop="True"
-                              DragItemsStarting="Tabs_DragItemsStarting"
-                              DragItemsCompleted="Tabs_DragItemsCompleted"
-                              SelectionChanged="TabList_SelectionChanged">
-                        <ListView.ItemContainerTransitions>
-                            <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
-                            <TransitionCollection />
-                        </ListView.ItemContainerTransitions>
-                    </ListView>
-                </Grid>
-            </ScrollViewer>
+                </Grid.ContextFlyout>
+                <Canvas x:Name="ProfileStrip" />
+            </Grid>
 
             <!-- The mini player, like Arc's (MediaControls.cs): while a tab plays sound, and a while after
                  it's paused, its icon (go to it), back, play/pause, forward and mute. Hovered, it grows
@@ -730,6 +488,27 @@
                 </Grid>
             </Button>
 
+            <!-- The Profiles, between the Library and +, as Arc has its Spaces (Profiles.cs): click one to go there, right-click
+                 for its menu. Only with more than one. -->
+            <ItemsControl x:Name="ProfileSwitcher"
+                          Grid.Row="9"
+                          Margin="44,4,44,0"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Visibility="Collapsed"
+                          ItemsSource="{x:Bind Profiles}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:Profile">
+                        <local:ProfileIconView Profile="{x:Bind}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
             <!-- New things for the sidebar, across from the Library button. -->
             <Button x:Name="PlusButton"
                     Grid.Row="9"
@@ -744,8 +523,9 @@
                 <FontIcon Glyph="&#xE710;" FontSize="14" />
                 <Button.Flyout>
                     <MenuFlyout Placement="TopEdgeAlignedRight" Opening="PlusMenu_Opening" Opened="SidebarMenu_Opened" Closed="PlusMenu_Closed">
+                        <MenuFlyoutItem x:Name="PlusNewProfileItem" Text="New Profile" Click="NewProfile_Click" />
                         <MenuFlyoutItem x:Name="PlusNewTabItem" Text="New tab" Click="NewTab_Click" />
-                        <MenuFlyoutItem x:Name="PlusNewFolderItem" Text="New folder" Click="NewFolder_Click" />
+                        <MenuFlyoutItem x:Name="PlusNewFolderItem" Text="New tab group" Click="NewFolder_Click" />
                         <!-- A live folder keeps itself filled from somewhere (LiveFolders.cs). -->
                         <MenuFlyoutSubItem x:Name="PlusLiveFolderItem" Text="New live folder">
                             <MenuFlyoutItem x:Name="PlusGitHubItem" Text="GitHub pull requests" Click="NewPullsFolder_Click" />
@@ -753,6 +533,12 @@
                     </MenuFlyout>
                 </Button.Flyout>
             </Button>
+
+            <!-- Create a Profile (Profiles.cs), in place of what's below the address bar while it's up. -->
+            <local:ProfileCreationView x:Name="ProfileCreation"
+                                     Grid.Row="2"
+                                     Grid.RowSpan="8"
+                                     Visibility="Collapsed" />
 
             <!-- Hover the Library button and your newest downloads rise above it, as in
                  Arc: click one to open it, or drag it onto a page, Explorer or another app (DownloadPeek.cs). -->

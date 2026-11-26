@@ -21,7 +21,7 @@ namespace Drift;
 /// rail to switch between them. It opens from the library button, Ctrl+J and
 /// Ctrl+H, or by swiping the sidebar sideways on a touchpad, which widens it under the finger (Zen's
 /// swipe, measured frame by frame): let go and it springs open or shut, the way it was flicked, or
-/// to whichever is nearer. The tabs give way to the library early on (LibrarySwipe.Fade).
+/// to whichever is nearer. The tabs fade early on, then the library slides in (LibrarySwipe.Fade, LibraryShift).
 /// The sidebar's width is layout, which the compositor can't animate, so a spring is stepped each
 /// frame (SpringMotion); both are in Core, tested.
 /// </summary>
@@ -29,13 +29,6 @@ public sealed partial class MainWindow
 {
     // Twice the default sidebar, and always wider than the sidebar as it's been sized.
     private double LibraryWidth => Math.Max(2 * SidebarResize.Default, SidebarWidth + 140);
-
-    /// <summary>About 0.3s, overshooting about 10px either way: a little springier than Zen (2–3px), which felt flat.</summary>
-    private const double LibrarySpringSeconds = 0.3;
-    private const double LibraryBounce = 0.3;
-
-    /// <summary>Opened or shut from rest, it starts off at this many times the distance a second.</summary>
-    private const double LibraryKick = LibrarySwipe.CarryPerPixel;
 
     /// <summary>Pixels of sidebar per unit of a touchpad's sideways scroll (a notch is 120).</summary>
     private const double SwipePixelsPerDelta = 0.5;
@@ -45,7 +38,8 @@ public sealed partial class MainWindow
 
     // From the sidebar's width as it is now, which it can be dragged to.
     private LibrarySwipe _librarySwipe => new(SidebarWidth, LibraryWidth);
-    private readonly SpringMotion _librarySpring = new(LibrarySpringSeconds, LibraryBounce) { Position = SidebarResize.Default, Target = SidebarResize.Default };
+    // The spring opening or shutting it, as LibrarySwipe.Motion has it for how it was set going (MoveLibrary).
+    private SpringMotion _librarySpring = new(0.3, 0) { Position = SidebarResize.Default, Target = SidebarResize.Default };
     private readonly Stopwatch _libraryClock = Stopwatch.StartNew();
     private double _libraryWidth = SidebarResize.Default;
     private bool _libraryOpen;
@@ -67,6 +61,10 @@ public sealed partial class MainWindow
         Sidebar.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(Sidebar_Wheel), true);
         Library.Panel.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(Sidebar_Wheel), true);
         SetUpSwipe();
+        // Its lists pass a touchpad's sideways swipe on to the Library's, as the sidebar's does (ScrollHold).
+        ScrollHold.Attach(Library.HistoryPage, (UIElement)Library.HistoryPage.Content);
+        ScrollHold.Attach(Library.BookmarksScroll, (UIElement)Library.BookmarksScroll.Content);
+        ScrollHold.AttachInside(Library.DownloadList);
         Sidebar.SizeChanged += (_, _) =>
             Sidebar.CenterPoint = new System.Numerics.Vector3((float)Sidebar.ActualWidth / 2, (float)Sidebar.ActualHeight / 2, 0);
         // Always there, and drawn, just transparent and out of reach while shut: showing it for the
@@ -136,11 +134,12 @@ public sealed partial class MainWindow
             _sidebarDismissing = false;
         }
         var target = open ? LibraryWidth : ClosedWidth;
-        // Not from a swipe, from a button or a key: under way at once, like an ease-out.
-        if (velocity == 0) velocity = (target - _libraryWidth) * LibraryKick;
-        _librarySpring.Position = _libraryWidth;
-        _librarySpring.Velocity = velocity;
-        _librarySpring.Target = target;
+        // From a button or a key, a drawer's timing, under way at once like an ease-out; from fingers, their own
+        // speed, and a little bounce only if they threw it (LibrarySwipe.Motion).
+        var fromFingers = velocity != 0;
+        var motion = LibrarySwipe.Motion(open, thrown: fromFingers && Math.Abs(velocity) >= LibrarySwipe.FlickSpeed);
+        if (!fromFingers) velocity = (target - _libraryWidth) * motion.Kick;
+        _librarySpring = new SpringMotion(motion.Seconds, motion.Bounce) { Position = _libraryWidth, Velocity = velocity, Target = target };
         // Clicks go to where it's going.
         Library.Panel.IsHitTestVisible = open;
         Sidebar.IsHitTestVisible = !open;
@@ -157,9 +156,9 @@ public sealed partial class MainWindow
         spring.InitialValue = (float)_libraryWidth;
         spring.InitialVelocity = (float)velocity;
         spring.FinalValue = (float)target;
-        spring.DampingRatio = (float)(1 - LibraryBounce);
+        spring.DampingRatio = (float)(1 - motion.Bounce);
         // The compositor's Period is 1/omega (see Spring).
-        spring.Period = TimeSpan.FromSeconds(LibrarySpringSeconds / (2 * Math.PI));
+        spring.Period = TimeSpan.FromSeconds(motion.Seconds / (2 * Math.PI));
         BindToWidth();
         _libraryProps.StartAnimation("Width", spring);
 
@@ -215,9 +214,9 @@ public sealed partial class MainWindow
         PeekPageFrame.Translation = shift;
         PeekLayer.Translation = shift;
         var (tabs, library) = Swipe.Fade(width);
-        // Its right edge on the page's.
+        // Sliding in from off the window (LibrarySwipe.LibraryShift).
         if (Library.Panel.Width != LibraryWidth) Library.Panel.Width = LibraryWidth;
-        Library.Panel.Translation = new System.Numerics.Vector3((float)(width - LibraryWidth), 0, 0);
+        Library.Panel.Translation = new System.Numerics.Vector3((float)Swipe.LibraryShift(width), 0, 0);
         Library.Panel.Opacity = library;
         Library.Panel.IsHitTestVisible = library >= 0.5;
         Sidebar.Opacity = tabs;
@@ -255,10 +254,11 @@ public sealed partial class MainWindow
         if (_libraryProps is null || _libraryBindings.Count > 0) return;
         static string N(double v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var (closed, open) = (N(ClosedWidth), N(LibraryWidth));
-        // LibrarySwipe.Fade, written out: the tabs go, then the library comes.
+        // LibrarySwipe.Fade and LibraryShift, written out: the tabs fade, then the library slides in, at full strength.
         var way = $"((p.Width - {closed}) / ({open} - {closed}))";
         var leaving = $"Clamp({way} / {N(LibrarySwipe.TabsGone)}, 0, 1)";
-        var library = $"Clamp(({way} - {N(LibrarySwipe.LibraryFrom)}) / {N(LibrarySwipe.LibraryFull - LibrarySwipe.LibraryFrom)}, 0, 1)";
+        var library = $"Clamp(({way} - {N(LibrarySwipe.LibraryFrom)}) / {N(LibrarySwipe.LibraryShown)}, 0, 1)";
+        var coming = $"Clamp(({way} - {N(LibrarySwipe.LibraryFrom)}) / {N(1 - LibrarySwipe.LibraryFrom)}, 0, 1)";
         // Short of the sidebar's own width: pulled there by the fingers (Pulling), it's the sidebar that
         // goes, and the page stays. Springing back past it after a close, the page overshoots a little,
         // under the tabs, and comes back.
@@ -267,7 +267,7 @@ public sealed partial class MainWindow
         Bind(PageArea, "Translation", shift);
         Bind(PeekPageFrame, "Translation", shift);
         Bind(PeekLayer, "Translation", shift);
-        Bind(Library.Panel, "Translation", $"Vector3(p.Width - {open}, 0, 0)");
+        Bind(Library.Panel, "Translation", $"Vector3(Max({N(LibrarySwipe.KeptOnWindow)} - {open}, -(1 - {coming}) * {open}) + Max(0, p.Width - {open}), 0, 0)");
         Bind(Library.Panel, "Opacity", library);
         Bind(Sidebar, "Opacity", $"1 - {leaving}");
         // Shrinking away. (Floating, its Translation is its slide in and out.)
@@ -332,6 +332,7 @@ public sealed partial class MainWindow
 
     private InteractionTracker? _swipeTracker;
     private float _swipeOrigin;
+    private long _swipeStartedAt;
     private double _swipeFrom;
     private bool _trackerSwiping;
     private VisualInteractionSource? _swipeSource;
@@ -354,16 +355,127 @@ public sealed partial class MainWindow
             source.PositionYSourceMode = InteractionSourceMode.Disabled;
             source.ScaleSourceMode = InteractionSourceMode.Disabled;
             source.IsPositionXRailsEnabled = true;
+            // No coasting on after the fingers lift: what's swiped stays where they left it, and a spring takes it from
+            // there (the Library's, a Profile's page). Coasting moved the tabs on a frame or two, before they were pulled
+            // back to where the fingers lifted: a jump. The speed as they lifted is still given (InertiaStateEntered).
+            var stay = InteractionTrackerInertiaRestingValue.Create(visual.Compositor);
+            stay.Condition = visual.Compositor.CreateExpressionAnimation("true");
+            stay.RestingValue = visual.Compositor.CreateExpressionAnimation("this.Target.Position.x");
+            _swipeTracker.ConfigurePositionXInertiaModifiers([stay]);
             // It catches touchpad swipes anywhere in the window, the page's too (even out of the
             // tracker, while redirecting), so it only redirects while the pointer is over the sidebar
             // or the library.
             _swipeSource = source;
             _swipeTracker.InteractionSources.Add(source);
             Root.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(SwipeArea_PointerMoved), true);
+            CheckLibrarySwipeIfAsked();
         }
         catch (Exception ex)
         {
             SwipeLog("setup failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Only with DRIFT_SWIPE_CHECK=library (the demo, to record): a touchpad swipe played through the tracker's own
+    /// path, its fingers moved by the tracker's position, as a real one moves it. Open 300px over 300ms, held, let go;
+    /// then shut the same way. A touchpad can't be driven from outside, and the Library's swipe once drew nothing till
+    /// the fingers lifted, where its button showed it fine.
+    /// </summary>
+    private async void CheckLibrarySwipeIfAsked()
+    {
+        var check = Environment.GetEnvironmentVariable("DRIFT_SWIPE_CHECK");
+        if (check is not ("library" or "quick" or "mixed" or "flicks") || _swipeTracker is null) return;
+        await System.Threading.Tasks.Task.Delay(5000);
+        // The user's rhythm: open, shut, open, shut, each one starting soon after the last (the fourth went blank).
+        var gap = 1500;
+        if (check == "mixed")
+        {
+            // As the user's log had it: the tracker's open, then the wheel's (a touchpad's swipe comes as sideways
+            // scrolling where the tracker doesn't take it), each soon after the last.
+            gap = 400;
+            await Swipe(1, 260, 12, 150, 0);
+            for (var i = 0; i < 3; i++)
+            {
+                await Wheel(-1);
+                await Wheel(1);
+            }
+            await Swipe(-1, 260, 12, 150, 0);
+            await Wheel(1);
+            await Swipe(-1, 260, 12, 150, 0);
+            return;
+        }
+        if (check == "flicks")
+        {
+            // The user's rhythm (2026-11-25 log): flicks at 2000-5000px/s, ~130ms each, the next ~150ms after, often
+            // before the last had settled; blank after a few.
+            ShowLibraryPage("history");
+            if (Profiles.Count > 0 && _profileShown != Profiles[0]) ShowProfile(Profiles[0]);
+            await System.Threading.Tasks.Task.Delay(500);
+            gap = 150;
+            for (var i = 0; i < 8; i++)
+            {
+                await Swipe(1, 120, 6, 0, -2000 - i * 400);
+                await Swipe(-1, 120, 6, 0, 2000 + i * 400);
+            }
+            await Swipe(1, 120, 6, 0, -3000);
+            return;
+        }
+        if (check == "quick")
+        {
+            // On History (its list builds only the rows it takes to be on screen), from the first Profile, where a swipe
+            // that way is the Library's.
+            ShowLibraryPage("history");
+            if (Profiles.Count > 0 && _profileShown != Profiles[0]) ShowProfile(Profiles[0]);
+            await System.Threading.Tasks.Task.Delay(500);
+            gap = 250;
+            for (var i = 0; i < 3; i++)
+            {
+                await Swipe(1, 260, 12, 150, 0);
+                await Swipe(-1, 260, 12, 150, 0);
+            }
+            return;
+        }
+        // To the next Profile and back, as the user did first. Open and held; shut. Opened by its button, then pulled
+        // further and held; shut. A quick flick open.
+        await Swipe(-1, 200, 12, 0, 0);
+        await Swipe(1, 200, 12, 0, 0);
+        await Swipe(1, 300, 18, 700, 0);
+        await Swipe(-1, 300, 18, 700, 0);
+        SwipeLog("check: by the button");
+        OpenLibrary(_libraryPage);
+        await System.Threading.Tasks.Task.Delay(1200);
+        await Swipe(1, 100, 8, 700, 0);
+        await Swipe(-1, 300, 18, 700, 0);
+        await Swipe(1, 120, 5, 0, -2500);
+
+        // A touchpad's swipe as sideways scrolling: small steps at about 120 a second, then a pause (the fingers lift).
+        async System.Threading.Tasks.Task Wheel(int way)
+        {
+            SwipeLog($"check: wheel {(way > 0 ? "open" : "shut")}");
+            for (var step = 0; step < 30; step++)
+            {
+                WheelSwipe(-way * 20);
+                await System.Threading.Tasks.Task.Delay(8);
+            }
+            await System.Threading.Tasks.Task.Delay(150 + gap);
+        }
+
+        async System.Threading.Tasks.Task Swipe(int way, float distance, int steps, int hold, float velocity)
+        {
+            var start = _swipeTracker!.Position.X;
+            TrackerSwipeStarted(start);
+            for (var step = 1; step <= steps; step++)
+            {
+                var at = start - way * step * distance / steps;
+                _swipeTracker.TryUpdatePosition(new System.Numerics.Vector3(at, 0, 0));
+                TrackerSwipeMoved(at);
+                await System.Threading.Tasks.Task.Delay(16);
+            }
+            await System.Threading.Tasks.Task.Delay(hold);
+            TrackerSwipeEnded(velocity, _swipeTracker.Position.X);
+            FlushSwipeLog();
+            await System.Threading.Tasks.Task.Delay(gap);
         }
     }
 
@@ -404,11 +516,25 @@ public sealed partial class MainWindow
         if (!SidebarShowing || _swipeTracker is null || _libraryProps is null) return;
         _trackerSwiping = true;
         _swipeOrigin = position;
+        // With Profiles to go to, the way the fingers go first says which swipe it is (TrackerSwipeMoved).
+        _swipeKind = ProfileSwipesOn ? SwipeKind.Undecided : SwipeKind.Library;
+        if (_swipeKind == SwipeKind.Library) StartLibraryTrackerSwipe();
+    }
+
+    // How long the window took to start a swipe (the user, 2026-11-25: "sometimes swiping takes a while to register").
+    private void LogSlowStart(long since, string what)
+    {
+        var took = _libraryClock.ElapsedMilliseconds - since;
+        if (took >= 8) SwipeLog($"LAG {what} took {took}ms");
+    }
+
+    /// <summary>The library's swipe, from the tracker: the compositor widens the sidebar with the fingers.</summary>
+    private void StartLibraryTrackerSwipe()
+    {
+        if (_swipeTracker is null || _libraryProps is null) return;
         // From wherever a spring had got to.
         StopLibraryFrames();
         _swipeFrom = _libraryWidth;
-        // The section shown in full (its page, its rail button), not just its list refreshed.
-        if (!_libraryOpen) ShowLibraryPage(_libraryPage);
         Library.Panel.IsHitTestVisible = false;
 
         // The fingers drive the width: LibrarySwipe.Follow, written out.
@@ -424,23 +550,47 @@ public sealed partial class MainWindow
         _libraryProps.InsertScalar("Pulling", 1);
         BindToWidth();
         _libraryProps.StartAnimation("Width", follow);
+        // The section shown in full (its page, its rail button), once it's moving: rebuilding History's list took
+        // ~40ms, which the fingers waited for. The library's not in sight till a third of the way.
+        if (!_libraryOpen)
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                var began = _libraryClock.ElapsedMilliseconds;
+                if (!_libraryOpen) ShowLibraryPage(_libraryPage);
+                LogSlowStart(began, "showing the library's page (after it began moving)");
+            });
     }
 
     private void TrackerSwipeMoved(float position)
     {
         if (!_trackerSwiping) return;
-        // Fingers moving right pull the position down, and widen the sidebar. (Only noted here: the
-        // compositor draws it.)
-        _libraryWidth = Swipe.Follow(_swipeFrom - (position - _swipeOrigin));
+        // Fingers moving right pull the position down.
+        var moved = _swipeOrigin - position;
+        if (_swipeKind == SwipeKind.Undecided)
+        {
+            if (Math.Abs(moved) < SwipeDecidesAt) return;
+            _swipeKind = DecideSwipe(fingersRight: moved > 0);
+            SwipeLog($"LAG decided {_swipeKind} {_libraryClock.ElapsedMilliseconds - _swipeStartedAt}ms after the fingers began");
+            if (_swipeKind == SwipeKind.Library) StartLibraryTrackerSwipe();
+            else FollowProfileSwipeOnTracker();
+        }
+        // The compositor draws the tabs with the fingers (FollowProfileSwipeOnTracker); only noted here, for letting go.
+        if (_swipeKind == SwipeKind.Profile) _profileSwipeMoved = moved;
+        // The library's widens with them. (Only noted here: the compositor draws it.)
+        else _libraryWidth = Swipe.Follow(_swipeFrom - (position - _swipeOrigin));
     }
 
     /// <summary>The fingers have lifted, moving at this speed: a spring takes over from them.</summary>
-    private void TrackerSwipeEnded(float velocity)
+    private void TrackerSwipeEnded(float velocity, float? at = null)
     {
-        SwipeLog($"released at {velocity:0.0}/s, width {_libraryWidth:0}");
+        SwipeLog($"released at {velocity:0.0}/s, width {_libraryWidth:0}{(_swipeKind == SwipeKind.Library ? $", moved {_libraryWidth - _swipeFrom:0}" : "")}");
         if (!_trackerSwiping) return;
         _trackerSwiping = false;
         _swipeTracker?.TryUpdatePosition(_swipeTracker.Position);
+        var kind = _swipeKind;
+        _swipeKind = SwipeKind.Undecided;
+        if (kind == SwipeKind.Profile) EndTrackerProfileSwipe(velocity, at);
+        if (kind != SwipeKind.Library) return;
         // Let go short of the sidebar's width, the sidebar springs back, not the page.
         _libraryProps?.InsertScalar("Pulling", _libraryWidth < ClosedWidth ? 1 : 0);
         var speed = -velocity;
@@ -458,7 +608,13 @@ public sealed partial class MainWindow
         public void InteractingStateEntered(InteractionTracker sender, InteractionTrackerInteractingStateEnteredArgs args)
         {
             var at = sender.Position.X;
-            OnUi(() => window.TrackerSwipeStarted(at));
+            var when = window._libraryClock.ElapsedMilliseconds;
+            OnUi(() =>
+            {
+                window.LogSlowStart(when, "reaching the window");
+                window._swipeStartedAt = when;
+                window.TrackerSwipeStarted(at);
+            });
         }
 
         public void ValuesChanged(InteractionTracker sender, InteractionTrackerValuesChangedArgs args)
@@ -470,7 +626,9 @@ public sealed partial class MainWindow
         public void InertiaStateEntered(InteractionTracker sender, InteractionTrackerInertiaStateEnteredArgs args)
         {
             var velocity = args.PositionVelocityInPixelsPerSecond.X;
-            OnUi(() => window.TrackerSwipeEnded(velocity));
+            // Where the fingers lifted, read now: by the time the window's thread hears of it, a frame or two later.
+            var at = sender.Position.X;
+            OnUi(() => window.TrackerSwipeEnded(velocity, at));
         }
 
         public void IdleStateEntered(InteractionTracker sender, InteractionTrackerIdleStateEnteredArgs args) =>
@@ -492,9 +650,29 @@ public sealed partial class MainWindow
         var point = e.GetCurrentPoint(Root);
         if (!point.Properties.IsHorizontalMouseWheel || !SidebarShowing) return;
         e.Handled = true;
+        WheelSwipe(point.Properties.MouseWheelDelta);
+    }
+
+    /// <summary>A sideways scroll of the sidebar, this much (fingers moving right scroll left: a negative delta).</summary>
+    private void WheelSwipe(int delta)
+    {
+        // The first of a swipe says which swipe it is.
+        if (_swipeTo is null && _wheelKind == SwipeKind.Undecided && delta != 0)
+            _wheelKind = ProfileSwipesOn ? DecideSwipe(fingersRight: delta < 0) : SwipeKind.Library;
+        if (_wheelKind == SwipeKind.Profile)
+        {
+            _profileWheelMoved -= delta * SwipePixelsPerDelta;
+            FollowProfileSwipe(_profileWheelMoved);
+            var at = _libraryClock.ElapsedMilliseconds;
+            _profileWheelTrail.Add((at, _profileWheelMoved));
+            _profileWheelTrail.RemoveAll(s => at - s.Ms > 100);
+            RestartSwipeEnd();
+            return;
+        }
 
         if (_swipeTo is null)
         {
+            SwipeLog("WHEEL swipe began (the tracker didn't get it)");
             StopLibraryMotion();
             _swipeTo = _libraryWidth;
             _wheelFrom = _libraryWidth;
@@ -503,13 +681,18 @@ public sealed partial class MainWindow
             if (!_libraryOpen) ShowLibraryPage(_libraryPage);
         }
         // Fingers moving right scroll left (a negative delta), and widen the sidebar.
-        _swipeTo -= point.Properties.MouseWheelDelta * SwipePixelsPerDelta;
+        _swipeTo -= delta * SwipePixelsPerDelta;
         SetSidebarWidth(Swipe.Follow(_swipeTo.Value));
 
         var now = _libraryClock.ElapsedMilliseconds;
         _swipeTrail.Add((now, _libraryWidth));
         _swipeTrail.RemoveAll(s => now - s.Ms > 100);
+        RestartSwipeEnd();
+    }
 
+    /// <summary>A pause in the wheel is taken as the fingers lifting.</summary>
+    private void RestartSwipeEnd()
+    {
         if (_swipeEnd is null)
         {
             _swipeEnd = DispatcherQueue.CreateTimer();
@@ -523,11 +706,24 @@ public sealed partial class MainWindow
 
     private void EndSwipe()
     {
+        var kind = _wheelKind;
+        _wheelKind = SwipeKind.Undecided;
+        if (kind == SwipeKind.Profile)
+        {
+            var (start, end) = (_profileWheelTrail.FirstOrDefault(), _profileWheelTrail.LastOrDefault());
+            var speed = end.Ms > start.Ms ? (end.Moved - start.Moved) / ((end.Ms - start.Ms) / 1000.0) : 0;
+            _profileWheelMoved = 0;
+            _profileWheelTrail.Clear();
+            EndProfileSwipe(speed);
+            return;
+        }
         if (_swipeTo is null) return;
         _swipeTo = null;
         var (first, last) = (_swipeTrail.FirstOrDefault(), _swipeTrail.LastOrDefault());
         var velocity = last.Ms > first.Ms ? (last.Width - first.Width) / ((last.Ms - first.Ms) / 1000.0) : 0;
         var open = Swipe.Opens(_wheelFrom, _libraryWidth, velocity);
+        SwipeLog($"WHEEL swipe ended {(open ? "open" : "shut")}, moved {_libraryWidth - _wheelFrom:0}");
+        FlushSwipeLog();
         if (!open && IsFocusIn(Library.Panel)) _active?.View.Focus(FocusState.Programmatic);
         var carry = Swipe.Carry(_libraryWidth, open ? LibraryWidth : ClosedWidth, velocity);
         MoveLibrary(open, carry == 0 ? 0.001 : carry);
@@ -572,7 +768,8 @@ public sealed partial class MainWindow
     }
 
     /// <summary>The library as you left it, or at Downloads while there's a finished file you haven't seen, as in Arc.</summary>
-    private void LibraryButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(Downloads.HasUnseen ? "downloads" : _libraryPage);
+    private void LibraryButton_Click(object sender, RoutedEventArgs e) =>
+        OpenLibrary(LibraryPage.ToOpen(_libraryPage, Downloads.HasUnseen, Downloads.AnyRunning));
 
     internal void LibraryBack_Click(object sender, RoutedEventArgs e) => CloseLibrary();
 

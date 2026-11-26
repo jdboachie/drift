@@ -257,8 +257,8 @@ public static partial class Markdown
                 if (close < 0) return null;
                 var url = text[(j + 2)..close].Trim();
                 // A title after the address: [x](url "title").
-                var space = url.IndexOf(' ');
-                if (space > 0) url = url[..space];
+                var profile = url.IndexOf(' ');
+                if (profile > 0) url = url[..profile];
                 return url.Length == 0 ? null : (text[(i + 1)..j], url, close + 1);
             }
         }

@@ -101,7 +101,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        var order = TabCycle.Order(_recentTabs, AllTabs.ToList(), _active, t => !t.IsUnloaded);
+        var order = TabCycle.Order(_recentTabs, ShownTabs.ToList(), _active, t => !t.IsUnloaded);
         // Just the one: the bar still comes up, so you can see Ctrl+Tab worked.
         if (order.Count == 0) return;
         _cycling = true;

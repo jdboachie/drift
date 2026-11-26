@@ -18,6 +18,7 @@ miss it. Items marked "check" haven't been confirmed in Drift.
 - **Integrations** (Arc's): pinned Gmail, Google Calendar and Outlook (mail and calendar) show unread
   email or today's meetings on hover; calendars count down to the next meeting, with Join and a reminder.
 - **Downloads**: a sidebar row with progress, and a list (Ctrl+J) of current and past downloads.
+- **Spaces** (Arc's): tabs and folders per Space, Essentials shared; switched by click, Ctrl+1–9, swipe or mouse buttons.
 - **Library** (Zen's): Downloads and History beside the tabs, swiped or clicked open.
 - **Picture-in-picture** (Arc's): a playing video floats when you leave its tab, and comes back when you return.
 - **History and clearing data**: Ctrl+H, in the library; Settings › Privacy clears history, cookies, cache,
@@ -48,7 +49,35 @@ miss it. Items marked "check" haven't been confirmed in Drift.
 
 ## Later (Arc / Zen ideas)
 
-- Spaces / workspaces
+- **More for Profiles**, as Arc's Spaces have: its own theme colour, dragging the icons to reorder
+  them, and Manage Profiles.
+- **Profiles replace Spaces** (decided 2026-11-26, as Dia and Safari do it): no more "Space",
+  only Profiles, each with its own sidebar (Essentials, tab groups, pinned tabs, tabs), name, icon
+  and data. In order:
+  1. Each sidebar's own Essentials, sliding with it. *Done* (Profile.Essentials; old sessions
+     migrate by SessionTab.EssentialProfileIn).
+  2. Space becomes Profile everywhere, each with its own data; a session's Spaces each become a
+     Profile, the first to use an engine profile keeping it (ProfileIds.Unshare). *Done*, the code
+     too (the engine's profile is `EngineProfile`). session.json keeps its old keys ("Spaces",
+     "Space"), so any earlier file still reads (SessionFileTests).
+  3. Folders become tab groups: like folders, but they can be unpinned too. *Done*: called tab
+     groups everywhere you see; a top-level group is pinned or not (TabFolder.IsPinned), the unpinned
+     ones in their own list above the tabs, their tabs your other tabs (closed, not unloaded; not
+     kept unless every tab is), gone with their last tab as Chrome's are; Pin/Unpin tab group in its
+     menu; a regular tab's New tab group makes an unpinned one. Left: Clear Tabs doesn't clear
+     unpinned groups yet; unpinned groups sit above the loose tabs rather than among them (Chrome
+     puts them in line); a live folder can't be unpinned; the code still says Folder.
+     Splits in groups (the user's rules, 2026-11-26): a split with a tab in an unpinned group shows
+     as one row inside that group (the group of the tab you were on, else the leftmost page's); a
+     loose or other unpinned group's tab in it joins the group and stays after; a pinned tab, an
+     Essential or a pinned group's tab keeps its place, a pinned tab going back where it was; with
+     no unpinned group's tab (a pinned group's), it shows separately, as before. Pinning or
+     unpinning the group moves the row out or in. Its row drags within its group only, rubber
+     banding at the group's edges (GroupRowDrag.cs). Seen in the demo: restore, Pin moving it out.
+     Not yet seen: Unpin moving it back in, the drag, a pinned tab's return.
+  4. The user's own Drift: its folders become tab groups, and its whole setup the Default Profile.
+  Later, per Profile: downloads folder, search engine, history in the Library, and extensions you
+  add (only Default has them now; the others get the ad blocker).
 - More than one window (only a private one so far). Scope still to agree. The code is partly ready:
   a private window is already a second `MainWindow`, and the sidebar's row controls find their own
   window (`MainWindow.Of`).

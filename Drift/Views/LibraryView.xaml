@@ -213,7 +213,7 @@
                         <TextBlock Text="New folder" FontSize="13" />
                     </StackPanel>
                 </Button>
-                <ScrollViewer Grid.Row="1" Margin="-4,0,0,0">
+                <ScrollViewer x:Name="BookmarksScroll" x:FieldModifier="internal" Grid.Row="1" Margin="-4,0,0,0">
                     <StackPanel Padding="0,0,8,8">
                         <StackPanel x:Name="BookmarkList" x:FieldModifier="internal" />
                         <TextBlock x:Name="BookmarksEmpty" x:FieldModifier="internal" FontSize="13" Margin="4" Visibility="Collapsed" TextWrapping="Wrap"

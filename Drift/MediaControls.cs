@@ -417,7 +417,7 @@ public sealed partial class MainWindow
 
         // The card is see-through, like a selected tab, so the tabs it would cover are cut off above
         // it as it rises: under it there's only the sidebar.
-        var tabs = ElementCompositionPreview.GetElementVisual(SidebarScroll);
+        var tabs = ElementCompositionPreview.GetElementVisual(ProfileViewport);
         if (tabs.Clip is not InsetClip cut)
         {
             cut = compositor.CreateInsetClip();
@@ -459,7 +459,12 @@ public sealed partial class MainWindow
         var back = ElementCompositionPreview.GetElementVisual(MediaCard.Back);
         back.StopAnimation("Scale");
         back.Scale = Vector3.One;
-        ElementCompositionPreview.GetElementVisual(SidebarScroll).Clip = null;
+        // The Profiles' viewport keeps its clip (it cuts off the other Profiles' sidebars): only the cut goes.
+        if (ElementCompositionPreview.GetElementVisual(ProfileViewport).Clip is InsetClip cut)
+        {
+            cut.StopAnimation("BottomInset");
+            cut.BottomInset = 0;
+        }
         StopMarquee();
     }
 

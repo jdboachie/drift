@@ -45,12 +45,12 @@ public sealed partial class MainWindow
             yield return new("Close Tab", "", CloseCurrent, ShortcutId: "closetab");
             if (page) yield return new("Duplicate Tab", "", DuplicateTab, Keywords: ["copy", "clone"]);
             if (tab.Place == TabPlace.Regular) yield return new("Pin Tab", "", () => MoveTab(tab, TabPlace.Pinned));
-            if (tab.Place is TabPlace.Pinned or TabPlace.Folder) yield return new("Unpin Tab", "", () => MoveTab(tab, TabPlace.Regular));
+            if (tab.IsPinned && tab.Place != TabPlace.Essential) yield return new("Unpin Tab", "", () => MoveTab(tab, TabPlace.Regular));
             if (tab.Place != TabPlace.Essential) yield return new("Add to Essentials", "", () => MoveTab(tab, TabPlace.Essential), Keywords: ["favorite", "favourite"]);
             else yield return new("Remove from Essentials", "", () => MoveTab(tab, TabPlace.Pinned), Keywords: ["unfavorite", "unpin"]);
             foreach (var folder in _folderTree.AllFolders.Where(f => tab.Folder != f).ToList())
-                yield return new("Pin to", "", () => MoveTabToFolder(tab, folder, null), Target: folder.Path, Keywords: ["move", "folder", "add"]);
-            yield return new("Pin to New Folder", "", () => NewFolder(null, tab), Keywords: ["move", "add"]);
+                yield return new("Pin to", "", () => MoveTabToFolder(tab, folder, null), Target: folder.Path, Keywords: ["move", "group", "folder", "add"]);
+            yield return new("Pin to New Tab Group", "", () => NewFolder(null, tab), Keywords: ["move", "add", "folder"]);
             if (tab.IsPinned && tab.HomeUri is { } home && page && !SamePage(core!.Source, home))
             {
                 yield return new("Reset Tab", "", () => Navigate(tab, home), Keywords: ["pinned", "home", "original"]);
@@ -75,9 +75,9 @@ public sealed partial class MainWindow
         }
         if (_closedTabs.Count > 0) yield return new("Reopen Closed Tab", "", ReopenClosedTab, ShortcutId: "reopen", Keywords: ["last", "undo"]);
         if (Tabs.Count > 0) yield return new("Clear Tabs", "", ClearTabs, Keywords: ["close", "all", "today"]);
-        yield return new("New Folder", "", () => NewFolder(null), ShortcutId: "folder");
+        yield return new("New Tab Group", "", () => NewFolder(null), ShortcutId: "folder", Keywords: ["folder"]);
         foreach (var folder in _folderTree.AllFolders.ToList())
-            yield return new("Open", "", () => OpenFolder(folder), Target: folder.Path, Keywords: ["folder", "show", "expand"]);
+            yield return new("Open", "", () => OpenFolder(folder), Target: folder.Path, Keywords: ["group", "folder", "show", "expand"]);
 
         // ── Split view ──
         if (tab is { Split: { } split })
@@ -207,11 +207,11 @@ public sealed partial class MainWindow
         for (var folder = tab.Folder; folder is not null; folder = folder.Parent) _folderTree.SetExpanded(folder, true);
         RefreshFolderRows();
         SaveSessionSoon();
-        var list = tab.Place switch
+        var list = tab.Split?.Row is { Folder: not null } inGroup ? GroupListOf(inGroup) : tab.Place switch
         {
             TabPlace.Essential => (ListViewBase)EssentialList,
             TabPlace.Pinned => PinnedList,
-            TabPlace.Folder => FolderList,
+            TabPlace.Folder => GroupListOf(tab),
             _ => TabList,
         };
         object item = tab.Split?.Row ?? tab;
@@ -227,7 +227,7 @@ public sealed partial class MainWindow
         RefreshFolderRows();
         SaveSessionSoon();
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-            (FolderList.ContainerFromItem(folder) as UIElement)?.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.3 }));
+            (GroupListOf(folder).ContainerFromItem(folder) as UIElement)?.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.3 }));
     }
 
     /// <summary>Only this half stays in view: the split comes apart, and you stay on it.</summary>

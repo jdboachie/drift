@@ -115,18 +115,23 @@ public sealed partial class MainWindow
 
     // ── The sidebar's empty space ──
 
-    private void SidebarSpaceMenu_Opening(object? sender, object e)
+    private void SidebarProfileMenu_Opening(object? sender, object e)
     {
-        SpaceNewTabItem.KeyboardAcceleratorTextOverride = ShortcutText("newtab");
-        SpaceNewFolderItem.KeyboardAcceleratorTextOverride = ShortcutText("folder");
-        SpaceLiveFolderItem.Visibility = Ui.Shown(!_private);
-        SpaceGitHubItem.IsEnabled = !LiveFolders.Any();
+        ProfileNewTabItem.KeyboardAcceleratorTextOverride = ShortcutText("newtab");
+        ProfileNewFolderItem.KeyboardAcceleratorTextOverride = ShortcutText("folder");
+        ProfileLiveFolderItem.Visibility = Ui.Shown(!_private);
+        ProfileGitHubItem.IsEnabled = !LiveFolders.Any();
+        // The Profile's own (Profiles.cs); a private window has the one sidebar, and your default Profile stays.
+        foreach (var item in new MenuFlyoutItemBase[] { ProfileMenuSeparator, ProfileRenameItem, ProfileIconItem, ProfileHeaderItem })
+            item.Visibility = Ui.Shown(!_private);
+        ProfileHeaderItem.Text = Settings.Current.ShowProfileHeader ? "Hide Profile header" : "Show Profile header";
+        ProfileDeleteSeparator.Visibility = ProfileDeleteItem.Visibility = Ui.Shown(!_private && ProfileIds.CanDelete(_profileShown.Engine.Id));
     }
 
-    private void SidebarSpaceMenu_Closed(object? sender, object e)
+    private void SidebarProfileMenu_Closed(object? sender, object e)
     {
         SidebarMenu_Closed(sender, e);
-        // Its submenu can be left drawn where the window starts (GhostPopups.cs).
-        _ghostPopups.MenuClosed(SpaceGitHubItem);
+        // Its submenus can be left drawn where the window starts (GhostPopups.cs).
+        _ghostPopups.MenuClosed(ProfileGitHubItem);
     }
 }

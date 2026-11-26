@@ -26,6 +26,21 @@ public static class Warnings
         return new(isPrivate ? "Close this private window?" : "Close Drift?", string.Join("\n", lines), "Close");
     }
 
+    public const string ProfileNameTaken = "A Profile with that name already exists.";
+
+    /// <summary>Settings › Profiles' New Profile…: Arc's help line on what a Profile is (less its extensions: only the
+    /// default Profile has the ones you add).</summary>
+    public static readonly Warning NewProfileInSettings = new("What do you want to call this Profile?",
+        "Profiles keep your browsing truly separate — each with its own tabs, history, saved passwords, and other browsing data. No more flipping between work and personal accounts!",
+        "Create Profile");
+
+    /// <summary>Settings › Profiles' Rename…, Arc's: just the name.</summary>
+    public static readonly Warning RenameProfile = new("Rename Profile", "", "Rename");
+
+    /// <summary>Deleting a Profile (any but your default): its tabs and its data go with it.</summary>
+    public static Warning DeleteProfile(string name) =>
+        new($"Delete your “{name}” Profile?", "Its tabs, history, logins, and cookies will be deleted. This action is permanent.", "Delete Profile");
+
     /// <summary>Restarting Drift (to apply a setting), if anything would be lost; null if nothing would. Tabs all come back.</summary>
     public static Warning? Restart(int downloads, int privateWindows, int unsavedPages)
     {

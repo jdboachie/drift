@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One Profile's sidebar (ProfilePages.cs): its Essentials, then its header, folders, pinned tabs, New Tab and tabs,
+     scrolling together under them, as in Arc. Every Profile has its own, side by side a gap apart in ProfileViewport, so going to another
+     slides the real one in beside the one you're on, as Arc's and Zen's do. The window's code works with the one on
+     screen through the names it always had (PinnedList, TabList, FolderList and the rest). -->
+<UserControl
+    x:Class="Drift.ProfilePageView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:Drift.Models"
+    xmlns:local="using:Drift">
+
+    <UserControl.Resources>
+        <!-- A tab's row (Controls/TabRowView.xaml): pinned (PinnedList), regular (TabList) and in folders (FolderList). -->
+        <DataTemplate x:Key="TabRowTemplate" x:DataType="models:BrowserTab">
+            <local:TabRowView Tab="{x:Bind}" />
+        </DataTemplate>
+        <!-- A tab group list's rows (FolderList, GroupList): group headers, the tabs in them, and a live folder's note. -->
+        <local:FolderRowStyleSelector x:Key="GroupRowStyles" FolderStyle="{StaticResource FolderHeaderRowStyle}" RowStyle="{StaticResource TabRowStyle}" />
+        <local:FolderRowTemplateSelector x:Key="GroupRowTemplates" TabTemplate="{StaticResource TabRowTemplate}">
+            <local:FolderRowTemplateSelector.FolderTemplate>
+                <DataTemplate x:DataType="models:TabFolder">
+                    <local:FolderHeaderView Folder="{x:Bind}" />
+                </DataTemplate>
+            </local:FolderRowTemplateSelector.FolderTemplate>
+            <!-- A live folder's note (LiveFolders.cs): signed out, or nothing in it. In line with the tabs' titles. -->
+            <local:FolderRowTemplateSelector.NoteTemplate>
+                <DataTemplate x:DataType="models:LiveNote">
+                    <TextBlock Text="{x:Bind Text, Mode=OneWay}"
+                               Margin="26,0,0,0"
+                               FontSize="14"
+                               TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                </DataTemplate>
+            </local:FolderRowTemplateSelector.NoteTemplate>
+        </local:FolderRowTemplateSelector>
+    </UserControl.Resources>
+
+    <!-- 5 in from the viewport's edges, which reach out by as much, so the Essentials' tiles (which reach out by their
+         margin, as they did above the sidebars) aren't cut off by its clip. -->
+    <Grid Margin="5,5,0,0">
+    <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- The Profile's Essentials: favicon tiles, up to six across, every row filling the width (MainWindow.LayoutEssentials,
+         EssentialsPanel), above the rest, not scrolling. They're the Profile's own, so they slide in and out with it. The
+         tiles' outer edges line up with the address bar's: the list reaches out by their margin on the left, and the
+         address bar stops short of the sidebar's edge on the right as they do. Below, the first row's highlight sits 10
+         under the tiles, as far as a row of tiles from the next: their margin (5), less 2 here, and the list's 4 and the
+         row's 3 there. -->
+    <GridView x:Name="EssentialList" x:FieldModifier="internal"
+              Margin="-5,-5,0,-2"
+              Padding="0"
+              ItemContainerStyle="{StaticResource PinnedTileStyle}"
+              SelectionMode="Single"
+              IsItemClickEnabled="False"
+              CanDragItems="True"
+              CanReorderItems="False"
+              AllowDrop="True">
+        <GridView.ItemContainerTransitions>
+            <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
+            <TransitionCollection />
+        </GridView.ItemContainerTransitions>
+        <GridView.ItemsPanel>
+            <ItemsPanelTemplate>
+                <local:EssentialsPanel />
+            </ItemsPanelTemplate>
+        </GridView.ItemsPanel>
+        <GridView.ItemTemplate>
+            <DataTemplate x:DataType="models:BrowserTab">
+                <local:EssentialTileView Tab="{x:Bind}" />
+            </DataTemplate>
+        </GridView.ItemTemplate>
+    </GridView>
+
+    <!-- While a tab is dragged and this group is empty: somewhere to drop it. -->
+    <Grid x:Name="EssentialDropZone" x:FieldModifier="internal"
+          Height="48"
+          Margin="0,0,0,4"
+          AllowDrop="True"
+          Background="Transparent"
+          Visibility="Collapsed">
+        <Rectangle x:Name="EssentialDropZoneOutline" x:FieldModifier="internal" RadiusX="10" RadiusY="10"
+                   Stroke="{ThemeResource DriftDividerBrush}"
+                   StrokeThickness="1"
+                   StrokeDashArray="4,3" />
+        <TextBlock Text="Drop here to add to Essentials"
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+    </Grid>
+
+    <!-- The tab list takes whatever height is left below the tabs (Scroll_SizeChanged), so a tab can still be dropped
+         there. Always scrollable up and down, never sideways, even with too few tabs to scroll: a touchpad swipe over
+         the sidebar reaches the library's swipe (Library.cs) only so (ScrollHold, which also keeps it still then). -->
+    <ScrollViewer x:Name="Scroll" x:FieldModifier="internal"
+                  Grid.Row="1"
+                  HorizontalScrollMode="Disabled"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollMode="Enabled"
+                  VerticalScrollBarVisibility="Auto"
+                  SizeChanged="Scroll_SizeChanged">
+        <Grid x:Name="Rows" x:FieldModifier="internal">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <!-- The Profile: its icon and name, a semibold grey label (DESIGN.md › Text), in an area the size of Zen's
+                 (zen-workspaces.css: 44 tall, a 16 icon, a hover fill inset 4 top and bottom, here a tab's 36 and radius 8).
+                 Click the icon to change it; double-click the name to rename it in place; … (shown on hover, as Zen's
+                 .zen-workspaces-actions) or a right-click for its menu (the sidebar's). It can be hidden from that menu. -->
+            <Grid x:Name="Header" x:FieldModifier="internal"
+                  Grid.Row="0"
+                  Height="44"
+                  Margin="0,0,4,0"
+                  Padding="0,4"
+                  Background="Transparent"
+                  Visibility="Collapsed"
+                  PointerEntered="Header_PointerEntered"
+                  PointerExited="Header_PointerExited"
+                  PointerCaptureLost="Header_PointerExited">
+              <Grid x:Name="HeaderFill" x:FieldModifier="internal"
+                    CornerRadius="8"
+                    Padding="12,0,5,0"
+                    ColumnSpacing="8"
+                    Background="Transparent">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <!-- The icon, 16 in a 24 button that spills 4 each side, so it stays where it was. -->
+                <Button x:Name="HeaderIconButton" x:FieldModifier="internal"
+                        Style="{StaticResource IconButtonStyle}"
+                        Width="24" Height="24" Margin="-4,0" CornerRadius="6"
+                        AutomationProperties.Name="Change Profile icon"
+                        ToolTipService.ToolTip="Change Profile icon">
+                    <Grid>
+                        <FontIcon x:Name="HeaderGlyph" x:FieldModifier="internal" FontSize="16" Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                        <TextBlock x:Name="HeaderEmoji" x:FieldModifier="internal" FontSize="15" FontFamily="Segoe UI Emoji" Margin="-4,0"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                    </Grid>
+                </Button>
+                <TextBlock x:Name="HeaderName" x:FieldModifier="internal"
+                           Grid.Column="1"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+                <TextBox x:Name="NameBox" x:FieldModifier="internal"
+                         Grid.Column="1"
+                         Margin="-6,0,0,0"
+                         Padding="5,3,5,3"
+                         MinHeight="24"
+                         FontSize="13"
+                         FontWeight="SemiBold"
+                         VerticalAlignment="Center"
+                         Visibility="Collapsed"
+                         AutomationProperties.Name="Profile name" />
+                <!-- Collapsed till the header's hovered, so the name runs to the edge (DESIGN.md › List rows). -->
+                <Button x:Name="HeaderMoreButton" x:FieldModifier="internal"
+                        Grid.Column="2"
+                        Style="{StaticResource IconButtonStyle}"
+                        Width="26" Height="26" CornerRadius="6"
+                        Visibility="Collapsed"
+                        AutomationProperties.Name="Profile options"
+                        ToolTipService.ToolTip="Profile options">
+                    <FontIcon Glyph="&#xE712;" FontSize="14" />
+                </Button>
+              </Grid>
+            </Grid>
+            <!-- Mid-drag, the folders' cards drawn whole behind the folder list (DragCards.cs). -->
+            <Canvas x:Name="FolderCardLayer" x:FieldModifier="internal" Grid.Row="1" Margin="0,0,4,0" IsHitTestVisible="False" />
+            <!-- Folders, like Arc's: between the Essentials and the pinned tabs (Folders.cs). One flat list of
+                 folder headers and the tabs under them, indented a step per level. -->
+            <ListView x:Name="FolderList" x:FieldModifier="internal"
+                      Grid.Row="1"
+                      Margin="0,0,4,0"
+                      Padding="0"
+                      Visibility="Collapsed"
+                      ItemContainerStyleSelector="{StaticResource GroupRowStyles}"
+                      ItemTemplateSelector="{StaticResource GroupRowTemplates}"
+                      SelectionMode="Single"
+                      CanDragItems="True"
+                      CanReorderItems="False"
+                      AllowDrop="True">
+                <ListView.ItemContainerTransitions>
+                    <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
+                    <TransitionCollection />
+                </ListView.ItemContainerTransitions>
+            </ListView>
+
+            <!-- While a group is dragged and this list has none: somewhere to drop it (the pinned groups). -->
+            <Grid x:Name="FolderDropZone" x:FieldModifier="internal"
+                  Grid.Row="1"
+                  Height="36"
+                  Margin="0,0,4,0"
+                  AllowDrop="True"
+                  Background="Transparent"
+                  Visibility="Collapsed">
+                <Rectangle x:Name="FolderDropZoneOutline" x:FieldModifier="internal" RadiusX="8" RadiusY="8"
+                           Stroke="{ThemeResource DriftDividerBrush}"
+                           StrokeThickness="1"
+                           StrokeDashArray="4,3" />
+                <TextBlock Text="Drop here to pin"
+                           FontSize="12"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+            </Grid>
+
+            <!-- Pinned tabs: rows under the folders, with their titles (like Zen's). -->
+            <ListView x:Name="PinnedList" x:FieldModifier="internal"
+                      Grid.Row="2"
+                      Margin="0,0,4,0"
+                      Padding="0"
+                      ItemContainerStyle="{StaticResource TabRowStyle}"
+                      ItemTemplate="{StaticResource TabRowTemplate}"
+                      SelectionMode="Single"
+                      CanDragItems="True"
+                      CanReorderItems="False"
+                      AllowDrop="True">
+                <ListView.ItemContainerTransitions>
+                    <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
+                    <TransitionCollection />
+                </ListView.ItemContainerTransitions>
+            </ListView>
+
+            <!-- While a tab is dragged and this group is empty: somewhere to drop it. -->
+            <Grid x:Name="PinnedDropZone" x:FieldModifier="internal"
+                  Grid.Row="2"
+                  Height="36"
+                  Margin="0,0,4,0"
+                  AllowDrop="True"
+                  Background="Transparent"
+                  Visibility="Collapsed">
+                <Rectangle x:Name="PinnedDropZoneOutline" x:FieldModifier="internal" RadiusX="8" RadiusY="8"
+                           Stroke="{ThemeResource DriftDividerBrush}"
+                           StrokeThickness="1"
+                           StrokeDashArray="4,3" />
+                <TextBlock Text="Drop here to pin"
+                           FontSize="12"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+            </Grid>
+
+            <!-- Arc's: 15 under the last pinned tab's card, 13 above New Tab's, as wide as they are. -->
+            <Border Grid.Row="3" Height="1" Margin="0,12,4,13"
+                    Background="{ThemeResource DriftDividerBrush}" />
+
+            <Button x:Name="NewTabButton" x:FieldModifier="internal"
+                    Grid.Row="4"
+                    Margin="0,0,4,3"
+                    Height="38"
+                    Style="{StaticResource SubtleButtonStyle}"
+                    CornerRadius="8"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    Padding="11,0"
+                    Foreground="{ThemeResource DriftSecondaryTextBrush}"
+                    AutomationProperties.Name="New Tab"
+                    PointerEntered="NewTabButton_PointerEntered"
+                    PointerExited="NewTabButton_PointerExited">
+                <!-- Hovered or pressed, the tabs' own hover fill (DriftHoverBrush), not the button's white,
+                     and its words stay grey, as a tab's do. -->
+                <Button.Resources>
+                    <ResourceDictionary>
+                        <ResourceDictionary.ThemeDictionaries>
+                            <ResourceDictionary x:Key="Light">
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#14000000" />
+                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#14000000" />
+                                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#666666" />
+                                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#666666" />
+                            </ResourceDictionary>
+                            <ResourceDictionary x:Key="Dark">
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#1AFFFFFF" />
+                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#1AFFFFFF" />
+                                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#A0A0A0" />
+                                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#A0A0A0" />
+                            </ResourceDictionary>
+                        </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                </Button.Resources>
+                <!-- Its shortcut shows at the end while hovered, like Arc's (ShowNewTabHint). -->
+                <Grid ColumnSpacing="8" HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <FontIcon Glyph="&#xE710;" FontSize="12" />
+                        <TextBlock Text="New Tab" FontSize="14" />
+                    </StackPanel>
+                    <TextBlock x:Name="NewTabHint" x:FieldModifier="internal" Grid.Column="1" FontSize="12" VerticalAlignment="Center" Opacity="0">
+                        <TextBlock.OpacityTransition>
+                            <ScalarTransition Duration="0:0:0.15" />
+                        </TextBlock.OpacityTransition>
+                    </TextBlock>
+                </Grid>
+            </Button>
+
+            <!-- Unpinned tab groups, as Chrome's, above the tabs not in one: the same rows and cards as the pinned ones
+                 (Folders.cs), their tabs coming and going like the others. -->
+            <Canvas x:Name="GroupCardLayer" x:FieldModifier="internal" Grid.Row="5" Margin="0,0,4,0" IsHitTestVisible="False" />
+            <ListView x:Name="GroupList" x:FieldModifier="internal"
+                      Grid.Row="5"
+                      Margin="0,0,4,0"
+                      Padding="0"
+                      Visibility="Collapsed"
+                      ScrollViewer.VerticalScrollMode="Disabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                      ItemContainerStyleSelector="{StaticResource GroupRowStyles}"
+                      ItemTemplateSelector="{StaticResource GroupRowTemplates}"
+                      SelectionMode="Single"
+                      CanDragItems="True"
+                      CanReorderItems="False"
+                      AllowDrop="True">
+                <ListView.ItemContainerTransitions>
+                    <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
+                    <TransitionCollection />
+                </ListView.ItemContainerTransitions>
+            </ListView>
+
+            <!-- While a group is dragged and this list has none: somewhere to drop it (the unpinned groups). -->
+            <Grid x:Name="GroupDropZone" x:FieldModifier="internal"
+                  Grid.Row="5"
+                  Height="36"
+                  Margin="0,0,4,3"
+                  AllowDrop="True"
+                  Background="Transparent"
+                  Visibility="Collapsed">
+                <Rectangle x:Name="GroupDropZoneOutline" x:FieldModifier="internal" RadiusX="8" RadiusY="8"
+                           Stroke="{ThemeResource DriftDividerBrush}"
+                           StrokeThickness="1"
+                           StrokeDashArray="4,3" />
+                <TextBlock Text="Drop here to unpin"
+                           FontSize="12"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{ThemeResource DriftSecondaryTextBrush}" />
+            </Grid>
+
+            <!-- Regular tabs -->
+            <ListView x:Name="TabList" x:FieldModifier="internal"
+                      Grid.Row="6"
+                      ScrollViewer.VerticalScrollMode="Disabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                      Margin="0,0,4,0"
+                      Padding="0"
+                      ItemContainerStyle="{StaticResource TabRowStyle}"
+                      ItemTemplate="{StaticResource TabRowTemplate}"
+                      SelectionMode="Single"
+                      CanDragItems="True"
+                      CanReorderItems="False"
+                      AllowDrop="True">
+                <ListView.ItemContainerTransitions>
+                    <!-- No add/remove/reposition animations: a dropped or moved tab just lands. -->
+                    <TransitionCollection />
+                </ListView.ItemContainerTransitions>
+            </ListView>
+        </Grid>
+    </ScrollViewer>
+    </Grid>
+</UserControl>

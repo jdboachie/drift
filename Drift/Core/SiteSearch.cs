@@ -99,10 +99,10 @@ public static partial class SiteSearches
     public static (SiteSearch Site, string Query)? ParseAt(string typed, IEnumerable<SiteSearch> sites, Func<string, double> visits)
     {
         if (!typed.StartsWith('@')) return null;
-        var space = typed.IndexOf(' ');
-        if (space <= 1) return null;
-        var site = Filter(typed[1..space], sites, visits).FirstOrDefault();
-        return site is null ? null : (site, typed[(space + 1)..].TrimStart());
+        var profile = typed.IndexOf(' ');
+        if (profile <= 1) return null;
+        var site = Filter(typed[1..profile], sites, visits).FirstOrDefault();
+        return site is null ? null : (site, typed[(profile + 1)..].TrimStart());
     }
 
     /// <summary>The built-in sites, and those learned from your browsing that they don't already have.</summary>

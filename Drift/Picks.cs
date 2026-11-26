@@ -23,10 +23,10 @@ public sealed partial class MainWindow
     /// <summary>Where the next Shift+click picks from: the last tab Ctrl+clicked, else the tab in front.</summary>
     private BrowserTab? _pickAnchor;
 
-    /// <summary>The tabs that can be picked, in the sidebar's order: the folders' rows, then pinned tabs, then the rest.</summary>
+    /// <summary>The tabs that can be picked, in the sidebar's order: the pinned groups' rows, pinned tabs, the other groups' rows, then the rest.</summary>
     private List<BrowserTab> PickableTabs() =>
         FolderRows.OfType<BrowserTab>().Where(t => t.Folder is not { IsLive: true })
-            .Concat(PinnedTabs).Concat(Tabs)
+            .Concat(PinnedTabs).Concat(CurrentPage.GroupRows.OfType<BrowserTab>()).Concat(Tabs)
             .Where(t => !t.IsSplitRow && t.Split is null)
             .ToList();
 
@@ -96,7 +96,8 @@ public sealed partial class MainWindow
         if (_active is not { } active) return;
         MarkInSidebar(active);
         _syncingSelection = true;
-        FolderList.SelectedItem = active is { Place: TabPlace.Folder, Split: null } && FolderRows.Contains(active) ? active : null;
+        foreach (var list in GroupLists)
+            list.SelectedItem = GroupRowOf(active) is { } row && RowsOfList(list).Contains(row) ? row : null;
         _syncingSelection = false;
     }
 

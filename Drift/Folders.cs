@@ -19,8 +19,11 @@ using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 namespace Drift;
 
 /// <summary>
-/// Folders on screen. What they hold and how they behave is FolderTree (Core, tested); this is the
-/// sidebar's side of it: the folder list, renaming in place, the menus, and dragging.
+/// Tab groups on screen (called folders in the code, as they were). What they hold and how they behave is
+/// FolderTree (Core, tested); this is the sidebar's side of it: the two group lists (the pinned groups'
+/// between the Essentials and the pinned tabs, FolderList, and the others' above the tabs, GroupList), renaming
+/// in place, the menus, and dragging. An unpinned group's tabs are your other tabs: closed rather than
+/// unloaded, kept only as they are, and the group goes with its last one, as Chrome's do.
 /// <list type="bullet">
 /// <item>New folder (menu, Ctrl+Alt+N, a tab's Add to folder, or the menu of several tabs picked with Ctrl+click
 /// or Shift+click, Picks.cs) starts with its name being edited.
@@ -37,10 +40,8 @@ namespace Drift;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private readonly FolderTree _folderTree = new();
-
-    /// <summary>What the folder list shows: folder headers (TabFolder) and the tabs under them (BrowserTab).</summary>
-    public ObservableCollection<object> FolderRows { get; } = new();
+    /// <summary>The folders of the Profile being worked in (Profiles.cs).</summary>
+    private FolderTree _folderTree => _profile.Tree;
 
     /// <summary>Every tab in a folder, in sidebar order.</summary>
     private IEnumerable<BrowserTab> FolderTabs => _folderTree.AllTabs.Cast<BrowserTab>();
@@ -50,22 +51,48 @@ public sealed partial class MainWindow
     // How each row sits among the folders' cards (FolderCard), worked out whenever the rows change.
     private readonly Dictionary<object, CardRow> _folderCardRows = new(ReferenceEqualityComparer.Instance);
 
-    /// <summary>Brings the folder list in line with the folders, changing only the rows that changed.</summary>
+    /// <summary>
+    /// Brings every Profile's group lists in line with its groups, changing only the rows that changed: each sidebar
+    /// is always ready to slide in (ProfilePages.cs). Another Profile's shows the tab you were last on there. An
+    /// unpinned group with no tabs left goes first (FolderTree.PruneEmptyGroups).
+    /// </summary>
     private void RefreshFolderRows()
     {
         // A folder mid-way open or shut gets there at once: its rows are about to change under it.
         FinishFolderMotion();
         var syncing = _syncingSelection;
         _syncingSelection = true;
-        ListSync.Apply(FolderRows, _folderTree.Rows(_active));
-        var cards = FolderCard.Layout(FolderRows.Select(CardInput).ToList());
         _folderCardRows.Clear();
-        for (var i = 0; i < FolderRows.Count; i++) _folderCardRows[FolderRows[i]] = cards[i];
-        FolderList.SelectedItem = _active is { Place: TabPlace.Folder, Split: null } && FolderRows.Contains(_active) ? _active : null;
+        foreach (var profile in Profiles)
+        {
+            // Not while the session's coming back: its groups are made empty, their tabs added one by one.
+            if (!_restoring) profile.Tree.PruneEmptyGroups();
+            var page = PageOf(profile);
+            var active = profile == _profileShown ? _active : profile.LastActive;
+            foreach (var pinned in new[] { true, false })
+            {
+                var rows = page.GroupRowsFor(pinned);
+                var list = page.GroupListFor(pinned);
+                ListSync.Apply(rows, profile.Tree.Rows(active, pinned, SplitRowInGroup));
+                var cards = FolderCard.Layout(rows.Select(CardInput).ToList());
+                for (var i = 0; i < rows.Count; i++) _folderCardRows[rows[i]] = cards[i];
+                list.SelectedItem = GroupRowOf(active) is { } shown && rows.Contains(shown) ? shown : null;
+                list.Visibility = Ui.Shown(rows.Count > 0);
+            }
+        }
         _syncingSelection = syncing;
-        FolderList.Visibility = FolderRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var row in FolderRows) IndentFolderRow(FolderList.ContainerFromItem(row), row);
+        foreach (var page in _profilePages.Values)
+            foreach (var pinned in new[] { true, false })
+                foreach (var row in page.GroupRowsFor(pinned)) IndentFolderRow(page.GroupListFor(pinned).ContainerFromItem(row), row);
     }
+
+    /// <summary>A group's tab as its rows show it: a split's page in the group its row is in, as that row (once, FolderTree.Rows).</summary>
+    private static IFolderTab? SplitRowInGroup(IFolderTab tab) =>
+        tab is BrowserTab { Split: { Group: { } group, Row: { } row } } page && page.Folder == group ? row : tab;
+
+    /// <summary>The row in a group list marking the tab in front: its own, or its split's there.</summary>
+    private static BrowserTab? GroupRowOf(BrowserTab? tab) =>
+        tab?.Split?.Row is { Folder: not null } splitRow ? splitRow : tab is { Place: TabPlace.Folder, Split: null } ? tab : null;
 
     private static int DepthOf(object row) => row switch { BrowserTab tab => tab.Depth, TabFolder folder => folder.Depth, LiveNote note => note.Depth, _ => 0 };
 
@@ -151,7 +178,7 @@ public sealed partial class MainWindow
                 _ => new Thickness(1, 0, 1, 0),
             };
             // Mid-drag the cards are drawn whole instead (DragCards.cs).
-            card.Opacity = _dragCardsShown ? 0 : 1;
+            card.Opacity = ItemsControl.ItemsControlFromItemContainer(item) is ListViewBase list && _dragCardsShown.Contains(list) ? 0 : 1;
             card.Visibility = piece.Part != CardPart.Hover || row == _hoveredFolder ? Visibility.Visible : Visibility.Collapsed;
         }
     }
@@ -197,10 +224,14 @@ public sealed partial class MainWindow
 
     // ───────────────────────── Making and moving ─────────────────────────
 
-    /// <summary>A new folder, at the end of its parent (or of the folders), with these tabs in it, its name ready to type.</summary>
+    /// <summary>
+    /// A new group, at the end of its parent (or of the groups), with these tabs in it, its name ready to type. At the
+    /// top, it's with the pinned tabs unless every tab going in is one of your other tabs, as a group of those is.
+    /// </summary>
     private TabFolder NewFolder(TabFolder? parent, params BrowserTab[] tabs)
     {
-        var folder = _folderTree.NewFolder("New folder", parent);
+        var pinned = !(tabs.Length > 0 && tabs.All(t => !t.IsPinned));
+        var folder = _folderTree.NewFolder("New tab group", parent, pinned);
         if (folder.Parent is { } opened) _folderTree.SetExpanded(opened, true);
         foreach (var tab in tabs) MoveTabToFolder(tab, folder, null);
         RefreshFolderRows();
@@ -228,9 +259,11 @@ public sealed partial class MainWindow
     /// <summary>Puts a tab in a folder, at an index among its contents (by default, last).</summary>
     private void MoveTabToFolder(BrowserTab tab, TabFolder folder, int? index)
     {
-        // A tab that wasn't kept before belongs, from now on, to the page it's on.
-        if (!tab.IsPinned) tab.HomeUri = Uri.TryCreate(tab.Url, UriKind.Absolute, out var here) ? here : null;
         if (folder.IsLive) return;
+        // A tab that wasn't kept before belongs, from now on, to the page it's on; one going into an unpinned group
+        // is one of your other tabs, belonging to no page.
+        if (!folder.IsPinned) tab.HomeUri = null;
+        else if (!tab.IsPinned) tab.HomeUri = Uri.TryCreate(tab.Url, UriKind.Absolute, out var here) ? here : null;
         if (tab.Place != TabPlace.Folder) DetachTab(tab);
         else if (tab.Folder != folder) DismissLive(tab);
         tab.Place = TabPlace.Folder;
@@ -241,19 +274,48 @@ public sealed partial class MainWindow
         if (tab == _active) Activate(tab);
     }
 
-    private void MoveFolder(TabFolder folder, TabFolder? into, int index)
+    /// <param name="pinned">Dropped at the top of a group list: that list's side.</param>
+    private void MoveFolder(TabFolder folder, TabFolder? into, int index, bool? pinned = null)
     {
-        _folderTree.MoveFolder(folder, into, index);
+        var was = folder.IsPinned;
+        _folderTree.MoveFolder(folder, into, index, pinned);
+        if (folder.IsPinned != was)
+        {
+            KeepTabsOnSide(folder);
+            RehomeSplitsOf(folder);
+        }
         RefreshFolderRows();
         SaveSessionSoon();
     }
 
     /// <summary>
+    /// A group's Pin or Unpin (its menu): it moves to the other list, everything in it with it. Pinned, its tabs belong
+    /// to the pages they're on; unpinned, they're your other tabs.
+    /// </summary>
+    private void SetFolderPinned(TabFolder folder, bool pinned)
+    {
+        _folderTree.SetPinned(folder, pinned);
+        KeepTabsOnSide(folder);
+        RehomeSplitsOf(folder);
+        RefreshFolderRows();
+        SaveSessionSoon();
+    }
+
+    /// <summary>A group's tabs, now it's on another side: kept with their pages (HomeUri) if it's pinned, not if it isn't.</summary>
+    private static void KeepTabsOnSide(TabFolder folder)
+    {
+        foreach (var tab in folder.AllTabs.Cast<BrowserTab>())
+            tab.HomeUri = !folder.IsPinned ? null
+                : tab.HomeUri ?? (Uri.TryCreate(tab.Url, UriKind.Absolute, out var here) ? here : null);
+    }
+
+    /// <summary>
     /// Removes a folder. Its tabs are closed, or kept: moved, with its subfolders, to where it was
-    /// (a top-level folder's tabs become pinned tabs).
+    /// (a top-level group's tabs become pinned tabs, or for an unpinned one, your other tabs).
     /// </summary>
     private void DeleteFolder(TabFolder folder, bool closeTabs)
     {
+        var place = folder.IsPinned ? TabPlace.Pinned : TabPlace.Regular;
         if (closeTabs)
         {
             foreach (var tab in folder.AllTabs.Cast<BrowserTab>().ToList()) RemoveTab(tab);
@@ -261,7 +323,7 @@ public sealed partial class MainWindow
         }
         else
         {
-            foreach (var tab in _folderTree.Delete(folder, keepTabs: true).Cast<BrowserTab>()) MoveTab(tab, TabPlace.Pinned);
+            foreach (var tab in _folderTree.Delete(folder, keepTabs: true).Cast<BrowserTab>()) MoveTab(tab, place);
         }
         RefreshFolderRows();
         SaveSessionSoon();
@@ -282,8 +344,9 @@ public sealed partial class MainWindow
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             if (!folder.IsRenaming) return;
-            (FolderList.ContainerFromItem(folder) as UIElement)?.StartBringIntoView();
-            if (FolderList.ContainerFromItem(folder) is DependencyObject row && FindChild<TextBox>(row) is { } box
+            var list = GroupListOf(folder);
+            (list.ContainerFromItem(folder) as UIElement)?.StartBringIntoView();
+            if (list.ContainerFromItem(folder) is DependencyObject row && FindChild<TextBox>(row) is { } box
                 && box.Visibility == Visibility.Visible)
             {
                 box.Text = folder.Name;
@@ -347,16 +410,17 @@ public sealed partial class MainWindow
 
     private void FolderList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_syncingSelection) return;
+        if (_syncingSelection || sender is not ListView list) return;
+        var rows = RowsOfList(list);
         // A tab's row with Ctrl or Shift held: picked out with others, not opened (Picks.cs). A header still opens or closes.
-        if (FolderList.SelectedItem is not (TabFolder or LiveNote) && PickInstead(FolderList, e)) return;
-        switch (FolderList.SelectedItem)
+        if (list.SelectedItem is not (TabFolder or LiveNote) && PickInstead(list, e)) return;
+        switch (list.SelectedItem)
         {
             case TabFolder folder:
                 // Headers aren't selectable: the click opens or closes the folder, and the
                 // selection goes back to the tab in front.
                 _syncingSelection = true;
-                FolderList.SelectedItem = _active is { Place: TabPlace.Folder, Split: null } && FolderRows.Contains(_active) ? _active : null;
+                list.SelectedItem = GroupRowOf(_active) is { } shown && rows.Contains(shown) ? shown : null;
                 _syncingSelection = false;
                 // After this event: the toggle changes the list's items.
                 if (!folder.IsRenaming) DispatcherQueue.TryEnqueue(() => ToggleFolder(folder));
@@ -364,7 +428,7 @@ public sealed partial class MainWindow
             case LiveNote note:
                 // Not selectable either. Signed out, it takes you to GitHub's sign-in.
                 _syncingSelection = true;
-                FolderList.SelectedItem = _active is { Place: TabPlace.Folder, Split: null } && FolderRows.Contains(_active) ? _active : null;
+                list.SelectedItem = GroupRowOf(_active) is { } marked && rows.Contains(marked) ? marked : null;
                 _syncingSelection = false;
                 if (note.OpensSignIn) DispatcherQueue.TryEnqueue(() => OpenInNewTab(GitHubPulls.SignIn));
                 break;
@@ -396,13 +460,19 @@ public sealed partial class MainWindow
         }
 
         var copyLinks = Item("Copy all links", FolderCopyLinks_Click);
-        var expand = new MenuFlyoutItemBase?[] { Item("Expand all folders", FolderExpandAll_Click), Item("Collapse all folders", FolderCollapseAll_Click) };
+        var expand = new MenuFlyoutItemBase?[] { Item("Expand all tab groups", FolderExpandAll_Click), Item("Collapse all tab groups", FolderCollapseAll_Click) };
         // A live folder's tabs are its source's, so there's nothing to ungroup.
+        // A top-level group moves between the pinned tabs and the others, as Arc turns a Tidy Tabs group into a
+        // pinned folder. Not a live folder, which is always with the pinned tabs.
+        var side = folder.Parent is null && !folder.IsLive
+            ? (folder.IsPinned ? Item("Unpin tab group", FolderUnpin_Click) : Item("Pin tab group", FolderPin_Click))
+            : null;
         var ending = new MenuFlyoutItemBase?[]
         {
+            side,
             Item("Close all tabs", FolderCloseAll_Click),
             folder.IsLive ? null : Item("Ungroup", FolderUngroup_Click),
-            Item("Delete folder", FolderDelete_Click),
+            Item("Delete tab group", FolderDelete_Click),
         };
 
         if (folder.Live is { } live)
@@ -414,10 +484,20 @@ public sealed partial class MainWindow
                 ending);
         else
             FillMenu(menu,
-                [Item("New tab", FolderNewTab_Click), FolderTree.CanHoldSubfolder(folder) ? Item("New subfolder", FolderNewSubfolder_Click) : null, copyLinks],
+                [Item("New tab", FolderNewTab_Click), FolderTree.CanHoldSubfolder(folder) ? Item("New tab group inside", FolderNewSubfolder_Click) : null, copyLinks],
                 [Item("Rename", FolderRename_Click), Item("Change icon", FolderIcon_Click)],
                 expand,
                 ending);
+    }
+
+    private void FolderPin_Click(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) SetFolderPinned(folder, true);
+    }
+
+    private void FolderUnpin_Click(object sender, RoutedEventArgs e)
+    {
+        if (FolderOf(sender) is { } folder) SetFolderPinned(folder, false);
     }
 
     private void FolderRename_Click(object sender, RoutedEventArgs e)
@@ -428,8 +508,8 @@ public sealed partial class MainWindow
     /// <summary>Change icon…: the picker beside the folder's row.</summary>
     private void FolderIcon_Click(object sender, RoutedEventArgs e)
     {
-        if (FolderOf(sender) is not { } folder || FolderList.ContainerFromItem(folder) is not FrameworkElement row) return;
-        ShowIconPicker(row, folder.Icon, "Use folder icon", icon =>
+        if (FolderOf(sender) is not { } folder || GroupListOf(folder).ContainerFromItem(folder) is not FrameworkElement row) return;
+        ShowIconPicker(row, folder.Icon, "Use tab group icon", icon =>
         {
             folder.Icon = icon;
             SaveSessionSoon();
@@ -453,12 +533,17 @@ public sealed partial class MainWindow
 
     private void FolderCollapseAll_Click(object sender, RoutedEventArgs e) => SetAllExpanded(false);
 
-    /// <summary>Unloads every tab in it: their pages close, their rows stay (its menu's Close all tabs).</summary>
+    /// <summary>
+    /// Its menu's Close all tabs: a pinned group's tabs unload, their pages closing and their rows staying; an unpinned
+    /// group's close, as Chrome's Close group, and the group goes with them.
+    /// </summary>
     private async void FolderCloseAll_Click(object sender, RoutedEventArgs e)
     {
         if (FolderOf(sender) is not { } folder) return;
         if (!await MayLeaveAsync(folder.AllTabs.Cast<BrowserTab>())) return;
-        foreach (var tab in folder.AllTabs.Cast<BrowserTab>().ToList()) UnloadTab(tab);
+        foreach (var tab in folder.AllTabs.Cast<BrowserTab>().ToList())
+            if (folder.IsPinned) UnloadTab(tab);
+            else RemoveTab(tab);
         RefreshFolderRows();
     }
 
@@ -480,7 +565,7 @@ public sealed partial class MainWindow
         if (header.Children.OfType<ProgressRing>().FirstOrDefault() is { } spinner) spinner.Translation = default;
         // Closed, it shows its card, as Dia's groups do.
         _hoveredFolder = folder;
-        IndentFolderRow(FolderList.ContainerFromItem(folder), folder);
+        IndentFolderRow(GroupListOf(folder).ContainerFromItem(folder), folder);
         // Back on the header of the folder whose list is open: it stays as it is (rebuilt, it flickered).
         if (_folderPreview is { IsOpen: true } && _folderPreviewShown == folder) return;
         if (!folder.IsExpanded && !folder.IsRenaming && _dragTab is null) ShowFolderPreviewSoon(folder);
@@ -494,7 +579,7 @@ public sealed partial class MainWindow
         if (sender is Grid { Tag: TabFolder folder } && folder == _hoveredFolder)
         {
             _hoveredFolder = null;
-            IndentFolderRow(FolderList.ContainerFromItem(folder), folder);
+            IndentFolderRow(GroupListOf(folder).ContainerFromItem(folder), folder);
         }
         if (sender is Grid header && header.Children.OfType<Button>().FirstOrDefault() is { } close) close.Opacity = 0;
         if (sender is Grid row && row.Children.OfType<ProgressRing>().FirstOrDefault() is { } spinner) spinner.Translation = SpinnerAtRest;
@@ -590,7 +675,7 @@ public sealed partial class MainWindow
         // Still on screen: the list may have changed while the pointer rested on it.
         // Not over the command bar, which is where the keyboard is.
         if (_commandBarOpen) return;
-        if (FolderList.ContainerFromItem(folder) is not FrameworkElement { IsLoaded: true, XamlRoot: not null } row) return;
+        if (GroupListOf(folder).ContainerFromItem(folder) is not FrameworkElement { IsLoaded: true, XamlRoot: not null } row) return;
         // A new one each time: one still open or on its way out doesn't take new content or a new place
         // (XAML failed on a reused one and took Drift down). Inside the window, not a window of its own:
         // the command bar opened from one of those took Drift down once you typed in it.
@@ -844,8 +929,8 @@ public sealed partial class MainWindow
         }
         if (_active is { } active && tabs.Contains(active))
         {
-            var next = _recentTabs.FirstOrDefault(t => !tabs.Contains(t) && AllTabs.Contains(t))
-                ?? AllTabs.FirstOrDefault(t => !tabs.Contains(t));
+            var next = _recentTabs.FirstOrDefault(t => !tabs.Contains(t) && IsShown(t))
+                ?? ShownTabs.FirstOrDefault(t => !tabs.Contains(t));
             if (next is not null) Activate(next);
             else
             {
@@ -897,29 +982,29 @@ public sealed partial class MainWindow
     /// Where a drop here lands: onto the folder header the pointer's in the middle of, or at the
     /// slot the rows are showing. A header that can't take it falls back to the slot.
     /// </summary>
-    private (FolderDrop? Drop, Landing Land, bool Onto) FindFolderDrop(DragEventArgs e)
+    private (FolderDrop? Drop, Landing Land, bool Onto) FindFolderDrop(ListView list, DragEventArgs e)
     {
-        var land = LandingIn(FolderList, e);
-        var rows = FolderRows.ToList();
+        var land = LandingIn(list, e);
+        var rows = RowsOfList(list).ToList();
         if (land.Onto is TabFolder onto && _folderTree.DropAt(rows, land.Gap, onto, _dragFolder) is { } into)
             return (into, land, true);
         return (_folderTree.DropAt(rows, land.Gap, null, _dragFolder), land, false);
     }
 
-    private void FolderList_DragOver(DragEventArgs e)
+    private void FolderList_DragOver(ListView list, DragEventArgs e)
     {
-        var (drop, land, onto) = FindFolderDrop(e);
+        var (drop, land, onto) = FindFolderDrop(list, e);
         if (drop is not { } d)
         {
             e.AcceptedOperation = DataPackageOperation.None;
             HideFolderHighlight();
-            ShowRowPreview(FolderList, null);
+            ShowRowPreview(list, null);
             return;
         }
         // Onto a header: it goes last inside, so no room opens here; the header lights up.
         if (onto && d.Into is { } into)
         {
-            ShowRowPreview(FolderList, null);
+            ShowRowPreview(list, null);
             ShowFolderHighlight(into);
             // Held over a closed folder: it springs open.
             if (!into.IsExpanded && _springFolder != into)
@@ -933,7 +1018,7 @@ public sealed partial class MainWindow
         }
         HideFolderHighlight();
         _folderLandingDepth = d.Into is { } folder ? folder.Depth + 1 : 0;
-        ShowRowPreview(FolderList, land.Slot);
+        ShowRowPreview(list, land.Slot);
     }
 
     /// <summary>How deep a drop at the folder list's slot would land, for its cards meanwhile (RowDrag.cs).</summary>
@@ -955,20 +1040,21 @@ public sealed partial class MainWindow
         return timer;
     }
 
-    private void FolderList_Drop(DragEventArgs e)
+    private void FolderList_Drop(ListView list, DragEventArgs e)
     {
-        var (drop, _, _) = FindFolderDrop(e);
+        var (drop, _, _) = FindFolderDrop(list, e);
         HideFolderHighlight();
         if (drop is not { } d) return;
-        if (_dragFolder is { } folder) MoveFolder(folder, d.Into, d.Index);
+        if (_dragFolder is { } folder) MoveFolder(folder, d.Into, d.Index, d.Into is null ? IsPinnedGroupList(list) : null);
         else if (_dragTab is { } tab && d.Into is { } into) MoveTabToFolder(tab, into, d.Index);
     }
 
     private void ShowFolderHighlight(TabFolder folder)
     {
-        if (FolderList.ContainerFromItem(folder) is not FrameworkElement row || FolderList.ItemsPanelRoot is not { } panel) return;
+        var list = GroupListOf(folder);
+        if (list.ContainerFromItem(folder) is not FrameworkElement row || list.ItemsPanelRoot is not { } panel) return;
         // Where the header's shown, which mid-drag isn't where it's laid out.
-        var top = _previewTops.TryGetValue(FolderList, out var tops) && tops.TryGetValue(folder, out var shown) ? shown : row.ActualOffset.Y;
+        var top = _previewTops.TryGetValue(list, out var tops) && tops.TryGetValue(folder, out var shown) ? shown : row.ActualOffset.Y;
         var origin = panel.TransformToVisual(DropIndicatorLayer).TransformPoint(new Point(row.ActualOffset.X, top));
         Canvas.SetLeft(FolderDropHighlight, origin.X);
         Canvas.SetTop(FolderDropHighlight, origin.Y);
@@ -1005,7 +1091,7 @@ public sealed partial class MainWindow
         GhostStage.RowGlyph.Glyph = folder.Glyph;
         GhostStage.RowGlyph.Visibility = Visibility.Visible;
         GhostStage.RowTitle.Text = folder.Name;
-        GhostStage.Row.Width = Math.Max(120, FolderList.ActualWidth);
+        GhostStage.Row.Width = Math.Max(120, GroupListOf(folder).ActualWidth);
         try
         {
             var row = await SnapshotAsync(GhostStage.Row);

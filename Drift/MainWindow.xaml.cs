@@ -286,12 +286,26 @@ public sealed partial class MainWindow : Window
     private long? _pointerOffSidebarSince;
     private bool _syncingSelection;
 
-    public ObservableCollection<BrowserTab> EssentialTabs { get; } = new();
-    public ObservableCollection<BrowserTab> PinnedTabs { get; } = new();
-    public ObservableCollection<BrowserTab> Tabs { get; } = new();
+    /// <summary>The Essentials of the Profile being worked in (as PinnedTabs): the one on screen, but for a moment (InProfile).</summary>
+    public ObservableCollection<BrowserTab> EssentialTabs => _profile.Essentials;
 
-    /// <summary>Every tab, top of the sidebar to bottom.</summary>
-    private IEnumerable<BrowserTab> AllTabs => EssentialTabs.Concat(FolderTabs).Concat(PinnedTabs.SelectMany(RegularTabsOf)).Concat(Tabs.SelectMany(RegularTabsOf));
+    /// <summary>
+    /// The pinned tabs and tabs of the Profile being worked in (Profiles.cs): the one on screen, but for a
+    /// moment while a tab in another one changes (InProfile).
+    /// </summary>
+    public ObservableCollection<BrowserTab> PinnedTabs => _profile.Pinned;
+    public ObservableCollection<BrowserTab> Tabs => _profile.Tabs;
+
+    /// <summary>Every tab, in every Profile, each top of its sidebar to bottom.</summary>
+    private IEnumerable<BrowserTab> AllTabs => Profiles.SelectMany(TabsIn);
+
+    /// <summary>The tabs in the sidebar now: the Profile you're on.</summary>
+    private IEnumerable<BrowserTab> ShownTabs => TabsIn(_profile);
+
+    /// <summary>A Profile's tabs, top of its sidebar to bottom: its Essentials, its folders', its pinned tabs, its tabs.</summary>
+    private static IEnumerable<BrowserTab> TabsIn(Profile profile) =>
+        profile.Essentials.Concat(profile.Tree.AllTabs.Cast<BrowserTab>()).Concat(profile.Pinned.SelectMany(RegularTabsOf))
+            .Concat(profile.GroupSplitRows.SelectMany(RegularTabsOf)).Concat(profile.Tabs.SelectMany(RegularTabsOf));
 
     /// <summary>The pinned tabs, those in a split too (its row is in their place in the pinned list).</summary>
     private IEnumerable<BrowserTab> PinnedPages => PinnedTabs.SelectMany(RegularTabsOf).Where(t => t.Place == TabPlace.Pinned);
@@ -340,6 +354,8 @@ public sealed partial class MainWindow : Window
     {
         _private = isPrivate;
         if (launchUris is not null) _launchUris.AddRange(launchUris);
+        SetUpProfiles();
+        SetUpEngine();
         InitializeComponent();
         // The views the window is made of (Views/): what's done in them is handled here.
         MediaCard.Owner = this;
@@ -434,32 +450,16 @@ public sealed partial class MainWindow : Window
 
         foreach (var button in new[] { Toolbar.MenuButton, Toolbar.SidebarToggleButton, Toolbar.BackButton, Toolbar.ForwardButton, Toolbar.ReloadButton })
             AddPressFeedback(button, 0.95f);
-        AddPressFeedback(NewTabButton, 0.98f);
         AddPressFeedback(AddressBar.Pill, 0.98f);
         AddPressFeedback(PeekCloseButton, 0.95f);
         AddPressFeedback(PeekToTabButton, 0.95f);
-        EssentialList.ContainerContentChanging += ListItem_ContainerContentChanging;
-        EssentialTabs.CollectionChanged += (_, _) => LayoutEssentials();
-        // The lists handle drags themselves (to reorder), marking drops from other lists handled too,
-        // so these listen to handled events as well.
-        foreach (var list in new ListViewBase[] { EssentialList, FolderList, PinnedList, TabList })
-        {
-            // Entering too, not only moving: the ghost and what a drop would do show from the start.
-            list.AddHandler(UIElement.DragEnterEvent, new DragEventHandler(Tabs_DragOver), handledEventsToo: true);
-            list.AddHandler(UIElement.DragOverEvent, new DragEventHandler(Tabs_DragOver), handledEventsToo: true);
-            list.AddHandler(UIElement.DropEvent, new DragEventHandler(Tabs_Drop), handledEventsToo: true);
-            list.AddHandler(UIElement.DragLeaveEvent, new DragEventHandler(Tabs_DragLeave), handledEventsToo: true);
-        }
-        PinnedList.ContainerContentChanging += ListItem_ContainerContentChanging;
-        FolderList.ContainerContentChanging += ListItem_ContainerContentChanging;
-        TabList.ContainerContentChanging += ListItem_ContainerContentChanging;
+        // Each Profile's lists, its Essentials too, are wired as its sidebar is made (ProfilePages.cs).
         WatchForSlides();
+        WireProfiles();
         SetUpLibrary();
         SetUpPageHandles();
         WarmIconPickerSoon();
     }
-
-    private void EssentialList_SizeChanged(object sender, SizeChangedEventArgs e) => LayoutEssentials();
 
     /// <summary>
     /// Essentials fill the sidebar's width, as many across as EssentialsGrid says for how many there
@@ -467,16 +467,21 @@ public sealed partial class MainWindow : Window
     /// too, with wider tiles (EssentialsPanel). When the count across changes, the tiles glide from where
     /// they were to their new places and widths rather than jump.
     /// </summary>
-    private void LayoutEssentials()
+    private void LayoutEssentials() => LayoutEssentials(CurrentPage);
+
+    /// <summary>A Profile's Essentials, each sidebar's own (ProfilePages.cs); only the one on screen's glide.</summary>
+    private void LayoutEssentials(ProfilePageView page)
     {
-        if (EssentialList.ItemsPanelRoot is not EssentialsPanel panel) return;
-        var width = EssentialList.ActualWidth - EssentialList.Padding.Left - EssentialList.Padding.Right;
+        var list = page.EssentialList;
+        if (list.ItemsPanelRoot is not EssentialsPanel panel) return;
+        var width = list.ActualWidth - list.Padding.Left - list.Padding.Right;
         if (width <= 0) return;
+        var onScreen = page == CurrentPage;
         // Counting a tab that's being dragged in, so the grid shows the layout it would get.
-        var columns = EssentialsGrid.Columns(EssentialTabs.Count + _essentialsArriving, width);
+        var columns = EssentialsGrid.Columns(page.Profile.Essentials.Count + (onScreen ? _essentialsArriving : 0), width);
         if (panel.Columns == columns) return;
         // (Not mid-drag: the tiles are showing where a drop would put them, springing there themselves.)
-        if (_dragTab is null && _restored)
+        if (onScreen && _dragTab is null && _restored)
         {
             // The groups below move as the rows change: they slide too.
             NoteGroupSlideStart();
@@ -513,7 +518,12 @@ public sealed partial class MainWindow : Window
             }
             else
             {
-                var folders = _folderTree.Load(session.Folders);
+                // The Profiles, each with its folders and data; the one you were on is the one on screen.
+                var savedProfiles = session.ProfileList();
+                var profiles = RestoreProfiles(savedProfiles);
+                var folders = profiles.Select((s, i) => s.Tree.Load(savedProfiles[i].Folders)).ToList();
+                var shownProfile = profiles[Math.Clamp(session.Profile, 0, profiles.Count - 1)];
+                var engines = profiles.Select(s => s.Engine.IsEngineDefault ? null : s.Engine.Id).ToList();
                 // Each saved tab's tab, by position, for putting splits back together.
                 var restoring = new Task<BrowserTab>?[session.Tabs.Count];
                 _restoring = true;
@@ -526,26 +536,38 @@ public sealed partial class MainWindow : Window
                         Uri.TryCreate(saved.Home, UriKind.Absolute, out var home);
                         var place = Enum.TryParse<TabPlace>(saved.Place, out var p) ? p
                             : saved.Pinned ? TabPlace.Essential : TabPlace.Regular;
+                        // An Essential in a file from when they were a profile's goes to the first Profile on it.
+                        var profileAt = place == TabPlace.Essential ? saved.EssentialProfileIn(engines) : saved.ProfileIn(profiles.Count);
                         TabFolder? folder = null;
-                        if (place == TabPlace.Folder && (saved.Folder is null || !folders.TryGetValue(saved.Folder, out folder)))
+                        if (place == TabPlace.Folder && (saved.Folder is null || !folders[profileAt].TryGetValue(saved.Folder, out folder)))
                             place = TabPlace.Pinned;
-                        opening.Add(restoring[i] = CreateTabAsync(uri, place, activate: i == session.Active,
-                            deferLoad: true, title: saved.Title, home: home, folder: folder, name: saved.Name, icon: saved.Icon));
-                        // It's in its folder already (added before the first await): note where it goes.
-                        if (folder is not null) _folderTree.AddSaved((IFolderTab)folder.Children[^1], folder, saved.Position);
+                        var index = i;
+                        // Into its own Profile.
+                        InProfile(profiles[profileAt], () =>
+                        {
+                            opening.Add(restoring[index] = CreateTabAsync(uri, place, activate: index == session.Active,
+                                deferLoad: true, title: saved.Title, home: home, folder: folder, name: saved.Name, icon: saved.Icon));
+                            // It's in its folder already (added before the first await): note where it goes.
+                            if (folder is not null) _folderTree.AddSaved((IFolderTab)folder.Children[^1], folder, saved.Position);
+                        });
+                        // The tab you were last on in each Profile, to come back to there.
+                        for (var s = 0; s < profiles.Count; s++)
+                            if (savedProfiles[s].Active == i) profiles[s].LastActive = _tabJustMade;
                     }
                 }
                 finally
                 {
                     _restoring = false;
                 }
-                // The tab you were on didn't come back (its address no longer reads): the first one is in front.
-                if (_active is null && AllTabs.FirstOrDefault() is { } first) Activate(first);
-                _folderTree.Arrange();
+                foreach (var profile in profiles) profile.Tree.Arrange();
+                ShowProfile(shownProfile, show: _active);
+                // The tab you were on didn't come back (its address no longer reads): the first one is in front. With
+                // none in front (a Profile with no tabs yet), none is.
+                if (_active is null && session.Active >= 0 && ShownTabs.FirstOrDefault() is { } first) Activate(first);
                 RefreshFolderRows();
                 StartupTrace.Mark($"{opening.Count} tabs in the sidebar");
                 await Task.WhenAll(opening);
-                RestoreSplits(restoring.Select(t => t?.Result).ToList(), session);
+                RestoreSplits(restoring.Select(t => t?.Result).ToList(), session, profiles);
             }
             await Task.WhenAll(opening);
             _restored = true;
@@ -609,15 +631,31 @@ public sealed partial class MainWindow : Window
         _sessionTimer.Stop();
         if (_private) return;
         var keepAll = everything || Settings.Current.OnClose == CloseBehavior.KeepTabs;
-        var data = new SessionData { SidebarWidth = _sidebarWidth, PullsFolderMade = _pullsFolderMade };
-        var savedAt = new Dictionary<BrowserTab, int>();
-        foreach (var tab in AllTabs.Where(t => keepAll || t.IsPinned))
+        var data = new SessionData
         {
+            SidebarWidth = _sidebarWidth,
+            PullsFolderMade = _pullsFolderMade,
+            Profile = Profiles.IndexOf(_profileShown),
+            Profiles = Profiles.Select(s => new SessionProfile
+            {
+                Name = s.Name,
+                Icon = s.Icon,
+                Engine = s.Engine.IsEngineDefault ? null : s.Engine.Id,
+                Folders = s.Tree.Save(),
+            }).ToList(),
+        };
+        var savedAt = new Dictionary<BrowserTab, int>();
+        void SaveTab(BrowserTab tab, int profile, FolderTree? tree)
+        {
+            if (!keepAll && !tab.IsPinned) return;
             var home = tab.HomeUri?.ToString();
             var url = keepAll ? tab.Url : home;
             if (string.IsNullOrEmpty(url) || url == "about:blank") url = home;
-            if (string.IsNullOrEmpty(url)) continue;
+            if (string.IsNullOrEmpty(url)) return;
             if (tab == _active) data.Active = data.Tabs.Count;
+            // The Profile it was last on in.
+            for (var s = 0; s < Profiles.Count; s++)
+                if (Profiles[s].LastActive == tab) data.Profiles[s].Active = data.Tabs.Count;
             savedAt[tab] = data.Tabs.Count;
             data.Tabs.Add(new SessionTab
             {
@@ -629,26 +667,31 @@ public sealed partial class MainWindow : Window
                 Place = tab.Place.ToString(),
                 Home = home,
                 Folder = tab.Folder?.Id,
-                Position = _folderTree.PositionOf(tab),
+                Position = tree?.PositionOf(tab),
+                // An Essential says its Profile, the first too: without one, it's from a file before they were a Profile's.
+                Profile = profile > 0 || tab.Place == TabPlace.Essential ? profile : null,
             });
         }
-        // Splits with at least two of their tabs kept, with where their rows are in the tab list (one in
-        // the pinned list goes back to its pinned tab's place, whatever its row's number); their widths
-        // if they all were.
-        foreach (var (rows, pinned) in new[] { (PinnedTabs, true), (Tabs, false) })
-            for (var row = 0; row < rows.Count; row++)
-            {
-                if (rows[row] is not { IsSplitRow: true, Split: { } split }) continue;
-                var kept = split.Pages.Where(savedAt.ContainsKey).Select(p => savedAt[p]).ToList();
-                if (kept.Count < 2) continue;
-                data.Splits.Add(new SessionSplit
+        for (var s = 0; s < Profiles.Count; s++)
+            foreach (var tab in TabsIn(Profiles[s])) SaveTab(tab, s, Profiles[s].Tree);
+        // Splits with at least two of their tabs kept, with where their rows are in their Profile's tab list (one
+        // in the pinned list goes back to its pinned tab's place, whatever its row's number); their widths if
+        // they all were.
+        for (var s = 0; s < Profiles.Count; s++)
+            foreach (var (rows, pinned) in new (IReadOnlyList<BrowserTab>, bool)[] { (Profiles[s].Pinned, true), (Profiles[s].Tabs, false), (Profiles[s].GroupSplitRows, false) })
+                for (var row = 0; row < rows.Count; row++)
                 {
-                    Pages = kept,
-                    Shares = kept.Count == split.Count ? split.Shares.ToList() : null,
-                    Row = pinned ? -1 : row,
-                });
-            }
-        data.Folders = _folderTree.Save();
+                    if (rows[row] is not { IsSplitRow: true, Split: { } split }) continue;
+                    var kept = split.Pages.Where(savedAt.ContainsKey).Select(p => savedAt[p]).ToList();
+                    if (kept.Count < 2) continue;
+                    data.Splits.Add(new SessionSplit
+                    {
+                        Pages = kept,
+                        Shares = kept.Count == split.Count ? split.Shares.ToList() : null,
+                        Row = pinned ? -1 : row,
+                        Profile = s > 0 ? s : null,
+                    });
+                }
         data.Closed = _closedTabs.TakeLast(MaxClosedTabs).ToList();
         Session.Save(data, wait);
     }
@@ -667,7 +710,7 @@ public sealed partial class MainWindow : Window
     private async Task<BrowserTab> CreateTabAsync(Uri uri, TabPlace place, bool activate,
         bool deferLoad = false, string? title = null, Uri? home = null, int? index = null, TabFolder? folder = null,
         string? name = null, string? icon = null, CoreWebView2NewWindowRequestedEventArgs? forPage = null,
-        BrowserTab? openedFrom = null)
+        BrowserTab? openedFrom = null, EngineProfile? engine = null)
     {
         if (place == TabPlace.Folder && folder is null) place = TabPlace.Pinned;
         var view = NewTabView();
@@ -677,16 +720,20 @@ public sealed partial class MainWindow : Window
         var tab = new BrowserTab(view, place)
         {
             Title = string.IsNullOrWhiteSpace(title) ? uri.Host : title,
-            HomeUri = place == TabPlace.Regular ? null : (home ?? uri),
+            HomeUri = place == TabPlace.Regular || folder is { IsPinned: false } ? null : (home ?? uri),
             PendingUri = forPage is null ? uri : null,
             IsUnloaded = deferLoad,
             Name = name,
             OpenedFrom = openedFrom is null ? null : new WeakReference<BrowserTab>(openedFrom),
+            // Its Profile's profile (ProfileData.cs).
+            Engine = engine ?? _profile.Engine,
         };
+        _tabJustMade = tab;
         if (icon is not null) _ = SetTabIconAsync(tab, icon);
         if (folder is not null && place == TabPlace.Folder)
         {
-            _folderTree.Add(tab, folder, index);
+            // Among its folder's Profile's folders (a live folder fills in whichever Profile it's in).
+            TreeOf(folder).Add(tab, folder, index);
             RefreshFolderRows();
         }
         else
@@ -709,6 +756,9 @@ public sealed partial class MainWindow : Window
     // Set while Root_Loaded puts the session back (CreateTabAsync).
     private bool _restoring;
 
+    // The tab CreateTabAsync last made, there as soon as it's called (it's in the sidebar before its first await).
+    private BrowserTab? _tabJustMade;
+
     // Kept invisible while the engine starts so it doesn't flash over the current tab.
     private static WebView2 NewTabView() => new()
     {
@@ -728,7 +778,7 @@ public sealed partial class MainWindow : Window
         _startingViews.Add(view);
         try
         {
-            await InitWebViewAsync(view);
+            await InitWebViewAsync(view, EngineOf(tab));
         }
         catch when (!AllTabs.Contains(tab) || tab.View != view)
         {
@@ -788,16 +838,16 @@ public sealed partial class MainWindow : Window
 
     private PdfTools? _pdfTools;
 
-    private async Task InitWebViewAsync(WebView2 view)
+    private async Task InitWebViewAsync(WebView2 view, EngineProfile profile)
     {
         // Files dragged in from Explorer or another app reach the page (WinUI's WebView2 turns them away by default).
         view.AllowDrop = true;
         var environment = await EnvironmentAsync();
-        if (_private) await view.EnsureCoreWebView2Async(environment, PrivateOptions(environment));
-        else await view.EnsureCoreWebView2Async(environment);
+        await EnsureEngineAsync(view, environment, _private, profile.Id);
         var core = view.CoreWebView2;
         if (_private) Extensions.AttachPrivate(core.Profile);
-        else Extensions.Attach(core.Profile);
+        else if (profile.IsEngineDefault) Extensions.Attach(core.Profile);
+        else Extensions.AttachOther(core.Profile);
         Downloads.UseProfile(core.Profile);
         // Draw, Erase, Highlight and Add text in PDFs (PdfTools.cs): watching from the window's first page on.
         (_pdfTools ??= new PdfTools(WinRT.Interop.WindowNative.GetWindowHandle(this), _private)).Start();
@@ -907,8 +957,14 @@ public sealed partial class MainWindow : Window
             var chosen = from is not null && NewTabChoice.PressedJustNow(from.AsidePressTime, Environment.TickCount64);
             var shift = from?.AsidePressShift ?? false;
             if (from is not null) from.AsidePressTime = 0;
-            await CreateTabAsync(new Uri("about:blank"), TabPlace.Regular,
-                activate: NewTabChoice.ComesToFront(chosen, Settings.Current.SwitchToNewTabs, shift), forPage: e, openedFrom: from);
+            // In the opener's Profile and profile, which the engine needs for the handover: a tab in another Profile opens
+            // its window there.
+            var opening = Task.CompletedTask;
+            var profile = from is null ? null : ProfileOf(from);
+            InProfile(profile ?? _profile, () => opening = CreateTabAsync(new Uri("about:blank"), TabPlace.Regular,
+                activate: NewTabChoice.ComesToFront(chosen, Settings.Current.SwitchToNewTabs, shift), forPage: e, openedFrom: from,
+                engine: from is null ? null : EngineOf(from)));
+            await opening;
         }
         catch (Exception error)
         {
@@ -971,12 +1027,12 @@ public sealed partial class MainWindow : Window
             // A page floating itself (Pip.cs), opening its window: a small window of its own, not Peek or a tab.
             if (e.Uri == "about:blank" && IsPipWindow(tab))
             {
-                PlayerWindow.Show(e, this, 0, 0, _private);
+                PlayerWindow.Show(e, this, 0, 0, _private, EngineOf(tab).Id);
                 return;
             }
             if (PopupWindow.IsPopup(e))
             {
-                PopupWindow.Show(e, this, OpenInNewTab, _private);
+                PopupWindow.Show(e, this, OpenInNewTab, _private, EngineOf(tab).Id);
                 return;
             }
             if (NewTabChoice.PageFillsItIn(e.Uri))
@@ -1087,8 +1143,16 @@ public sealed partial class MainWindow : Window
     {
         // A split's row isn't a tab of its own: its page you were last on is (Split.cs).
         if (tab is { IsSplitRow: true, Split: { } rowSplit }) tab = FrontOf(rowSplit);
+        // A tab in another Profile (from the command bar, the mini player…): that Profile comes, with it in front.
+        if (ProfileOf(tab) is { } profile && profile != _profile)
+        {
+            ShowProfile(profile, show: tab);
+            return;
+        }
         var left = _active;
         _active = tab;
+        // What each Profile comes back to, an Essential too.
+        _profile.LastActive = tab;
         // Its page, and its split partner's beside it (Split.cs); every other page is hidden.
         ShowPages(tab);
         // Still showing (the other half of a split), it hasn't been left.
@@ -1158,6 +1222,12 @@ public sealed partial class MainWindow : Window
     private void UnloadTab(BrowserTab tab)
     {
         if (tab.IsUnloaded) return;
+        // In another Profile, worked on there (Profiles.cs).
+        if (ProfileOf(tab) is { } profile && profile != _profile)
+        {
+            InProfile(profile, () => UnloadTab(tab));
+            return;
+        }
         // Its page goes, so it can't stay beside another (Split.cs).
         LeaveSplit(tab);
         if (tab == _peekOwner) ClosePeek(animate: false);
@@ -1165,8 +1235,9 @@ public sealed partial class MainWindow : Window
 
         if (tab == _active)
         {
-            var next = _recentTabs.FirstOrDefault(t => t != tab && !t.IsUnloaded)
-                ?? AllTabs.FirstOrDefault(t => t != tab);
+            // In this Profile: switching Profile is for you to do.
+            var next = _recentTabs.FirstOrDefault(t => t != tab && !t.IsUnloaded && IsShown(t))
+                ?? ShownTabs.FirstOrDefault(t => t != tab);
             if (next is not null) Activate(next);
             else _active = null;
         }
@@ -1206,6 +1277,12 @@ public sealed partial class MainWindow : Window
     /// <param name="remember">For Reopen closed tab; not for a live folder's finished pull request (LiveFolders.cs).</param>
     private void RemoveTab(BrowserTab tab, bool remember = true)
     {
+        // In another Profile (a page there closing itself), taken out of that one's lists (Profiles.cs).
+        if (ProfileOf(tab) is { } profile && profile != _profile)
+        {
+            InProfile(profile, () => RemoveTab(tab, remember));
+            return;
+        }
         if (tab.Split is { } split)
         {
             // Out of its split first; the page beside it is the one you're on.
@@ -1218,8 +1295,8 @@ public sealed partial class MainWindow : Window
             var index = tab.Folder?.Children.IndexOf(tab) ?? -1;
             if (index < 0) return;
             if (remember) RememberClosed(tab, index);
-            // The next tab showing in the folders, else the one before.
-            var showing = FolderRows.OfType<BrowserTab>().ToList();
+            // The next tab showing in its group list, else the one before.
+            var showing = GroupRowsOf(tab).OfType<BrowserTab>().ToList();
             var row = showing.IndexOf(tab);
             DetachTab(tab);
             showing.Remove(tab);
@@ -1251,7 +1328,7 @@ public sealed partial class MainWindow : Window
         {
             _active = null;
             // The neighbour in the same list, else the tab you were on before.
-            var next = neighbour ?? _recentTabs.FirstOrDefault() ?? AllTabs.FirstOrDefault();
+            var next = neighbour ?? _recentTabs.FirstOrDefault(IsShown) ?? ShownTabs.FirstOrDefault();
             if (next is not null) Activate(next);
             else UpdateChrome();
         }
@@ -1282,10 +1359,12 @@ public sealed partial class MainWindow : Window
     {
         if (tab.Place == place || place == TabPlace.Folder) return;
         var fromFolder = tab.Place == TabPlace.Folder;
+        // Before it leaves: a tab in an unpinned group wasn't kept.
+        var wasPinned = tab.IsPinned;
         _syncingSelection = true;
         DetachTab(tab);
         if (place == TabPlace.Regular) tab.HomeUri = null;
-        else if (!tab.IsPinned) tab.HomeUri = Uri.TryCreate(tab.Url, UriKind.Absolute, out var here) ? here : null;
+        else if (!wasPinned) tab.HomeUri = Uri.TryCreate(tab.Url, UriKind.Absolute, out var here) ? here : null;
         tab.Place = place;
         var list = CollectionFor(place);
         list.Insert(Math.Clamp(index ?? (place == TabPlace.Regular ? 0 : list.Count), 0, list.Count), tab);
@@ -1333,7 +1412,7 @@ public sealed partial class MainWindow : Window
 
         // Hidden until its page has content (RevealWhenLoaded): the card grows in its themed colour.
         // The view made ready ahead, if there is one, so the page starts loading at once.
-        var (view, ready) = TakeSparePeekView();
+        var (view, ready) = TakeSparePeekView(EngineOf(owner));
         _peekView = view;
         _peekZoom = 1;
 
@@ -1409,7 +1488,7 @@ public sealed partial class MainWindow : Window
             if (_peekView != view) return;
             if (PopupWindow.IsPopup(e))
             {
-                PopupWindow.Show(e, this, OpenInNewTab, _private);
+                PopupWindow.Show(e, this, OpenInNewTab, _private, _peekProfile.Id);
                 return;
             }
             // A window the page fills in itself can't be Peek's own page, the very page that's to fill it.
@@ -1435,11 +1514,15 @@ public sealed partial class MainWindow : Window
     private WebView2? _sparePeekView;
     private Task? _sparePeekReady;
     private Task<CoreWebView2Environment>? _sparePeekEngine;
+    // The profile the spare view is in, and Peek's page's: its tab's (ProfileData.cs).
+    private EngineProfile? _sparePeekProfile;
+    private EngineProfile _peekProfile = null!;
 
-    private (WebView2 View, Task Ready) TakeSparePeekView()
+    private (WebView2 View, Task Ready) TakeSparePeekView(EngineProfile profile)
     {
-        // Not one from an engine that has since stopped (EngineStopped).
-        if (_sparePeekView is { } spare && _sparePeekReady is { IsFaulted: false } ready && _sparePeekEngine == _environment)
+        _peekProfile = profile;
+        // Not one from an engine that has since stopped (EngineStopped), nor one in another profile.
+        if (_sparePeekView is { } spare && _sparePeekReady is { IsFaulted: false } ready && _sparePeekEngine == _environment && _sparePeekProfile == profile)
         {
             _sparePeekView = null;
             _sparePeekReady = null;
@@ -1451,7 +1534,7 @@ public sealed partial class MainWindow : Window
         PeekTrace("new view");
         var view = new WebView2 { Opacity = 0 };
         PeekWebHost.Children.Add(view);
-        return (view, InitWebViewAsync(view));
+        return (view, InitWebViewAsync(view, profile));
     }
 
     /// <summary>Makes a view ready for the next Peek in a moment, so it doesn't compete with what's loading now.</summary>
@@ -1474,7 +1557,9 @@ public sealed partial class MainWindow : Window
         var view = new WebView2 { Opacity = 0, IsHitTestVisible = false };
         PeekWebHost.Children.Insert(0, view);
         _sparePeekView = view;
-        var ready = InitWebViewAsync(view);
+        // In the profile of the Profile you're on, where the next Peek's most likely to be.
+        _sparePeekProfile = _profileShown.Engine;
+        var ready = InitWebViewAsync(view, _sparePeekProfile);
         _sparePeekReady = ready;
         _sparePeekEngine = _environment;
         try
@@ -2548,12 +2633,10 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>New Tab's shortcut, as the hint at the row's end shows it ("Ctrl T"): whatever it's set to.</summary>
-    private void ShowNewTabHint() =>
-        NewTabHint.Text = KeyHint.From(Settings.ShortcutFor(Settings.Actions.First(a => a.Id == "newtab")).ToString());
-
-    private void NewTabButton_PointerEntered(object sender, PointerRoutedEventArgs e) => NewTabHint.Opacity = 1;
-
-    private void NewTabButton_PointerExited(object sender, PointerRoutedEventArgs e) => NewTabHint.Opacity = 0;
+    private void ShowNewTabHint()
+    {
+        foreach (var page in _profilePages.Values) page.NewTabHint.Text = NewTabHintText();
+    }
 
     private void Settings_Changed()
     {
@@ -2627,7 +2710,7 @@ public sealed partial class MainWindow : Window
 
     // ───────────────────────── Switching and reopening tabs ─────────────────────────
 
-    // Ctrl+1 to Ctrl+8 go to that tab, top of the sidebar down; Ctrl+9 to the last one, like Chrome.
+    // Ctrl+1 to Ctrl+9 go to that Profile, as ^1–9 do in Arc (Profiles.cs).
     private static readonly Shortcut[] TabNumberKeys = Enumerable.Range(1, 9)
         .Select(n => new Shortcut(VirtualKey.Number0 + n, true, false, false)).ToArray();
 
@@ -2638,10 +2721,7 @@ public sealed partial class MainWindow : Window
 
     private void SelectTabNumber(int number)
     {
-        var all = AllTabs.ToList();
-        if (all.Count == 0) return;
-        if (number == 9) ShowTab(all[^1]);
-        else if (number <= all.Count) ShowTab(all[number - 1]);
+        if (ProfileOrder.ForNumber(number, Profiles.Count) is { } at) GoToProfile(Profiles[at]);
     }
 
     /// <summary>
@@ -2650,7 +2730,7 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void SwitchTab(int step)
     {
-        var all = AllTabs.ToList();
+        var all = ShownTabs.ToList();
         if (all.Count == 0) return;
         var at = _active is null ? -1 : all.IndexOf(_active);
         var next = at < 0 ? (step > 0 ? 0 : all.Count - 1) : (at + step + all.Count) % all.Count;
@@ -3103,10 +3183,6 @@ public sealed partial class MainWindow : Window
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _pillButtonsTimer;
 
-    /// <summary>The tab list fills what's left of the sidebar's scrolling part below the tabs.</summary>
-    private void SidebarScroll_SizeChanged(object sender, SizeChangedEventArgs e) =>
-        SidebarScrollContent.MinHeight = e.NewSize.Height;
-
     private void Sidebar_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         _pillButtonsTimer?.Stop();
@@ -3435,6 +3511,8 @@ public sealed partial class MainWindow : Window
         EssentialList.SelectedItem = tab is { Place: TabPlace.Essential, Split: null } ? tab : null;
         PinnedList.SelectedItem = row is not null ? (PinnedTabs.Contains(row) ? row : null) : tab.Place == TabPlace.Pinned ? tab : null;
         TabList.SelectedItem = row is not null ? (Tabs.Contains(row) ? row : null) : tab.Place == TabPlace.Regular ? tab : null;
+        foreach (var list in GroupLists)
+            list.SelectedItem = GroupRowOf(tab) is { } groupRow && RowsOfList(list).Contains(groupRow) ? groupRow : null;
         _syncingSelection = false;
     }
 
@@ -3593,6 +3671,9 @@ public sealed partial class MainWindow : Window
             if (folder.IsRenaming) { e.Cancel = true; return; }
             _dragFolder = folder;
             e.Data.RequestedOperation = DataPackageOperation.Move;
+            // A group list with no groups: somewhere to drop it, to pin or unpin it.
+            FolderDropZone.Visibility = Ui.Shown(FolderRows.Count == 0);
+            GroupDropZone.Visibility = Ui.Shown(CurrentPage.GroupRows.Count == 0);
             _ = GhostsFor(folder);
             return;
         }
@@ -3600,6 +3681,13 @@ public sealed partial class MainWindow : Window
         if (sender == PinnedList && e.Items.FirstOrDefault() is BrowserTab { IsSplitRow: true })
         {
             e.Cancel = true;
+            return;
+        }
+        // A split's row in a group moves within the group only, by a drag of its own (GroupRowDrag.cs).
+        if (e.Items.FirstOrDefault() is BrowserTab { IsSplitRow: true, Folder: not null } groupRow)
+        {
+            e.Cancel = true;
+            if (sender is ListView groupList) BeginGroupRowDrag(groupList, groupRow);
             return;
         }
         if (e.Items.FirstOrDefault() is not BrowserTab tab) { e.Cancel = true; return; }
@@ -3631,6 +3719,7 @@ public sealed partial class MainWindow : Window
         HideFolderHighlight();
         ResetEssentialsPreview(animate: true);
         EssentialDropZone.Visibility = PinnedDropZone.Visibility = Visibility.Collapsed;
+        FolderDropZone.Visibility = GroupDropZone.Visibility = Visibility.Collapsed;
         HideSplitDrop();
         // Moving a tab takes it out and puts it back, which loses its selection, and its focus
         // (which would otherwise land on the first button in the window, with a focus rectangle).
@@ -3685,7 +3774,7 @@ public sealed partial class MainWindow : Window
 
     private TabPlace? DropPlace(object target) =>
         target == EssentialList || target == EssentialDropZone ? TabPlace.Essential
-        : target == FolderList ? TabPlace.Folder
+        : target == FolderList || target == GroupList || target == FolderDropZone || target == GroupDropZone ? TabPlace.Folder
         : target == PinnedList || target == PinnedDropZone ? TabPlace.Pinned
         : target == TabList ? TabPlace.Regular
         : null;
@@ -3695,8 +3784,10 @@ public sealed partial class MainWindow : Window
         if ((_dragTab is null && _dragFolder is null) || DropPlace(sender) is not { } place) return;
         // A split's row moves among the tabs only: it can't be pinned or filed as one (Split.cs).
         if (_dragTab is { IsSplitRow: true } && place != TabPlace.Regular) return;
-        // Folders only move among the folders.
-        if (_dragFolder is not null && sender != FolderList) return;
+        // Groups only move among the groups (pinned or not).
+        if (_dragFolder is not null && sender != FolderList && sender != GroupList && sender != FolderDropZone && sender != GroupDropZone) return;
+        // An empty group list's zone takes only a group.
+        if (_dragFolder is null && (sender == FolderDropZone || sender == GroupDropZone)) return;
         e.Handled = true;
         e.AcceptedOperation = DataPackageOperation.Move;
         var ui = e.DragUIOverride;
@@ -3715,9 +3806,15 @@ public sealed partial class MainWindow : Window
             return;
         }
         ResetEssentialsPreview(animate: true);
-        if (sender == FolderList)
+        if (sender == FolderList || sender == GroupList)
         {
-            FolderList_DragOver(e);
+            FolderList_DragOver((ListView)sender, e);
+            return;
+        }
+        if (sender == FolderDropZone || sender == GroupDropZone)
+        {
+            HideFolderHighlight();
+            ShowDropZone((Grid)sender);
             return;
         }
         HideFolderHighlight();
@@ -3735,7 +3832,7 @@ public sealed partial class MainWindow : Window
         }
         HideDropIndicator();
         if (sender is ListViewBase left && left != EssentialList) ShowRowPreview(left, null);
-        if (sender == FolderList) HideFolderHighlight();
+        if (sender == FolderList || sender == GroupList) HideFolderHighlight();
         if (sender == EssentialList) ResetEssentialsPreview(animate: true);
     }
 
@@ -3757,7 +3854,7 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private (BrowserTab, Point)? DropGlideFrom(object target, DragEventArgs e)
     {
-        if (_dragTab is not { } tab || target == FolderList) return null;
+        if (_dragTab is not { } tab || target == FolderList || target == GroupList) return null;
         var at = e.GetPosition(Root);
         if (target == EssentialList)
             return _tileGhost is null ? null : (tab, new Point(at.X - GhostStage.Tile.Width / 2 - 4, at.Y - 4 - 4));
@@ -3793,16 +3890,23 @@ public sealed partial class MainWindow : Window
         // (making room for it) to their new places, which should be the same.
         _slideExcept = (object?)_dragTab ?? _dragFolder;
         NoteSlideStart();
-        var landing = sender is ListViewBase over && over != EssentialList && over != FolderList ? LandingIn(over, e).Gap : 0;
+        var landing = sender is ListViewBase over && over != EssentialList && over != FolderList && over != GroupList ? LandingIn(over, e).Gap : 0;
         ClearRowPreviews(animate: false);
         var essentialLanding = _essentialLanding;
         // The tiles go back to their places as the real order takes over, without animating.
         ResetEssentialsPreview(animate: false);
-        if (sender == FolderList)
+        if (sender == FolderList || sender == GroupList)
         {
             if (_dragTab is null && _dragFolder is null) return;
             e.Handled = true;
-            FolderList_Drop(e);
+            FolderList_Drop((ListView)sender, e);
+            return;
+        }
+        // A group onto an empty group list's zone: pinned or unpinned, last.
+        if (_dragFolder is { } dropped && (sender == FolderDropZone || sender == GroupDropZone))
+        {
+            e.Handled = true;
+            MoveFolder(dropped, null, int.MaxValue, pinned: sender == FolderDropZone);
             return;
         }
         if (_dragTab is not { } tab || DropPlace(sender) is not { } place) return;
@@ -3920,6 +4024,8 @@ public sealed partial class MainWindow : Window
         var normal = (Brush)Application.Current.Resources["DriftDividerBrush"];
         EssentialDropZoneOutline.Stroke = zone == EssentialDropZone ? accent : normal;
         PinnedDropZoneOutline.Stroke = zone == PinnedDropZone ? accent : normal;
+        CurrentPage.FolderDropZoneOutline.Stroke = zone == FolderDropZone ? accent : normal;
+        CurrentPage.GroupDropZoneOutline.Stroke = zone == GroupDropZone ? accent : normal;
     }
 
     private void HideDropIndicator()
@@ -4316,16 +4422,16 @@ public sealed partial class MainWindow : Window
 
     private void ListItem_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
-        if (sender == FolderList && !args.InRecycleQueue) IndentFolderRow(args.ItemContainer, args.Item);
+        if (IsFolderList(sender) && !args.InRecycleQueue) IndentFolderRow(args.ItemContainer, args.Item);
         // A split's row has no card or padding of its own (SplitRowStyle); a recycled container may have held either kind.
-        if ((sender == TabList || sender == PinnedList) && !args.InRecycleQueue && args.ItemContainer is ListViewItem row)
+        if (IsTabList(sender) && !args.InRecycleQueue && args.ItemContainer is ListViewItem row)
         {
             var style = (Style)Application.Current.Resources[args.Item is BrowserTab { IsSplitRow: true } ? "SplitRowStyle" : "TabRowStyle"];
             if (row.Style != style) row.Style = style;
         }
         // Containers are recycled; wire each one once.
         if (args.InRecycleQueue || _pressFeedback.Contains(args.ItemContainer)) return;
-        AddPressFeedback(args.ItemContainer, sender == EssentialList ? 0.96f : 0.98f);
+        AddPressFeedback(args.ItemContainer, sender is GridView ? 0.96f : 0.98f);
         args.ItemContainer.DragStarting += Row_DragStarting;
         // A plain press switches at once (TabPressing.cs); the list's own selection comes on release.
         args.ItemContainer.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(Row_PointerPressed), true);
@@ -4355,6 +4461,8 @@ public sealed partial class MainWindow : Window
         // Not in a private window; and one pull requests folder is enough (LiveFolders.cs).
         PlusLiveFolderItem.Visibility = Ui.Shown(!_private);
         PlusGitHubItem.IsEnabled = !LiveFolders.Any();
+        // A private window has the one sidebar.
+        PlusNewProfileItem.Visibility = Ui.Shown(!_private);
     }
 
     private void PlusMenu_Closed(object? sender, object e)

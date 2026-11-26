@@ -84,7 +84,7 @@
                  MinHeight="28"
                  FontSize="14"
                  VerticalAlignment="Center"
-                 AutomationProperties.Name="Folder name"
+                 AutomationProperties.Name="Tab group name"
                  KeyDown="FolderName_KeyDown"
                  LostFocus="FolderName_LostFocus" />
         <!-- A live folder being asked again: a small spinner. At rest it sits where the × shows
@@ -105,8 +105,8 @@
                 Tag="{x:Bind Folder, Mode=OneWay}"
                 Click="FolderDelete_Click"
                 Style="{StaticResource TabCloseButtonStyle}"
-                AutomationProperties.Name="Delete folder"
-                ToolTipService.ToolTip="Delete folder">
+                AutomationProperties.Name="Delete tab group"
+                ToolTipService.ToolTip="Delete tab group">
             <FontIcon Glyph="&#xE711;" FontSize="10" />
         </Button>
     </Grid>

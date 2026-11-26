@@ -106,4 +106,36 @@ public class WarningsTests
         Assert.Equal("Its settings go with it.", ask.Body);
         Assert.Equal("Remove", ask.Action);
     }
+
+    // Settings › Profiles' New Profile…: Arc's question, and what a Profile is, in Arc's words (less extensions: only
+    // the default Profile has the ones you add).
+    [Fact]
+    public void A_new_Profile_from_Settings_says_what_a_Profile_is()
+    {
+        var ask = Warnings.NewProfileInSettings;
+        Assert.Equal("What do you want to call this Profile?", ask.Title);
+        Assert.Equal("Profiles keep your browsing truly separate — each with its own tabs, history, saved passwords, and other browsing data. No more flipping between work and personal accounts!", ask.Body);
+        Assert.Equal("Create Profile", ask.Action);
+        Assert.Equal("A Profile with that name already exists.", Warnings.ProfileNameTaken);
+    }
+
+    // Arc's Rename Profile.
+    [Fact]
+    public void Renaming_a_Profile_asks_its_new_name()
+    {
+        var ask = Warnings.RenameProfile;
+        Assert.Equal("Rename Profile", ask.Title);
+        Assert.Equal("", ask.Body);
+        Assert.Equal("Rename", ask.Action);
+    }
+
+    // Arc's Delete “X” Profile, asked first: what goes with it, and that it's for good.
+    [Fact]
+    public void Deleting_a_Profile_says_what_goes_and_that_its_permanent()
+    {
+        var ask = Warnings.DeleteProfile("Office");
+        Assert.Equal("Delete your “Office” Profile?", ask.Title);
+        Assert.Equal("Its tabs, history, logins, and cookies will be deleted. This action is permanent.", ask.Body);
+        Assert.Equal("Delete Profile", ask.Action);
+    }
 }

@@ -41,7 +41,7 @@
             <SolidColorBrush x:Key="DriftDividerBrush" Color="#1A000000" />
             <!-- Where a dragged tab will land beside the page (split view). -->
             <SolidColorBrush x:Key="DriftIconBrush" Color="#474747" />
-            <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#888888" />
+            <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#666666" />
             <!-- A meeting on the calendar card: a tint of the accent, as Arc's are of the Space's colour. -->
             <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.16" />
             <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.24" />
@@ -86,7 +86,7 @@
             <SolidColorBrush x:Key="DriftFolderCardBorderBrush" Color="#14FFFFFF" />
             <SolidColorBrush x:Key="DriftDividerBrush" Color="#1FFFFFFF" />
             <SolidColorBrush x:Key="DriftIconBrush" Color="#D3D3D3" />
-            <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#969696" />
+            <SolidColorBrush x:Key="DriftSecondaryTextBrush" Color="#A0A0A0" />
             <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.28" />
             <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.38" />
             <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.33" />

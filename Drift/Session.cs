@@ -41,6 +41,52 @@ internal sealed class SessionTab
     public bool SplitWithPrevious { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? SplitRatio { get; set; }
+    /// <summary>
+    /// The Profile it's in (SessionData.Profiles); missing for the first, and in files from before Profiles. Saved as
+    /// "Space", as Profiles were once called.
+    /// </summary>
+    [JsonPropertyName("Space")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Profile { get; set; }
+
+    /// <summary>Its Profile's place among <paramref name="count"/>; the first if it has none, or it's gone.</summary>
+    public int ProfileIn(int count) => Profile is { } p && p >= 0 && p < count ? p : 0;
+
+    /// <summary>
+    /// An Essential's engine profile, in files from when Essentials were shared by the Profiles on one (missing for
+    /// Default). They're each Profile's own now, saved with their Profile, first included (EssentialProfileIn).
+    /// </summary>
+    [JsonPropertyName("Profile")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EssentialEngine { get; set; }
+
+    /// <summary>
+    /// An Essential's Profile, of Profiles on <paramref name="engines"/> (each one's engine profile, null for Default):
+    /// the one it was saved in; from a file before Essentials were a Profile's own, the first on its engine profile.
+    /// </summary>
+    public int EssentialProfileIn(IReadOnlyList<string?> engines)
+    {
+        if (Profile is not null) return ProfileIn(engines.Count);
+        var engine = EssentialEngine ?? ProfileIds.Default;
+        for (var i = 0; i < engines.Count; i++)
+            if (string.Equals(engines[i] ?? ProfileIds.Default, engine, StringComparison.OrdinalIgnoreCase)) return i;
+        return 0;
+    }
+}
+
+/// <summary>A Profile: its name and icon, its engine profile, and its folders. Saved in "Spaces", as they were once called.</summary>
+internal sealed class SessionProfile
+{
+    public string Name { get; set; } = "";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Icon { get; set; }
+    /// <summary>Its engine profile's Id; missing for Default, and in files from before profiles.</summary>
+    [JsonPropertyName("Profile")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Engine { get; set; }
+    public List<SessionFolder> Folders { get; set; } = new();
+    /// <summary>Index into SessionData.Tabs of its tab you were last on; −1 for none.</summary>
+    public int Active { get; set; } = -1;
 }
 
 public sealed class SessionFolder
@@ -52,6 +98,9 @@ public sealed class SessionFolder
     public string? Icon { get; set; }
     /// <summary>The folder it's nested in; null at the top.</summary>
     public string? Parent { get; set; }
+    /// <summary>A top-level group with your other tabs rather than the pinned ones; missing for a pinned one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Unpinned { get; set; }
     public bool Expanded { get; set; } = true;
     /// <summary>Where it is among its parent's contents (or among the top-level folders).</summary>
     public int Position { get; set; }
@@ -80,6 +129,10 @@ internal sealed class SessionSplit
     /// <summary>Each page's share of the width.</summary>
     public List<double>? Shares { get; set; }
     public int Row { get; set; }
+    /// <summary>The Profile whose tab list Row is in; missing for the first. Saved as "Space".</summary>
+    [JsonPropertyName("Space")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Profile { get; set; }
 
     // As saved before a split could have more than two pages: read, not written.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -102,8 +155,17 @@ internal sealed class SessionSplit
 internal sealed class SessionData
 {
     public List<SessionTab> Tabs { get; set; } = new();
-    /// <summary>Folders, parents before the folders nested in them.</summary>
-    public List<SessionFolder> Folders { get; set; } = new();
+    /// <summary>As saved before Profiles: the folders, parents before the folders nested in them. Read, not written.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<SessionFolder>? Folders { get; set; }
+    /// <summary>The Profiles, in order, each with its folders (parents before the folders nested in them). Saved as "Spaces".</summary>
+    [JsonPropertyName("Spaces")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<SessionProfile>? Profiles { get; set; }
+    /// <summary>The Profile you were on. Saved as "Space".</summary>
+    [JsonPropertyName("Space")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int Profile { get; set; }
     /// <summary>Index into Tabs of the tab that was in front; −1 for none.</summary>
     public int Active { get; set; } = -1;
     public List<SessionSplit> Splits { get; set; } = new();
@@ -114,6 +176,10 @@ internal sealed class SessionData
     /// <summary>The pull requests folder has been made for you once, so it isn't again (LiveFolders.cs).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool PullsFolderMade { get; set; }
+
+    /// <summary>The Profiles; a file from before them has one, your default Profile, with all its folders.</summary>
+    public List<SessionProfile> ProfileList() =>
+        Profiles is { Count: > 0 } ? Profiles : [new SessionProfile { Name = ProfileIds.DefaultName, Folders = Folders ?? new() }];
 }
 
 /// <summary>

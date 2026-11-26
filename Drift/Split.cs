@@ -137,6 +137,12 @@ public sealed partial class MainWindow
     private void SplitTabs(IReadOnlyList<BrowserTab> pages, IReadOnlyList<double>? shares = null, BrowserTab? front = null, int? row = null)
     {
         if (pages.Count is < 2 or > SplitShares.MaxPages || pages.Distinct().Count() != pages.Count || !pages.All(Free)) return;
+        // With a tab in an unpinned group: its row is in that group.
+        if (HostGroup(pages, front) is { } group)
+        {
+            SplitInGroup(pages, shares, front, group);
+            return;
+        }
         var pinned = pages.Where(p => p.Place == TabPlace.Pinned).ToList();
         var host = pinned.Count > 0 ? PinnedTabs : Tabs;
         var at = pinned.Count > 0
@@ -169,7 +175,17 @@ public sealed partial class MainWindow
     {
         if (!CanJoin(split, tab) || split.Row is not { } row) return;
         _syncingSelection = true;
-        if (tab.Place == TabPlace.Pinned && Tabs.Contains(row))
+        if (split.Group is not null)
+        {
+            // Its row's in a group: a pinned tab leaves the pinned list till it's out again; a loose one joins the group (HostInGroup).
+            if (tab.Place == TabPlace.Pinned)
+            {
+                split.PinnedAt[tab] = PinnedTabs.IndexOf(tab);
+                PinnedTabs.Remove(tab);
+            }
+            else Tabs.Remove(tab);
+        }
+        else if (tab.Place == TabPlace.Pinned && Tabs.Contains(row))
         {
             // A pinned tab joining: the row moves to its place in the pinned list.
             var place = PinnedTabs.IndexOf(tab);
@@ -186,11 +202,135 @@ public sealed partial class MainWindow
         split.Insert(at, tab);
         tab.Split = split;
         tab.PropertyChanged += SplitPage_PropertyChanged;
+        // Into its group with the others, or (a tab in an unpinned group joining) the row into that group.
+        if (split.Group is { } group) HostInGroup(split, group);
+        else RehomeSplit(split);
         NameSplitRow(split);
         HostPages(split);
         SaveSessionSoon();
         if (front is not null) Activate(front);
         else if (_shownSplit == split && _active is { } active) Activate(active);
+    }
+
+    // ── A split's row in an unpinned group ──
+
+    private static bool InUnpinnedGroup(BrowserTab page) => page is { Place: TabPlace.Folder, Folder: { IsPinned: false, IsLive: false } };
+
+    /// <summary>
+    /// The unpinned group a split's row goes in, in place of its tabs there: the group of the tab you were on (or the one
+    /// to be in front) if that's in one, else the leftmost page's. None without a tab in an unpinned group: its row is
+    /// in the pinned list or the tab list, as before (a pinned group's tab keeps its row, the split's showing outside).
+    /// </summary>
+    private TabFolder? HostGroup(IReadOnlyList<BrowserTab> pages, BrowserTab? front)
+    {
+        var lead = new[] { _active, front }.FirstOrDefault(p => p is not null && pages.Contains(p) && InUnpinnedGroup(p));
+        return (lead ?? pages.FirstOrDefault(InUnpinnedGroup))?.Folder;
+    }
+
+    /// <summary>A new split whose row goes in an unpinned group (SplitTabs).</summary>
+    private void SplitInGroup(IReadOnlyList<BrowserTab> pages, IReadOnlyList<double>? shares, BrowserTab? front, TabFolder group)
+    {
+        var split = new TabSplit(pages, shares);
+        split.Row = BrowserTab.SplitRow(split);
+        _syncingSelection = true;
+        foreach (var page in pages) Tabs.Remove(page);
+        foreach (var page in pages.Where(p => p.Place == TabPlace.Pinned))
+        {
+            split.PinnedAt[page] = PinnedTabs.IndexOf(page);
+            PinnedTabs.Remove(page);
+        }
+        _syncingSelection = false;
+        foreach (var page in pages)
+        {
+            page.Split = split;
+            page.PropertyChanged += SplitPage_PropertyChanged;
+        }
+        HostInGroup(split, group);
+        NameSplitRow(split);
+        HostPages(split);
+        SaveSessionSoon();
+        if (front is not null) Activate(front);
+        else if (_active is { } active && pages.Contains(active)) Activate(active);
+    }
+
+    /// <summary>
+    /// A split's row into an unpinned group, where its first tab there is. Its pages that aren't kept elsewhere (a loose
+    /// tab, another unpinned group's) join the group after its tabs there, and stay in it once the split's over, as
+    /// Chrome's do; pinned tabs, Essentials and pinned groups' tabs keep their own places.
+    /// </summary>
+    private void HostInGroup(TabSplit split, TabFolder group)
+    {
+        if (split.Row is not { } row) return;
+        split.Group = group;
+        row.Folder = group;
+        var profile = Profiles.FirstOrDefault(p => p.Tree.AllFolders.Contains(group)) ?? _profile;
+        if (!profile.GroupSplitRows.Contains(row)) profile.GroupSplitRows.Add(row);
+        var tree = profile.Tree;
+        var after = split.Pages.Where(p => p.Folder == group && p.Place == TabPlace.Folder)
+            .Select(p => group.Children.IndexOf(p)).Where(i => i >= 0).DefaultIfEmpty(group.Children.Count - 1).Max() + 1;
+        foreach (var page in split.Pages)
+        {
+            var joins = page.Place == TabPlace.Regular || page is { Place: TabPlace.Folder, Folder: { IsPinned: false } other } && other != group;
+            if (!joins) continue;
+            if (page.Place == TabPlace.Folder && page.Folder is { } was) TreeOf(was).Remove(page);
+            page.Place = TabPlace.Folder;
+            page.HomeUri = null;
+            tree.Add(page, group, after++);
+        }
+        RefreshFolderRows();
+    }
+
+    /// <summary>A split's row out of its group (its pages stay where they are).</summary>
+    private void UnhostFromGroup(TabSplit split)
+    {
+        if (split.Row is { } row)
+        {
+            foreach (var profile in Profiles) profile.GroupSplitRows.Remove(row);
+            row.Folder = null;
+        }
+        split.Group = null;
+    }
+
+    /// <summary>
+    /// A split's row where it belongs now (a group pinned or unpinned, a page gone or come): in its unpinned group, or
+    /// out of it to the pinned list (with a pinned tab in it) or the top of the tab list.
+    /// </summary>
+    private void RehomeSplit(TabSplit split)
+    {
+        if (split.Row is not { } row) return;
+        var want = split.Group is { IsPinned: false } kept && split.Pages.Any(p => p.Folder == kept && p.Place == TabPlace.Folder)
+            ? kept : HostGroup(split.Pages, null);
+        if (want == split.Group) return;
+        _syncingSelection = true;
+        if (split.Group is not null) UnhostFromGroup(split);
+        else
+        {
+            Tabs.Remove(row);
+            if (PinnedTabs.IndexOf(row) is >= 0 and var at)
+            {
+                foreach (var page in split.Pages.Where(p => p.Place == TabPlace.Pinned)) split.PinnedAt[page] = at;
+                PinnedTabs.Remove(row);
+            }
+        }
+        if (want is not null) HostInGroup(split, want);
+        else
+        {
+            var pinned = split.Pages.Where(p => p.Place == TabPlace.Pinned).ToList();
+            if (pinned.Count > 0)
+                PinnedTabs.Insert(System.Math.Clamp(pinned.Select(p => split.PinnedAt.GetValueOrDefault(p, PinnedTabs.Count)).Min(), 0, PinnedTabs.Count), row);
+            else Tabs.Insert(0, row);
+        }
+        _syncingSelection = false;
+        RefreshFolderRows();
+        SaveSessionSoon();
+        if (_active is { } active && split.Pages.Contains(active)) MarkInSidebar(active);
+    }
+
+    /// <summary>The splits with a page in this group, each where its row belongs now that the group's pinned or not.</summary>
+    private void RehomeSplitsOf(TabFolder folder)
+    {
+        foreach (var split in folder.AllTabs.OfType<BrowserTab>().Select(t => t.Split).OfType<TabSplit>().Distinct().ToList())
+            RehomeSplit(split);
     }
 
     /// <summary>
@@ -238,17 +378,32 @@ public sealed partial class MainWindow
             MoveView(page.View, WebHost);
         }
         _syncingSelection = true;
-        var host = split.Row is { } kept && PinnedTabs.Contains(kept) ? PinnedTabs : Tabs;
-        var at = split.Row is { } row && host.IndexOf(row) is >= 0 and var index ? index : host.Count;
-        if (split.Row is { } standIn) host.Remove(standIn);
-        split.Row = null;
-        foreach (var page in pages)
+        if (split.Group is not null)
         {
-            if (page.Place == TabPlace.Pinned) PinnedTabs.Insert(System.Math.Min(at++, PinnedTabs.Count), page);
-            else if (page.Place == TabPlace.Regular && host == PinnedTabs) Tabs.Add(page);
-            else if (page.Place == TabPlace.Regular) Tabs.Insert(System.Math.Min(at++, Tabs.Count), page);
+            // Its row was in a group: its tabs there show again on their own; pinned tabs go back where they were.
+            UnhostFromGroup(split);
+            split.Row = null;
+            foreach (var page in pages.Where(p => p.Place == TabPlace.Pinned).OrderBy(p => split.PinnedAt.GetValueOrDefault(p, int.MaxValue)))
+                PinnedTabs.Insert(System.Math.Clamp(split.PinnedAt.GetValueOrDefault(page, PinnedTabs.Count), 0, PinnedTabs.Count), page);
+            foreach (var page in pages.Where(p => p.Place == TabPlace.Regular)) Tabs.Insert(0, page);
+            split.PinnedAt.Clear();
+            _syncingSelection = false;
+            RefreshFolderRows();
         }
-        _syncingSelection = false;
+        else
+        {
+            var host = split.Row is { } kept && PinnedTabs.Contains(kept) ? PinnedTabs : Tabs;
+            var at = split.Row is { } row && host.IndexOf(row) is >= 0 and var index ? index : host.Count;
+            if (split.Row is { } standIn) host.Remove(standIn);
+            split.Row = null;
+            foreach (var page in pages)
+            {
+                if (page.Place == TabPlace.Pinned) PinnedTabs.Insert(System.Math.Min(at++, PinnedTabs.Count), page);
+                else if (page.Place == TabPlace.Regular && host == PinnedTabs) Tabs.Add(page);
+                else if (page.Place == TabPlace.Regular) Tabs.Insert(System.Math.Min(at++, Tabs.Count), page);
+            }
+            _syncingSelection = false;
+        }
         SaveSessionSoon();
         if (_shownSplit == split)
         {
@@ -286,16 +441,31 @@ public sealed partial class MainWindow
         MoveView(tab.View, WebHost);
         HostPages(split);
         _syncingSelection = true;
-        if (tab.Place == TabPlace.Pinned) PinnedTabs.Insert(host == PinnedTabs ? System.Math.Min(at, PinnedTabs.Count) : PinnedTabs.Count, tab);
-        else if (tab.Place == TabPlace.Regular && host == Tabs) Tabs.Insert(System.Math.Min(at, Tabs.Count), tab);
-        else if (tab.Place == TabPlace.Regular) Tabs.Add(tab);
-        // No pinned tab left in it: its row goes to the tab list.
-        if (row is not null && host == PinnedTabs && split.Pages.All(p => p.Place != TabPlace.Pinned))
+        if (split.Group is not null)
         {
-            PinnedTabs.Remove(row);
-            Tabs.Add(row);
+            // Its row's in a group: a pinned tab goes back where it was; one in the group shows on its own again.
+            if (tab.Place == TabPlace.Pinned)
+                PinnedTabs.Insert(System.Math.Clamp(split.PinnedAt.GetValueOrDefault(tab, PinnedTabs.Count), 0, PinnedTabs.Count), tab);
+            else if (tab.Place == TabPlace.Regular) Tabs.Insert(0, tab);
+            split.PinnedAt.Remove(tab);
+            _syncingSelection = false;
+            // Its last tab in the group gone: the row goes where it belongs now.
+            RehomeSplit(split);
+            RefreshFolderRows();
         }
-        _syncingSelection = false;
+        else
+        {
+            if (tab.Place == TabPlace.Pinned) PinnedTabs.Insert(host == PinnedTabs ? System.Math.Min(at, PinnedTabs.Count) : PinnedTabs.Count, tab);
+            else if (tab.Place == TabPlace.Regular && host == Tabs) Tabs.Insert(System.Math.Min(at, Tabs.Count), tab);
+            else if (tab.Place == TabPlace.Regular) Tabs.Add(tab);
+            // No pinned tab left in it: its row goes to the tab list.
+            if (row is not null && host == PinnedTabs && split.Pages.All(p => p.Place != TabPlace.Pinned))
+            {
+                PinnedTabs.Remove(row);
+                Tabs.Add(row);
+            }
+            _syncingSelection = false;
+        }
         NameSplitRow(split);
         SaveSessionSoon();
         if (next is not null) Activate(next);
@@ -551,6 +721,9 @@ public sealed partial class MainWindow
         foreach (var row in PinnedTabs.Where(t => t.IsSplitRow))
             if (PinnedList.ContainerFromItem(row) is ListViewItem item && FindSplitCard(item) is { } card)
                 PlaceSplitCard(card);
+        foreach (var row in _profile.GroupSplitRows)
+            if (GroupListOf(row).ContainerFromItem(row) is ListViewItem item && FindSplitCard(item) is { } card)
+                PlaceSplitCard(card);
     }
 
     private static Border? FindSplitCard(DependencyObject parent)
@@ -754,7 +927,7 @@ public sealed partial class MainWindow
     private BrowserTab? SplitPartner(BrowserTab dragged)
     {
         if (_active is { Split: { } split } front && dragged != front) return CanJoin(split, dragged) ? front : null;
-        var tabs = AllTabs.ToHashSet();
+        var tabs = ShownTabs.ToHashSet();
         return SplitLayout.Partner(dragged, _active, _recentTabs.Where(tabs.Contains), CanSplit);
     }
 
@@ -1107,7 +1280,7 @@ public sealed partial class MainWindow
     // ── Session ──
 
     /// <summary>Saved splits come back, each with its row where it was in the tab list.</summary>
-    private void RestoreSplits(IReadOnlyList<BrowserTab?> tabs, SessionData session)
+    private void RestoreSplits(IReadOnlyList<BrowserTab?> tabs, SessionData session, IReadOnlyList<Profile> profiles)
     {
         var saved = session.Splits.Select(s => (s.PageList(), s.Row)).ToList();
         foreach (var (index, pages, row) in SplitShares.Restorable(saved, tabs.Count))
@@ -1116,16 +1289,20 @@ public sealed partial class MainWindow
             if (found.Count < 2) continue;
             // Its widths, if every page came back.
             var shares = found.Count == saved[index].Item1.Length ? session.Splits[index].ShareList() : null;
-            SplitTabs(found, shares, row: row);
+            // In its own Profile's tab list.
+            var profile = profiles[session.Splits[index].Profile is { } s && s >= 0 && s < profiles.Count ? s : 0];
+            InProfile(profile, () => SplitTabs(found, shares, row: row));
         }
-        // Saved by an older Drift: each marked tab beside the one before it.
+        // Saved by an older Drift, from before Profiles: each marked tab beside the one before it.
         foreach (var (l, r) in SplitLayout.Pairs(session.Tabs.Select(s => s.SplitWithPrevious).ToList()))
         {
             if (tabs[l] is { } left && tabs[r] is { } right)
             {
                 var ratio = session.Tabs[r].SplitRatio ?? 0.5;
-                SplitTabs([left, right], [ratio, 1 - ratio]);
+                InProfile(profiles[0], () => SplitTabs([left, right], [ratio, 1 - ratio]));
             }
         }
+        // The splits' rows are in their lists now: their cards on the Profile on screen.
+        PlaceSplitCards();
     }
 }

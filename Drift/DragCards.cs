@@ -27,37 +27,40 @@ public sealed partial class MainWindow
 
     private sealed record DragCard(Border Top, Border Body, Border Bottom);
 
-    private readonly Dictionary<object, DragCard> _dragCards = new(ReferenceEqualityComparer.Instance);
-    private bool _dragCardsShown;
+    // Each group list's cards drawn whole (a drag can show both lists' at once: lifted out of one, arriving in the other).
+    private readonly Dictionary<ListViewBase, Dictionary<object, DragCard>> _dragCards = new();
+    private readonly HashSet<ListViewBase> _dragCardsShown = new();
     private DispatcherQueueTimer? _dragCardsHandBack;
 
-    /// <summary>The cards whole, where the rows are shown mid-drag (or are laid out), gliding there with them.</summary>
-    private void ShowDragCards(List<CardSpan> spans)
+    private Dictionary<object, DragCard> DragCardsOf(ListViewBase list) =>
+        _dragCards.TryGetValue(list, out var cards) ? cards : _dragCards[list] = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>A group list's cards whole, where the rows are shown mid-drag (or are laid out), gliding there with them.</summary>
+    private void ShowDragCards(ListViewBase list, List<CardSpan> spans)
     {
         _dragCardsHandBack?.Stop();
-        if (!_dragCardsShown)
+        if (_dragCardsShown.Add(list))
         {
             // From where the rows' pieces draw them now, which then hide.
-            _dragCardsShown = true;
-            PlaceDragCards(RestingCardSpans(), animate: false);
-            ShowRowCardPieces(false);
+            PlaceDragCards(list, RestingCardSpans(list), animate: false);
+            ShowRowCardPieces(list, false);
         }
-        PlaceDragCards(spans, animate: true);
+        PlaceDragCards(list, spans, animate: true);
     }
 
     /// <summary>
     /// The drag's over: the rows' pieces draw the cards again. Cancelled, the rows glide back first, and
     /// the cards with them; dropped, the rows are laid out where they were shown, so it's at once.
     /// </summary>
-    private void HandBackDragCards(bool animate)
+    private void HandBackDragCards(ListViewBase list, bool animate)
     {
-        if (!_dragCardsShown) return;
+        if (!_dragCardsShown.Contains(list)) return;
         if (!animate)
         {
             EndDragCards();
             return;
         }
-        PlaceDragCards(RestingCardSpans(), animate: true);
+        PlaceDragCards(list, RestingCardSpans(list), animate: true);
         if (_dragCardsHandBack is null)
         {
             _dragCardsHandBack = DispatcherQueue.CreateTimer();
@@ -72,15 +75,18 @@ public sealed partial class MainWindow
     private void EndDragCards()
     {
         _dragCardsHandBack?.Stop();
-        _dragCardsShown = false;
-        FolderCardLayer.Children.Clear();
+        foreach (var list in _dragCardsShown.ToList())
+        {
+            CardLayerOf(list).Children.Clear();
+            _dragCardsShown.Remove(list);
+            ShowRowCardPieces(list, true);
+        }
         _dragCards.Clear();
-        ShowRowCardPieces(true);
     }
 
-    private void ShowRowCardPieces(bool shown)
+    private static void ShowRowCardPieces(ListViewBase list, bool shown)
     {
-        if (FolderList.ItemsPanelRoot is not { } panel) return;
+        if (list.ItemsPanelRoot is not { } panel) return;
         foreach (var row in panel.Children)
             foreach (var part in RowParts(row))
                 if (part is Border { Tag: CardTag } piece) piece.Opacity = shown ? 1 : 0;
@@ -92,28 +98,30 @@ public sealed partial class MainWindow
                 : [];
     }
 
-    /// <summary>The cards as the rows are laid out, from their pieces' layout (FolderCard).</summary>
-    private List<CardSpan> RestingCardSpans()
+    /// <summary>A group list's cards as its rows are laid out, from their pieces' layout (FolderCard).</summary>
+    private List<CardSpan> RestingCardSpans(ListViewBase list)
     {
         var rows = new List<(object? Key, double Top, double Height, CardRow Cards)>();
-        foreach (var row in FolderRows)
-            if (FolderList.ContainerFromItem(row) is FrameworkElement container && _folderCardRows.TryGetValue(row, out var cards))
+        foreach (var row in RowsOfList(list))
+            if (list.ContainerFromItem(row) is FrameworkElement container && _folderCardRows.TryGetValue(row, out var cards))
                 rows.Add((row, container.ActualOffset.Y, container.ActualHeight, cards));
         return FolderCard.Spans(rows, CardRoom);
     }
 
     /// <param name="headerWas">Where a folder's header was before the rows changed (Slides.cs), for a card
     /// that's new: it grows out of its header from there, as a folder opening does.</param>
-    private void PlaceDragCards(List<CardSpan> spans, bool animate, Func<object, double?>? headerWas = null)
+    private void PlaceDragCards(ListViewBase list, List<CardSpan> spans, bool animate, Func<object, double?>? headerWas = null)
     {
-        if (FolderList.ItemsPanelRoot is not { } panel) return;
-        var origin = panel.TransformToVisual(FolderCardLayer).TransformPoint(new Point(0, 0));
+        if (list.ItemsPanelRoot is not { } panel) return;
+        var layer = CardLayerOf(list);
+        var cards = DragCardsOf(list);
+        var origin = panel.TransformToVisual(layer).TransformPoint(new Point(0, 0));
         var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
         foreach (var span in spans)
         {
             seen.Add(span.Folder);
-            var fresh = !_dragCards.TryGetValue(span.Folder, out var card);
-            if (fresh) _dragCards[span.Folder] = card = NewDragCard();
+            var fresh = !cards.TryGetValue(span.Folder, out var card);
+            if (fresh) cards[span.Folder] = card = NewDragCard(layer);
             // A card's sides are its folder's header's (Folders.cs).
             var left = origin.X + span.Level * (BrowserTab.IndentStep + CardInset);
             var width = Math.Max(0, panel.ActualWidth - span.Level * (BrowserTab.IndentStep + CardInset) - span.Level * CardInset);
@@ -127,7 +135,7 @@ public sealed partial class MainWindow
             }
             // A card that's new (a folder that wasn't one: it opened, or has the dragged tab under it now)
             // grows out of its header, from where that was.
-            if (fresh && animate && FolderList.ContainerFromItem(span.Folder) is FrameworkElement header)
+            if (fresh && animate && list.ContainerFromItem(span.Folder) is FrameworkElement header)
             {
                 var from = origin.Y + (headerWas?.Invoke(span.Folder) ?? span.Top);
                 Move(card.Top, "Translation", new Vector3((float)left, (float)from, 0), glide: false);
@@ -143,13 +151,13 @@ public sealed partial class MainWindow
             Move(card.Bottom, "Translation", new Vector3((float)left, (float)(bottom - CardRadius), 0), glide);
         }
         // Folders that aren't cards any more (a closed one that was showing the dragged tab).
-        foreach (var gone in _dragCards.Keys.Where(k => !seen.Contains(k)).ToList())
+        foreach (var gone in cards.Keys.Where(k => !seen.Contains(k)).ToList())
         {
-            var card = _dragCards[gone];
-            FolderCardLayer.Children.Remove(card.Top);
-            FolderCardLayer.Children.Remove(card.Body);
-            FolderCardLayer.Children.Remove(card.Bottom);
-            _dragCards.Remove(gone);
+            var card = cards[gone];
+            layer.Children.Remove(card.Top);
+            layer.Children.Remove(card.Body);
+            layer.Children.Remove(card.Bottom);
+            cards.Remove(gone);
         }
 
         static void Move(UIElement part, string property, Vector3 to, bool glide)
@@ -159,7 +167,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private DragCard NewDragCard()
+    private static DragCard NewDragCard(Canvas layer)
     {
         var style = (Style)Application.Current.Resources["FolderCardStyle"];
         Border Part(double height, CornerRadius corners, Thickness edges) => new()
@@ -174,9 +182,9 @@ public sealed partial class MainWindow
             Part(CardRadius, new CornerRadius(CardRadius, CardRadius, 0, 0), new Thickness(1, 1, 1, 0)),
             Part(DragCardBody, new CornerRadius(0), new Thickness(1, 0, 1, 0)),
             Part(CardRadius, new CornerRadius(0, 0, CardRadius, CardRadius), new Thickness(1, 0, 1, 1)));
-        FolderCardLayer.Children.Add(card.Top);
-        FolderCardLayer.Children.Add(card.Body);
-        FolderCardLayer.Children.Add(card.Bottom);
+        layer.Children.Add(card.Top);
+        layer.Children.Add(card.Body);
+        layer.Children.Add(card.Bottom);
         return card;
     }
 

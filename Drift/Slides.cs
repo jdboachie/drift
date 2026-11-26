@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Drift.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -30,19 +31,25 @@ public sealed partial class MainWindow
 
     private void WatchForSlides()
     {
-        FolderRows.CollectionChanged += (_, _) => NoteSlideStart();
-        EssentialTabs.CollectionChanged += (_, _) => NoteSlideStart();
-        PinnedTabs.CollectionChanged += (_, _) => NoteSlideStart();
-        Tabs.CollectionChanged += (_, _) => NoteSlideStart();
+        foreach (var profile in Profiles) WatchProfileForSlides(profile);
     }
 
-    private IEnumerable<ListViewBase> SlidingLists => new ListViewBase[] { FolderList, PinnedList, TabList };
+    /// <summary>A Profile's lists slide when they change on screen; not while it's out of sight.</summary>
+    private void WatchProfileForSlides(Profile profile)
+    {
+        profile.Essentials.CollectionChanged += (_, _) => { if (profile == _profileShown) NoteSlideStart(); };
+        profile.Pinned.CollectionChanged += (_, _) => { if (profile == _profileShown) NoteSlideStart(); };
+        profile.Tabs.CollectionChanged += (_, _) => { if (profile == _profileShown) NoteSlideStart(); };
+    }
+
+    private IEnumerable<ListViewBase> SlidingLists => new ListViewBase[] { FolderList, PinnedList, GroupList, TabList };
 
     /// <summary>A list is changing: where everything is now (layout hasn't caught up yet), once per batch of changes.</summary>
     private void NoteSlideStart()
     {
         // A folder opening or closing moves its own rows (FolderMotion.cs).
-        if (!_restored || _slideRows is not null || _folderMotionRefresh) return;
+        // Switching Profile brings in a whole other sidebar: it comes in as one (Profiles.cs), not row by row.
+        if (!_restored || _slideRows is not null || _folderMotionRefresh || _switchingProfile) return;
         _slideRows = SlidingLists.ToDictionary(l => l, RowsWere);
         NoteGroupSlideStart();
     }
@@ -83,10 +90,13 @@ public sealed partial class MainWindow
         return rows;
     }
 
-    /// <summary>The sidebar's groups below the Essentials (the lists, drop zones, divider, New Tab), and where each is.</summary>
+    /// <summary>
+    /// What's below the Essentials, and where each is: the sidebar on screen's lists (they move down as its Essentials
+    /// take another row), and the sidebar's groups below the Profile's.
+    /// </summary>
     private List<(object, double)> Groups() =>
-        Sidebar.Children
-            .Where(c => Grid.GetRow((FrameworkElement)c) is >= 2 and <= 7 && c.Visibility == Visibility.Visible)
+        Sidebar.Children.Where(c => Grid.GetRow((FrameworkElement)c) is >= 3 and <= 7).Append(CurrentPage.Scroll)
+            .Where(c => c.Visibility == Visibility.Visible)
             .OrderBy(c => c.ActualOffset.Y)
             .Select(c => ((object)c, (double)c.ActualOffset.Y))
             .ToList();
@@ -109,7 +119,7 @@ public sealed partial class MainWindow
             var was = rowsWere![list];
             var now = RowsNow(list);
             var known = new HashSet<object>(was.Select(r => r.Item1));
-            var plan = SlidePlan.For(was, now, except, unfold: list == FolderList);
+            var plan = SlidePlan.For(was, now, except, unfold: IsFolderList(list));
             var planned = new HashSet<object>(plan.Select(s => s.Key));
             foreach (var (item, _) in now)
             {
@@ -124,10 +134,10 @@ public sealed partial class MainWindow
                 if (list.ContainerFromItem(slide.Key) is UIElement row) SlideFrom(row, slide);
         }
         // Mid-drag, the folders' cards drawn whole go with the rows to their places (DragCards.cs).
-        if (_dragCardsShown)
+        foreach (var list in _dragCardsShown.ToList())
         {
-            var wasAt = rowsWere?.GetValueOrDefault(FolderList)?.ToDictionary(r => r.Item1, r => r.Item2, ReferenceEqualityComparer.Instance);
-            PlaceDragCards(RestingCardSpans(), animate: true, headerWas: f => wasAt is not null && wasAt.TryGetValue(f, out var t) ? t : null);
+            var wasAt = rowsWere?.GetValueOrDefault(list)?.ToDictionary(r => r.Item1, r => r.Item2, ReferenceEqualityComparer.Instance);
+            PlaceDragCards(list, RestingCardSpans(list), animate: true, headerWas: f => wasAt is not null && wasAt.TryGetValue(f, out var t) ? t : null);
         }
         // The folder a drop would go into, lit up: with its header as it slides.
         FollowFolderHighlight();

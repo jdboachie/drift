@@ -148,6 +148,12 @@ internal sealed class SettingsData
     /// (Split.cs LayOutSplitRow).
     /// </summary>
     public bool SplitPagesSideBySide { get; set; }
+    /// <summary>
+    /// The Profile you're on named above its tabs, as Arc names its Spaces (Profiles.cs); hidden from its menu. Saved as
+    /// "ShowSpaceHeader", as Profiles were once called.
+    /// </summary>
+    [JsonPropertyName("ShowSpaceHeader")]
+    public bool ShowProfileHeader { get; set; } = true;
     /// <summary>Offer to save passwords, and fill them in (WebView2's password manager).</summary>
     public bool SavePasswords { get; set; } = true;
     /// <summary>Fill in addresses and other form data seen before.</summary>
@@ -196,7 +202,7 @@ internal static class Settings
         new("newtab", "New tab", new Shortcut(VirtualKey.T, true, false, false), "Tabs"),
         new("closetab", "Close tab", new Shortcut(VirtualKey.W, true, false, false), "Tabs"),
         new("reopen", "Reopen closed tab", new Shortcut(VirtualKey.T, true, true, false), "Tabs"),
-        new("folder", "New folder", new Shortcut(VirtualKey.N, true, false, true), "Tabs"),
+        new("folder", "New tab group", new Shortcut(VirtualKey.N, true, false, true), "Tabs"),
         new("nexttab", "Next tab", new Shortcut(VirtualKey.Tab, true, false, false), "Tabs"),
         new("prevtab", "Previous tab", new Shortcut(VirtualKey.Tab, true, true, false), "Tabs"),
         new("address", "Edit address", new Shortcut(VirtualKey.L, true, false, false), "Page"),

@@ -8,4 +8,7 @@ public interface IFolderTab
 
     /// <summary>Folder levels it sits under in the sidebar, set by FolderTree.Rows.</summary>
     int Depth { get; set; }
+
+    /// <summary>A row standing for tabs in its folder (a split's, shown in their place): whether it stands for this one.</summary>
+    bool StandsFor(IFolderTab tab) => false;
 }

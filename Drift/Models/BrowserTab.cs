@@ -100,6 +100,12 @@ public sealed class TabSplit : INotifyPropertyChanged
     /// <summary>Its row in the tab list (a BrowserTab with IsSplitRow, standing for all its pages).</summary>
     public BrowserTab? Row { get; set; }
 
+    /// <summary>The unpinned group its row is in, in place of its pages there (Split.cs HostInGroup); null for a row in the tab or pinned list.</summary>
+    public TabFolder? Group { get; set; }
+
+    /// <summary>Where each of its pinned tabs was in the pinned list, to go back to when it leaves a split whose row is in a group.</summary>
+    public Dictionary<BrowserTab, int> PinnedAt { get; } = new();
+
     // The row's places for its pages (TabRowView.xaml): the page in each, or none, a place with no page hidden.
     // One under another, or side by side in columns (Settings › Tabs; Split.cs LayOutSplitRow), where a place
     // with no page takes no room.
@@ -148,6 +154,9 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
 
     /// <summary>The tab's page. Unloading a tab swaps in a fresh, empty one (MainWindow.UnloadTab).</summary>
     public WebView2 View { get; set; }
+
+    /// <summary>The profile its page runs in (ProfileData.cs): its Profile's; an Essential's, the one it's an Essential of.</summary>
+    public EngineProfile? Engine { get; set; }
 
     /// <summary>
     /// No page loaded: restored tabs that haven't been opened yet, and pinned tabs that were unloaded.
@@ -225,10 +234,16 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     }
 
     /// <summary>
-    /// Essentials and pinned tabs: they belong to a page (HomeUri), links leaving its site open in
-    /// Peek, and closing one sends it back to its page rather than closing it.
+    /// Essentials, pinned tabs and the tabs in a pinned group: they belong to a page (HomeUri), links leaving its
+    /// site open in Peek, and closing one sends it back to its page rather than closing it. A tab in an unpinned
+    /// group is one of your other tabs, as one outside a group is.
     /// </summary>
-    public bool IsPinned => Place != TabPlace.Regular;
+    public bool IsPinned => Place switch
+    {
+        TabPlace.Regular => false,
+        TabPlace.Folder => Folder?.IsPinned ?? true,
+        _ => true,
+    };
 
     /// <summary>For Essentials and pinned tabs: the page the tab belongs to. Links leaving its site open in Peek.</summary>
     public Uri? HomeUri { get; set; }
@@ -306,6 +321,9 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
 
     /// <summary>A new split's row (Split.cs).</summary>
     public static BrowserTab SplitRow(TabSplit split) => new(new WebView2(), TabPlace.Regular) { IsSplitRow = true, Split = split };
+
+    /// <summary>A split's row in a group stands for its pages there (FolderTree.Rows, DropAt).</summary>
+    public bool StandsFor(IFolderTab tab) => IsSplitRow && Split is { } split && tab is BrowserTab page && split.Pages.Contains(page);
 
     /// <summary>A row's split layout (both pages), or its usual one.</summary>
     public Visibility SplitVisibility => IsSplitRow ? Visibility.Visible : Visibility.Collapsed;

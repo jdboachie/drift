@@ -129,7 +129,6 @@ public sealed partial class EssentialsPanel : Panel
         _animateNext = null;
         _snapNext = false;
         if (animate is { } spring) _spring = spring;
-
         var here = new HashSet<UIElement>();
         for (var i = 0; i < Children.Count; i++)
         {

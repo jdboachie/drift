@@ -146,7 +146,7 @@ public sealed partial class MainWindow
     /// a soft fill. Only the lines in view are made, so all the emoji are there without a wait.
     /// What's picked is passed on, or null for "no icon of its own".
     /// </summary>
-    /// <param name="removeText">What the bin does: "Use site icon", "Use folder icon".</param>
+    /// <param name="removeText">What the bin does: "Use site icon", "Use tab group icon".</param>
     private void ShowIconPicker(FrameworkElement anchor, string? current, string removeText, Action<string?> picked)
     {
         // Snug around the grid; the usual flyout has room for paragraphs.
@@ -286,15 +286,10 @@ public sealed partial class MainWindow
         flyout.Content = panel;
         flyout.Opened += SidebarMenu_Opened;
         flyout.Closed += SidebarMenu_Closed;
-        flyout.Opened += (_, _) =>
-        {
-            // Type to search straight away; the one in use in view.
-            search.Focus(FocusState.Programmatic);
-            if (current is null) return;
-            var at = rows.FindIndex(r => r.Icons.Contains(current));
-            if (at >= 0 && repeater.GetOrCreateElement(at) is { } line)
-                line.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.4, AnimationDesired = false });
-        };
+        // Type to search straight away. It opens at the top, as Arc's does, not scrolled to the one in use: scrolled to
+        // an emoji, it drew a screenful of them at once, and an emoji takes 20-100ms to draw the first time (measured
+        // 2026-11-25: 3.5-6s opening on the Home Profile's house; at the top, about 120ms).
+        flyout.Opened += (_, _) => search.Focus(FocusState.Programmatic);
         flyout.ShowAt(anchor);
     }
 

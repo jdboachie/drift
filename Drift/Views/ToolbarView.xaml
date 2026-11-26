@@ -22,7 +22,7 @@
             <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="{x:Bind Owner.Menu_Opening}" Opened="{x:Bind Owner.SidebarMenu_Opened}" Closed="{x:Bind Owner.SidebarMenu_Closed}">
                     <MenuFlyoutItem x:Name="NewTabMenuItem" x:FieldModifier="internal" Text="New tab" Click="{x:Bind Owner.NewTab_Click}" />
-                    <MenuFlyoutItem x:Name="NewFolderMenuItem" x:FieldModifier="internal" Text="New folder" Click="{x:Bind Owner.NewFolder_Click}" />
+                    <MenuFlyoutItem x:Name="NewFolderMenuItem" x:FieldModifier="internal" Text="New tab group" Click="{x:Bind Owner.NewFolder_Click}" />
                     <MenuFlyoutItem x:Name="NewPullsFolderMenuItem" x:FieldModifier="internal" Text="New pull requests folder" Click="{x:Bind Owner.NewPullsFolder_Click}" />
                     <MenuFlyoutItem x:Name="ReopenMenuItem" x:FieldModifier="internal" Text="Reopen closed tab" Click="{x:Bind Owner.Reopen_Click}" />
                     <MenuFlyoutItem x:Name="PrivateMenuItem" x:FieldModifier="internal" Text="New private window" Click="{x:Bind Owner.PrivateWindow_Click}" />

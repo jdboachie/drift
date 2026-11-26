@@ -78,7 +78,7 @@
     </Style>
 
     <!-- A meeting on the calendar card (GoogleCalendar.cs): a tint of the accent, as Arc's are of the
-         Space's colour, with no edge or shadow. Its text and Join button sit on top as siblings, so Join
+         Profile's colour, with no edge or shadow. Its text and Join button sit on top as siblings, so Join
          isn't a button inside a button. -->
     <Style x:Key="CalendarEventButtonStyle" TargetType="Button">
         <Setter Property="HorizontalAlignment" Value="Stretch" />

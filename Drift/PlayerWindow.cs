@@ -58,7 +58,8 @@ internal sealed class PlayerWindow : Window
     }
 
     /// <param name="videoWidth">The video's shown size on the page, in CSS pixels, for the window's shape.</param>
-    public static async void Show(CoreWebView2NewWindowRequestedEventArgs e, Window owner, double videoWidth, double videoHeight, bool isPrivate)
+    /// <param name="profile">The tab's profile (ProfileData.cs), which the handover needs.</param>
+    public static async void Show(CoreWebView2NewWindowRequestedEventArgs e, Window owner, double videoWidth, double videoHeight, bool isPrivate, string profile)
     {
         // The page waits for its window until the deferral completes.
         var deferral = e.GetDeferral();
@@ -71,8 +72,7 @@ internal sealed class PlayerWindow : Window
         try
         {
             var environment = await MainWindow.EnvironmentAsync();
-            if (isPrivate) await player._view.EnsureCoreWebView2Async(environment, MainWindow.PrivateOptions(environment));
-            else await player._view.EnsureCoreWebView2Async(environment);
+            await MainWindow.EnsureEngineAsync(player._view, environment, isPrivate, profile);
             var core = player._view.CoreWebView2;
             // The player's Back to tab and Close, Drift coming back to the tab, or the page going.
             core.WindowCloseRequested += (_, _) => player.Close();

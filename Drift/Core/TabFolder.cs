@@ -33,6 +33,19 @@ public sealed class TabFolder : INotifyPropertyChanged
 
     public TabFolder? Parent { get; set; }
 
+    private bool _isPinned = true;
+
+    /// <summary>
+    /// With the pinned tabs, kept like them (as Arc's folders are), or with your other tabs, which come and go
+    /// (as Chrome's groups do). A group inside another is on its side; only a top-level one's is its own
+    /// (FolderTree.SetPinned).
+    /// </summary>
+    public bool IsPinned
+    {
+        get => Parent?.IsPinned ?? _isPinned;
+        set => _isPinned = value;
+    }
+
     /// <summary>Its nested folders and tabs, in sidebar order, mixed (TabFolder or IFolderTab).</summary>
     public List<object> Children { get; } = new();
 
@@ -193,7 +206,7 @@ public sealed class TabFolder : INotifyPropertyChanged
     /// <summary>"Work / Docs", for menus.</summary>
     public string Path => Parent is null ? Name : $"{Parent.Path} / {Name}";
 
-    public override string ToString() => $"{Name} folder, {StateName}";
+    public override string ToString() => $"{Name} tab group, {StateName}";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

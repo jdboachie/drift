@@ -49,7 +49,8 @@ internal sealed class PopupWindow : Window
     /// <param name="owner">The window it opens over, centred.</param>
     /// <param name="openTab">Where links from the popup that ask for an ordinary new window go.</param>
     /// <param name="isPrivate">Opened from a private window: it has to share that window's profile.</param>
-    public static async void Show(CoreWebView2NewWindowRequestedEventArgs e, Window owner, Action<Uri> openTab, bool isPrivate)
+    /// <param name="profile">The opener's profile (ProfileData.cs), which the handover needs.</param>
+    public static async void Show(CoreWebView2NewWindowRequestedEventArgs e, Window owner, Action<Uri> openTab, bool isPrivate, string profile)
     {
         // The page waits for the new window until the deferral completes.
         var deferral = e.GetDeferral();
@@ -66,8 +67,7 @@ internal sealed class PopupWindow : Window
         {
             // The opener's environment: required for the handover below, and it brings the same overlay scroll bars.
             var environment = await MainWindow.EnvironmentAsync();
-            if (isPrivate) await popup._view.EnsureCoreWebView2Async(environment, MainWindow.PrivateOptions(environment));
-            else await popup._view.EnsureCoreWebView2Async(environment);
+            await MainWindow.EnsureEngineAsync(popup._view, environment, isPrivate, profile);
             var core = popup._view.CoreWebView2;
             core.DownloadStarting += (_, d) => Downloads.Track(d, isPrivate);
             // Nothing to come back to if its page dies: the sign-in can be started again.
@@ -86,7 +86,7 @@ internal sealed class PopupWindow : Window
             {
                 if (IsPopup(inner))
                 {
-                    Show(inner, popup, openTab, isPrivate);
+                    Show(inner, popup, openTab, isPrivate, profile);
                     return;
                 }
                 inner.Handled = true;

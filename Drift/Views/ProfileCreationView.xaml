@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Create a Profile (Profiles.cs, ProfileData.cs), as Arc for Windows has Create a Space: in the sidebar's place, a title
+     and what Profiles are for, its name with its icon beside it, and at the bottom Create Profile (Enter) and Cancel
+     (Esc). Create Profile waits for a name no other Profile has. Arc's picture above the title isn't Drift's to use
+     (DESIGN.md › Surfaces), and its theme row waits till Drift has themes (ROADMAP.md). -->
+<UserControl
+    x:Class="Drift.ProfileCreationView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Padding="8,24,12,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="Create a Profile" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" />
+        <TextBlock Grid.Row="1" Text="Separate your tabs and logins for life, work, projects, and more." FontSize="13"
+                   TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="8,-6,8,12" />
+
+        <!-- Its name, with its icon at the start: click the icon to choose one (the icon picker, IconPicker.cs). -->
+        <Grid Grid.Row="2" Height="36" CornerRadius="8" Padding="4,0,4,0" ColumnSpacing="2"
+              Background="{ThemeResource DriftHoverBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="IconButton" x:FieldModifier="internal" Width="28" Height="28" Padding="0" MinWidth="0" MinHeight="0"
+                    Style="{StaticResource IconButtonStyle}"
+                    Click="{x:Bind Owner.ProfileCreationIcon_Click}"
+                    AutomationProperties.Name="Choose an icon"
+                    ToolTipService.ToolTip="Choose an icon">
+                <Grid>
+                    <FontIcon x:Name="IconGlyph" x:FieldModifier="internal" Glyph="&#xE76E;" FontSize="14"
+                              Foreground="{ThemeResource DriftIconBrush}" />
+                    <TextBlock x:Name="IconEmoji" x:FieldModifier="internal" FontSize="13" FontFamily="Segoe UI Emoji"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-4,0" Visibility="Collapsed" />
+                </Grid>
+            </Button>
+            <TextBox x:Name="NameBox" x:FieldModifier="internal" Grid.Column="1"
+                     PlaceholderText="Profile name…"
+                     BorderThickness="0" Background="Transparent" Padding="4,5,4,5" MinHeight="28" FontSize="14"
+                     VerticalAlignment="Center"
+                     AutomationProperties.Name="Profile name"
+                     TextChanged="{x:Bind Owner.ProfileCreationName_TextChanged}"
+                     KeyDown="{x:Bind Owner.ProfileCreationName_KeyDown}">
+                <!-- Part of the filled box it's in, focused or not, as Arc's: no white field, no underline. -->
+                <TextBox.Resources>
+                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                </TextBox.Resources>
+            </TextBox>
+        </Grid>
+
+        <Button x:Name="CreateButton" x:FieldModifier="internal" Grid.Row="5" Height="36"
+                HorizontalAlignment="Stretch" CornerRadius="8"
+                Style="{StaticResource AccentButtonStyle}"
+                IsEnabled="False"
+                Content="Create Profile"
+                Click="{x:Bind Owner.ProfileCreationCreate_Click}"
+                ToolTipService.ToolTip="Enter" />
+        <Button Grid.Row="6" Height="36" Margin="0,0,0,4"
+                HorizontalAlignment="Stretch" CornerRadius="8"
+                Style="{StaticResource SubtleButtonStyle}"
+                Content="Cancel"
+                Click="{x:Bind Owner.ProfileCreationCancel_Click}"
+                ToolTipService.ToolTip="Esc" />
+    </Grid>
+</UserControl>

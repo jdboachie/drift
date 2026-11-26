@@ -54,8 +54,8 @@ public sealed partial class MainWindow
         }
         FillMenu(menu,
         [
-            Command($"Add {tabs.Count} tabs to new folder", () => { ClearPicks(); NewFolder(null, [.. tabs]); }),
-            folders.Count == 0 ? null : Submenu($"Add {tabs.Count} tabs to folder",
+            Command($"Add {tabs.Count} tabs to new tab group", () => { ClearPicks(); NewFolder(null, [.. tabs]); }),
+            folders.Count == 0 ? null : Submenu($"Add {tabs.Count} tabs to tab group",
                 folders.Select(f => (MenuFlyoutItemBase)Command(f.Path, () => Into(f), enabled: tabs.Any(t => t.Folder != f))).ToList()),
         ]);
     }
@@ -108,22 +108,33 @@ public sealed partial class MainWindow
             case TabPlace.Regular:
                 yield return Command("Pin tab", () => MoveTab(tab, TabPlace.Pinned));
                 yield return Command("Add to Essentials", () => MoveTab(tab, TabPlace.Essential));
-                yield return FolderSubmenu(tab, "Add to folder");
+                yield return FolderSubmenu(tab, "Add to tab group");
+                yield return ProfileSubmenu(tab);
                 break;
             case TabPlace.Pinned:
                 yield return Command("Add to Essentials", () => MoveTab(tab, TabPlace.Essential));
-                yield return FolderSubmenu(tab, "Add to folder");
+                yield return FolderSubmenu(tab, "Add to tab group");
+                yield return ProfileSubmenu(tab);
                 yield return Command("Unpin tab", () => MoveTab(tab, TabPlace.Regular));
                 break;
+            // In an unpinned group: one of your other tabs, which can be pinned, or taken out among them.
+            case TabPlace.Folder when !tab.IsPinned:
+                yield return FolderSubmenu(tab, "Move to tab group");
+                yield return ProfileSubmenu(tab);
+                yield return Command("Remove from tab group", () => MoveTab(tab, TabPlace.Regular));
+                yield return Command("Pin tab", () => MoveTab(tab, TabPlace.Pinned));
+                yield return Command("Add to Essentials", () => MoveTab(tab, TabPlace.Essential));
+                break;
             case TabPlace.Folder:
-                yield return FolderSubmenu(tab, "Move to folder");
-                yield return Command("Remove from folder", () => MoveTab(tab, TabPlace.Pinned));
+                yield return FolderSubmenu(tab, "Move to tab group");
+                yield return ProfileSubmenu(tab);
+                yield return Command("Remove from tab group", () => MoveTab(tab, TabPlace.Pinned));
                 yield return Command("Add to Essentials", () => MoveTab(tab, TabPlace.Essential));
                 yield return Command("Unpin tab", () => MoveTab(tab, TabPlace.Regular));
                 break;
             case TabPlace.Essential:
                 yield return Command("Move to pinned tabs", () => MoveTab(tab, TabPlace.Pinned));
-                yield return FolderSubmenu(tab, "Add to folder");
+                yield return FolderSubmenu(tab, "Add to tab group");
                 yield return Command("Remove from Essentials", () => MoveTab(tab, TabPlace.Regular));
                 break;
         }
@@ -132,14 +143,21 @@ public sealed partial class MainWindow
     /// <summary>Its folders, and a new one: at the top, or (for a tab in a folder) inside its own.</summary>
     private MenuFlyoutSubItem FolderSubmenu(BrowserTab tab, string text)
     {
-        var items = new List<MenuFlyoutItemBase> { Command("New folder", () => NewFolder(null, tab)) };
-        if (tab.Folder is { } own && FolderTree.CanHoldSubfolder(own)) items.Add(Command("New subfolder", () => NewFolder(own, tab)));
+        var items = new List<MenuFlyoutItemBase> { Command("New tab group", () => NewFolder(null, tab)) };
+        if (tab.Folder is { } own && FolderTree.CanHoldSubfolder(own)) items.Add(Command("New tab group inside", () => NewFolder(own, tab)));
         var folders = _folderTree.AllFolders.Where(f => !f.IsLive).ToList();
         if (folders.Count > 0) items.Add(new MenuFlyoutSeparator());
         foreach (var folder in folders)
             items.Add(Command(folder.Path, () => MoveTabToFolder(tab, folder, null), enabled: tab.Folder != folder));
         return Submenu(text, items);
     }
+
+    /// <summary>
+    /// Move to Profile: the other Profiles (Arc's "Move to…"); not for an Essential, and a private window has the one.
+    /// </summary>
+    private MenuFlyoutSubItem? ProfileSubmenu(BrowserTab tab) =>
+        _private || Profiles.Count < 2 || tab.Place == TabPlace.Essential ? null
+            : Submenu("Move to Profile", Profiles.Where(s => s != _profile).Select(s => (MenuFlyoutItemBase)Command(s.Name, () => MoveTabToProfile(tab, s))).ToList());
 
     private MenuFlyoutItem? BookmarkItem(BrowserTab tab)
     {
@@ -205,7 +223,7 @@ public sealed partial class MainWindow
 
     /// <summary>The row a tab has in the tab list (its own, or its split's); null for a tab elsewhere.</summary>
     private BrowserTab? RowOf(BrowserTab tab) =>
-        tab.Split?.Row is { } splitRow ? splitRow : Tabs.Contains(tab) ? tab : null;
+        tab.Split?.Row is { } splitRow ? (Tabs.Contains(splitRow) ? splitRow : null) : Tabs.Contains(tab) ? tab : null;
 
     private MenuFlyoutSubItem CloseTabsSubmenu(BrowserTab row)
     {
@@ -380,7 +398,7 @@ public sealed partial class MainWindow
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             if (!tab.IsRenaming) return;
-            var container = new ListViewBase[] { FolderList, PinnedList, TabList }
+            var container = new ListViewBase[] { FolderList, PinnedList, GroupList, TabList }
                 .Select(list => list.ContainerFromItem(tab)).OfType<DependencyObject>().FirstOrDefault();
             if (container is not null && FindChild<TextBox>(container) is { Visibility: Visibility.Visible } box)
             {

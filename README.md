@@ -125,11 +125,18 @@ Same split as Arc: an unmodified engine with your own UI on top.
   WebView2 ships Edge's viewer with these switched off, so Drift turns them on as each PDF opens.
   Closing a PDF with unsaved edits asks first. How it works, and what to check when a WebView2
   update breaks it: `docs/pdf-annotations.md`.
+- **Spaces**, as in Arc: each Space has its own pinned tabs, tabs and folders, with Essentials
+  shared by all. New Space is in the + menu; the Space's icons sit between the Library button and +
+  at the foot of the sidebar (dots when there are too many, or for a Space with no icon), and its
+  name is at the top of its tabs (double-click to rename). Go from Space to Space with a click,
+  Ctrl+1–9, two fingers sideways over the tabs (right from the first Space opens the Library), or
+  the mouse's back and forward buttons over the sidebar. Right-click a tab for Move to Space;
+  right-click a Space's icon to rename it, change its icon or delete it.
 - **Tabs from the keyboard**: Ctrl+Tab, as in Arc, works like Alt+Tab for tabs: a quick press goes
   back to the tab you were on last; hold Ctrl and a bar of your open tabs comes up, most recently used
   first, with a picture of each; Tab moves along (Ctrl+Shift+Tab back), and letting go of Ctrl goes
   to the one picked (Esc stays put). Settings › Tabs can have it go down the sidebar instead.
-  Ctrl+1 to Ctrl+8 go to that tab, Ctrl+9 to the last. Ctrl+Shift+C copies the page's link. Ctrl+Shift+T (or
+  Ctrl+1 to Ctrl+9 go to that Space. Ctrl+Shift+C copies the page's link. Ctrl+Shift+T (or
   ⋯ › Reopen closed tab) brings back the last tab closed, in its group and place; closed tabs are
   remembered across restarts.
 - **Google Calendar**, as in Arc: pin calendar.google.com (Essentials, pinned tabs or a folder)
@@ -277,7 +284,7 @@ Under `Drift/`:
 |---|---|
 | `MainWindow.xaml` | Layout: sidebar, page area, Peek overlay; its regions are views of their own (`Views/`) |
 | `Views/` | The window's regions: caption bar, toolbar, address bar, command bar, switcher, Library, downloads peek, mini player, meeting notice, crash card, drag ghosts |
-| `Controls/` | Reusable pieces: a tab's row, an Essential's tile, a folder's header, a page's card, handle and divider, settings rows and groups, toasts, hover cards |
+| `Controls/` | Reusable pieces: a tab's row, an Essential's tile, a folder's header, a Space's sidebar, a page's card, handle and divider, settings rows and groups, toasts, hover cards |
 | `MainWindow.xaml.cs` | Tabs, address bar, shortcuts, the Peek interception, drag regions |
 | `Models/BrowserTab.cs` | One tab: its WebView2, title, favicon, pinned state, Peek badge |
 | `Models/TabFolder.cs` | One folder: its name, what's in it, whether it's open |
@@ -291,6 +298,10 @@ Under `Drift/`:
 | `CommandActions.cs` | The command bar's commands (matched with Core/CommandMatch.cs), and what they do |
 | `History.cs` | Visit history and cached site icons, saved in `%LOCALAPPDATA%\Drift` |
 | `Session.cs` | The open tabs, saved for the next launch |
+| `Profiles.cs` | Profiles: switching (click, Ctrl+1–9, swipe, mouse buttons), Create a Profile, renaming, moving tabs between them (Core/ProfileOrder.cs works out which is next) |
+| `ProfilePages.cs` | Each Profile's own sidebar, its Essentials at the top, side by side on a strip that slides to the one you're on |
+| `ProfileData.cs` | Each Profile's own data (logins, cookies, history) in an engine profile of its own (`EngineProfile`); deleting one (never your default); Settings › Account › Profiles to make, rename and delete them (Core/ProfileIds.cs names their engine profiles) |
+| `ScrollHold.cs` | Lists a touchpad swipe passes over: they pass it on to the Library's, and stay still with nothing to scroll |
 | `Settings.cs` | Settings and shortcuts, and where they're saved |
 | `SettingsWindow.xaml(.cs)` | The Settings window |
 | `Program.cs` | Entry point: one Drift at a time, later launches hand their links to it |

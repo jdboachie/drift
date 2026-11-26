@@ -143,8 +143,9 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- Accounts (MicrosoftSignIn.cs): the Windows account, with what you can do about the
-                         Microsoft sites it signs you in to right under it; then the switch, a setting of its own. -->
+                    <!-- Account (MicrosoftSignIn.cs): the Windows account, with what you can do about the
+                         Microsoft sites it signs you in to right under it; then the switch, a setting of its own;
+                         then your Profiles (ProfileData.cs), whose browsing this is. -->
                     <StackPanel x:Name="AccountsPage" Spacing="12" Visibility="Collapsed">
                         <TextBlock Style="{StaticResource SettingsIntroStyle}"
                                    Text="Drift signs you in to Outlook, Office and other Microsoft sites with your Windows account." />
@@ -181,6 +182,16 @@
                                 </StackPanel>
                             </local:SettingsRow>
                         </local:SettingsGroup>
+
+                        <!-- Your Profiles, as Arc's settings list them: each renamed or deleted from its row
+                             (ShowProfiles), your default one can't be; then New Profile…. -->
+                        <StackPanel Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="Profiles" Style="{StaticResource SettingsCaptionStyle}" />
+                            <TextBlock Style="{StaticResource SettingsIntroStyle}"
+                                       Text="Profiles keep parts of your life separate. Each has its own sidebar, with its own Essentials and tabs, and its own history, logins, and cookies." />
+                            <local:SettingsGroup x:Name="ProfileList" />
+                            <Button Content="New Profile…" HorizontalAlignment="Right" Margin="0,8,0,0" Click="NewProfile_Click" />
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Tabs -->

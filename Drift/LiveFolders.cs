@@ -44,7 +44,8 @@ public sealed partial class MainWindow
     // While a refresh takes away finished pull requests: you didn't close them, so they aren't kept out.
     private bool _liveRemoving;
 
-    private IEnumerable<TabFolder> LiveFolders => _folderTree.AllFolders.Where(f => f.IsLive);
+    // In every Profile: one pull requests folder is enough, wherever it is, and it keeps filling while you're elsewhere.
+    private IEnumerable<TabFolder> LiveFolders => Profiles.SelectMany(s => s.Tree.AllFolders).Where(f => f.IsLive);
 
     private void StartLiveFolders()
     {

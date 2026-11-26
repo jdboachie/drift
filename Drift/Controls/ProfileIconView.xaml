@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Profile in the switcher at the bottom of the sidebar (Profiles.cs), as Arc has them between its archive and +: its
+     icon, or a dot for one with no icon of its own (two globes side by side can't be told apart) and for all of them
+     when there are more than there's room for. The one you're on is drawn full, the others faded, and it
+     switches at once. Click to go there; right-click for its menu. What's done in it is the window's (MainWindow.Of). -->
+<UserControl
+    x:Class="Drift.ProfileIconView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Drift">
+
+    <Button Width="28" Height="28" Padding="0" MinWidth="0" MinHeight="0"
+            Style="{StaticResource IconButtonStyle}"
+            Tag="{x:Bind Profile, Mode=OneWay}"
+            Click="Profile_Click"
+            ToolTipService.ToolTip="{x:Bind Profile.Name, Mode=OneWay}"
+            AutomationProperties.Name="{x:Bind Profile.Name, Mode=OneWay}">
+        <Button.ContextFlyout>
+            <!-- Filled as it opens (ProfileMenu_Opening, Profiles.cs). -->
+            <MenuFlyout ShouldConstrainToRootBounds="False" Opening="ProfileMenu_Opening" Opened="SidebarMenu_Opened" Closed="SidebarMenu_Closed" />
+        </Button.ContextFlyout>
+        <Grid Opacity="{x:Bind local:ProfileIconView.Strength(Profile.IsCurrent), Mode=OneWay}">
+            <FontIcon Glyph="{x:Bind Profile.Glyph, Mode=OneWay}" FontFamily="{x:Bind local:Ui.IconFont(Profile.Glyph), Mode=OneWay}" FontSize="14"
+                      Foreground="{ThemeResource DriftIconBrush}"
+                      Visibility="{x:Bind local:ProfileIconView.ShowsGlyph(Profile.Icon, Profile.IsDot), Mode=OneWay}" />
+            <!-- Room either side: an emoji is wider than its size (IconPicker.cs, DrawIconAsync). -->
+            <TextBlock Text="{x:Bind Profile.Emoji, Mode=OneWay}" FontSize="13" FontFamily="Segoe UI Emoji"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-4,0"
+                       Visibility="{x:Bind local:ProfileIconView.ShowsEmoji(Profile.HasEmoji, Profile.IsDot), Mode=OneWay}" />
+            <Ellipse Width="6" Height="6" Fill="{ThemeResource DriftIconBrush}"
+                     Visibility="{x:Bind local:ProfileIconView.ShowsDot(Profile.Icon, Profile.IsDot), Mode=OneWay}" />
+        </Grid>
+    </Button>
+</UserControl>

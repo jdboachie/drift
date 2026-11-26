@@ -48,18 +48,59 @@ internal static class Extensions
     {
         Profile = null;
         _privateProfile = null;
+        Others.Clear();
     }
+
+    // Your other profiles (a Profile's, Profiles.cs), as their first pages start. The extensions you add are the
+    // Default profile's; these get the settings and the ad blocker.
+    private static readonly List<CoreWebView2Profile> Others = new();
+
+    /// <summary>Another of your profiles: Settings' passwords and forms, and ad blocking if it's on.</summary>
+    public static async void AttachOther(CoreWebView2Profile profile)
+    {
+        if (Others.Any(p => p.ProfilePath == profile.ProfilePath)) return;
+        Others.Add(profile);
+        ApplyPreferences(profile);
+        try
+        {
+            await SyncAdBlockAsync(profile);
+        }
+        catch
+        {
+            // Pages still work; they're just not filtered.
+        }
+    }
+
+    /// <summary>A profile being deleted (Settings › Profiles): nothing more is applied to it.</summary>
+    public static void DetachOther(CoreWebView2Profile profile) => Others.RemoveAll(p => p.ProfilePath == profile.ProfilePath);
 
     /// <summary>Saving passwords and filling forms, as Settings says.</summary>
     public static void ApplyPreferences()
     {
-        if (Profile is not { } profile) return;
+        if (Profile is { } profile) ApplyPreferences(profile);
+        foreach (var other in Others) ApplyPreferences(other);
+    }
+
+    private static void ApplyPreferences(CoreWebView2Profile profile)
+    {
         try
         {
             profile.IsPasswordAutosaveEnabled = Settings.Current.SavePasswords;
             profile.IsGeneralAutofillEnabled = Settings.Current.Autofill;
         }
         catch { }
+    }
+
+    /// <summary>Another profile's ad blocker as Settings says, from the copy the Default profile downloaded.</summary>
+    private static async Task SyncAdBlockAsync(CoreWebView2Profile profile)
+    {
+        var installed = (await profile.GetBrowserExtensionsAsync()).FirstOrDefault(IsAdBlock);
+        if (Settings.Current.BlockAds)
+        {
+            if (installed is null && DownloadedAdBlock() is { } folder) await profile.AddBrowserExtensionAsync(folder);
+            else if (installed is { IsEnabled: false }) await installed.EnableAsync(true);
+        }
+        else if (installed is { IsEnabled: true }) await installed.EnableAsync(false);
     }
 
     private static CoreWebView2Profile? _privateProfile;
@@ -100,16 +141,9 @@ internal static class Extensions
         return null;
     }
 
-    // Parts of WebView2 itself that it lists as extensions: removing them would break copying and PDFs.
-    private static readonly HashSet<string> BuiltIn = new()
-    {
-        "dgiklkfkllikcanfonkcabmbdfmgleag", // Microsoft Clipboard Extension
-        "mhjfbmdgcfjbbpaeojofohoefgiehjai", // Microsoft Edge PDF Viewer
-    };
-
-    /// <summary>The extensions you've added (and the ad blocker), not WebView2's own parts.</summary>
+    /// <summary>The extensions you've added (and the ad blocker), not WebView2's own parts (Core/WebViewParts.cs).</summary>
     public static async Task<IReadOnlyList<CoreWebView2BrowserExtension>> ListAsync() =>
-        Profile is null ? [] : (await Profile.GetBrowserExtensionsAsync()).Where(e => !BuiltIn.Contains(e.Id)).ToList();
+        Profile is null ? [] : (await Profile.GetBrowserExtensionsAsync()).Where(e => !WebViewParts.IsBuiltIn(e.Id)).ToList();
 
     public static bool IsAdBlock(CoreWebView2BrowserExtension extension) =>
         extension.Id == Settings.Current.AdBlockExtensionId
@@ -144,6 +178,7 @@ internal static class Extensions
                 else if (!installed.IsEnabled) await installed.EnableAsync(true);
             }
             else if (installed is { IsEnabled: true }) await installed.EnableAsync(false);
+            foreach (var other in Others.ToList()) await SyncAdBlockAsync(other);
             SetStatus(null);
         }
         catch (Exception ex)

@@ -91,6 +91,8 @@ public sealed partial class SettingsWindow : Window
         {
             if (e.WindowActivationState == WindowActivationState.Deactivated) return;
             ShowDefaultBrowser();
+            // A Profile may have been made, renamed or deleted in Drift meanwhile.
+            if (AccountsPage.Visibility == Visibility.Visible) ShowProfiles();
             if (_aiRecheck && AiPage.Visibility == Visibility.Visible)
             {
                 _aiRecheck = false;
@@ -159,7 +161,11 @@ public sealed partial class SettingsWindow : Window
         if (page == "general" && PreviewList is not null) ShowPreviews();
         GeneralPage.Visibility = page == "general" ? Visibility.Visible : Visibility.Collapsed;
         AccountsPage.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
-        if (page == "accounts") _ = ShowAccountAsync();
+        if (page == "accounts")
+        {
+            _ = ShowAccountAsync();
+            ShowProfiles();
+        }
         TabsPage.Visibility = page == "tabs" ? Visibility.Visible : Visibility.Collapsed;
         AiPage.Visibility = page == "ai" ? Visibility.Visible : Visibility.Collapsed;
         ShortcutsPage.Visibility = page == "shortcuts" ? Visibility.Visible : Visibility.Collapsed;
@@ -414,6 +420,69 @@ public sealed partial class SettingsWindow : Window
         if (ExtensionsPage.Visibility == Visibility.Visible) _ = ShowExtensionsAsync();
     }
 
+    // ───────────────────────── Profiles ─────────────────────────
+
+    /// <summary>
+    /// Each Profile (ProfileData.cs), as Arc's settings list them: its name, Rename…, and Delete; your default one says so,
+    /// and its Delete is greyed, with the reason, as Safari's can't be deleted. They're Drift's main window's (a private
+    /// window has none of its own).
+    /// </summary>
+    private void ShowProfiles()
+    {
+        ProfileList.Children.Clear();
+        if (App.Main is not { } main) return;
+        foreach (var profile in main.Profiles.ToList())
+        {
+            var isDefault = !ProfileIds.CanDelete(profile.Engine.Id);
+            var row = OneLineRow(profile.Name, isDefault ? "Your default Profile" : "");
+            var rename = new Button { Content = "Rename…", VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetName(rename, $"Rename {profile.Name}");
+            rename.Click += async (_, _) =>
+            {
+                var others = main.Profiles.Where(p => p != profile).Select(p => p.Name).ToList();
+                var name = await MainWindow.AskProfileNameAsync(Content.XamlRoot, Warnings.RenameProfile, others, profile.Name);
+                if (name is null || !main.Profiles.Contains(profile) || ProfileIds.NameTaken(name, others)) return;
+                main.RenameProfile(profile, name);
+                ShowProfiles();
+            };
+            row.Trailing = WithSlot(rename, DeleteProfileButton(main, profile));
+            ProfileList.Children.Add(row);
+        }
+    }
+
+    private FrameworkElement DeleteProfileButton(MainWindow main, Drift.Models.Profile profile)
+    {
+        var delete = SlotButton(RemoveGlyph);
+        AutomationProperties.SetName(delete, $"Delete {profile.Name}");
+        if (!ProfileIds.CanDelete(profile.Engine.Id))
+        {
+            delete.IsEnabled = false;
+            AutomationProperties.SetHelpText(delete, ProfileIds.DefaultCantBeDeleted);
+            // A greyed button shows no tooltip of its own, so it's on what holds it.
+            var holder = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+            holder.Children.Add(delete);
+            ToolTipService.SetToolTip(holder, ProfileIds.DefaultCantBeDeleted);
+            return holder;
+        }
+        ToolTipService.SetToolTip(delete, "Delete Profile");
+        delete.Click += async (_, _) =>
+        {
+            if (!await ConfirmDialog.AskAsync(Content.XamlRoot, Warnings.DeleteProfile(profile.Name))) return;
+            await main.DeleteProfileAsync(profile);
+            ShowProfiles();
+        };
+        return delete;
+    }
+
+    private async void NewProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Main is not { } main) return;
+        var name = await MainWindow.AskProfileNameAsync(Content.XamlRoot, Warnings.NewProfileInSettings, main.Profiles.Select(p => p.Name));
+        if (name is null || ProfileIds.NameTaken(name, main.Profiles.Select(p => p.Name))) return;
+        main.NewProfileNamed(name);
+        ShowProfiles();
+    }
+
     // ───────────────────────── Extensions ─────────────────────────
 
     private async System.Threading.Tasks.Task ShowExtensionsAsync()
@@ -469,6 +538,18 @@ public sealed partial class SettingsWindow : Window
         return grid;
     }
 
+    /// <summary>The small icon button for a row's slot (WithSlot): an extension's Remove, a Profile's Delete.</summary>
+    private static Button SlotButton(string glyph) => new()
+    {
+        Content = new FontIcon { Glyph = glyph, FontSize = 12 },
+        Width = 32,
+        Height = 32,
+        Padding = new Thickness(0),
+        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        BorderThickness = new Thickness(0),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
     private SettingsRow ExtensionRow(CoreWebView2BrowserExtension extension)
     {
         var adBlock = Extensions.IsAdBlock(extension);
@@ -501,16 +582,7 @@ public sealed partial class SettingsWindow : Window
         Button? remove = null;
         if (!adBlock)
         {
-            remove = new Button
-            {
-                Content = new FontIcon { Glyph = RemoveGlyph, FontSize = 12 },
-                Width = 32,
-                Height = 32,
-                Padding = new Thickness(0),
-                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                BorderThickness = new Thickness(0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            remove = SlotButton(RemoveGlyph);
             ToolTipService.SetToolTip(remove, "Remove");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, $"Remove {extension.Name}");
             remove.Click += async (_, _) =>
@@ -811,7 +883,7 @@ public sealed partial class SettingsWindow : Window
             else StartRecording(action);
         };
         button.PreviewKeyDown += Shortcut_PreviewKeyDown;
-        // While recording, Space and Enter are keys to record, not clicks.
+        // While recording, Profile and Enter are keys to record, not clicks.
         button.PreviewKeyUp += (_, e) => { if (_recording is not null) e.Handled = true; };
         button.LostFocus += (_, _) => { if (_recording == action) StopRecording(); };
 

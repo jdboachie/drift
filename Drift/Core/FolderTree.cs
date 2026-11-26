@@ -19,15 +19,15 @@ public sealed class FolderTree
     public const int MaxDepth = 4;
 
     /// <summary>
-    /// A new, empty, open folder, last in its parent (or at the top level). Asked for a fifth
-    /// level, it goes a level up instead.
+    /// A new, empty, open folder, last in its parent (or at the top level, with the pinned tabs or, not
+    /// <paramref name="pinned"/>, with the others). Asked for a fifth level, it goes a level up instead.
     /// </summary>
-    public TabFolder NewFolder(string name, TabFolder? parent = null)
+    public TabFolder NewFolder(string name, TabFolder? parent = null, bool pinned = true)
     {
         // A live folder holds only what its source gives it.
         while (parent is { IsLive: true }) parent = parent.Parent;
         if (parent is not null && DepthOf(parent) + 1 >= MaxDepth) parent = parent.Parent;
-        var folder = new TabFolder(name) { Parent = parent };
+        var folder = new TabFolder(name) { Parent = parent, IsPinned = pinned };
         if (parent is null) _folders.Add(folder);
         else parent.Children.Add(folder);
         return folder;
@@ -87,22 +87,42 @@ public sealed class FolderTree
 
     /// <summary>
     /// Moves a folder into another (or to the top level, for null), to a gap among its contents.
-    /// The index counts the folder itself if it's already there. Opens the folder it goes into.
+    /// The index counts the folder itself if it's already there. Opens the folder it goes into. At the top level,
+    /// it's on the side <paramref name="pinned"/> says (the list it was dropped in), else the side it was on.
     /// </summary>
-    public void MoveFolder(TabFolder folder, TabFolder? into, int index)
+    public void MoveFolder(TabFolder folder, TabFolder? into, int index, bool? pinned = null)
     {
         if (!CanNest(folder, into)) return;
+        var side = pinned ?? folder.IsPinned;
         var from = into is null ? _folders.IndexOf(folder) : into.Children.IndexOf(folder);
         if (from >= 0 && index > from) index--;
         if (folder.Parent is { } old) old.Children.Remove(folder);
         else _folders.Remove(folder);
         folder.Parent = into;
+        folder.IsPinned = side;
         if (into is null) _folders.Insert(Math.Clamp(index, 0, _folders.Count), folder);
         else
         {
             into.Children.Insert(Math.Clamp(index, 0, into.Children.Count), folder);
             SetExpanded(into, true);
         }
+    }
+
+    /// <summary>A top-level group's Pin or Unpin: it moves to the other list, with everything in it.</summary>
+    public void SetPinned(TabFolder folder, bool pinned)
+    {
+        if (folder.Parent is null && _folders.Contains(folder)) folder.IsPinned = pinned;
+    }
+
+    /// <summary>
+    /// The unpinned groups with no tab left in them go, as Chrome's do when their last tab closes or leaves (a pinned
+    /// one stays, empty, as Arc's folders do). Returns those gone.
+    /// </summary>
+    public IReadOnlyList<TabFolder> PruneEmptyGroups()
+    {
+        var gone = _folders.Where(f => !f.IsPinned && !f.IsLive && !f.AllTabs.Any()).ToList();
+        foreach (var folder in gone) _folders.Remove(folder);
+        return gone;
     }
 
     /// <summary>
@@ -146,6 +166,7 @@ public sealed class FolderTree
     public IReadOnlyList<IFolderTab> Delete(TabFolder folder, bool keepTabs)
     {
         var parent = folder.Parent;
+        var side = folder.IsPinned;
         var siblings = parent?.Children ?? _folders.Cast<object>().ToList();
         var at = siblings.IndexOf(folder);
         var handedBack = new List<IFolderTab>();
@@ -161,6 +182,7 @@ public sealed class FolderTree
                 if (child is TabFolder sub)
                 {
                     sub.Parent = parent;
+                    sub.IsPinned = side;
                     if (parent is null) _folders.Insert(++at, sub);
                     else parent.Children.Insert(++at, sub);
                 }
@@ -205,7 +227,7 @@ public sealed class FolderTree
         var next = gap < rows.Count ? rows[gap] : null;
         if (previous is TabFolder { IsExpanded: true } open && Fits(open)) return new FolderDrop(open, 0);
         if (next is IFolderTab { Folder: { } folder } nextTab)
-            return Fits(folder) ? new FolderDrop(folder, folder.Children.IndexOf(nextTab)) : null;
+            return Fits(folder) ? new FolderDrop(folder, FirstIndexOf(folder, nextTab)) : null;
         if (next is TabFolder nextFolder)
         {
             if (nextFolder.Parent is { } parent)
@@ -216,11 +238,18 @@ public sealed class FolderTree
         return previous switch
         {
             _ when dragging is not null => new FolderDrop(null, _folders.Count),
-            IFolderTab { Folder: { } aboveFolder } above when Fits(aboveFolder) => new FolderDrop(aboveFolder, aboveFolder.Children.IndexOf(above) + 1),
+            IFolderTab { Folder: { } aboveFolder } above when Fits(aboveFolder) => new FolderDrop(aboveFolder, LastIndexOf(aboveFolder, above) + 1),
             TabFolder above when Fits(above) => new FolderDrop(above, above.Children.Count),
             _ => null,
         };
     }
+
+    // A row's place among its folder's contents: its own, or for a row standing for tabs there, the first's or the last's.
+    private static int FirstIndexOf(TabFolder folder, IFolderTab row) =>
+        folder.Children.FindIndex(c => c == row || c is IFolderTab tab && row.StandsFor(tab));
+
+    private static int LastIndexOf(TabFolder folder, IFolderTab row) =>
+        folder.Children.FindLastIndex(c => c == row || c is IFolderTab tab && row.StandsFor(tab));
 
     // ── The session (session.json) ──
 
@@ -236,6 +265,7 @@ public sealed class FolderTree
                 Name = folder.Name,
                 Icon = folder.Icon,
                 Parent = folder.Parent?.Id,
+                Unpinned = folder.Parent is null && !folder.IsPinned ? true : null,
                 Expanded = folder.IsExpanded,
                 Position = position,
                 Live = folder.Live?.Kind,
@@ -269,7 +299,12 @@ public sealed class FolderTree
         foreach (var s in list)
         {
             if (string.IsNullOrEmpty(s.Id) || byId.ContainsKey(s.Id)) continue;
-            var folder = new TabFolder(string.IsNullOrWhiteSpace(s.Name) ? "Folder" : s.Name, s.Id) { IsExpanded = s.Expanded, Icon = s.Icon };
+            var folder = new TabFolder(string.IsNullOrWhiteSpace(s.Name) ? "Tab group" : s.Name, s.Id)
+            {
+                IsExpanded = s.Expanded,
+                Icon = s.Icon,
+                IsPinned = s.Unpinned != true,
+            };
             if (s.Live == LiveSource.GitHubPulls)
                 folder.Live = new LiveSource
                 {
@@ -359,10 +394,18 @@ public sealed class FolderTree
         return closed;
     }
 
-    /// <summary>What the sidebar shows, top to bottom: folder headers and tabs, each with its Depth set.</summary>
-    public IReadOnlyList<object> Rows(IFolderTab? active)
+    /// <summary>
+    /// What the sidebar shows, top to bottom: folder headers and tabs, each with its Depth set. With
+    /// <paramref name="pinned"/>, only that side's groups: the pinned list's, or the unpinned list's.
+    /// </summary>
+    /// <param name="rowOf">The row a tab shows as: itself, another standing for it (a split's, shown once, where the first
+    /// of its tabs is), or none.</param>
+    public IReadOnlyList<object> Rows(IFolderTab? active, bool? pinned = null, Func<IFolderTab, IFolderTab?>? rowOf = null)
     {
         var rows = new List<object>();
+        var shown = new HashSet<IFolderTab>();
+        IFolderTab? RowOf(IFolderTab tab) => rowOf is null ? tab : rowOf(tab);
+        var activeRow = active is null ? null : RowOf(active);
         void AddFolder(TabFolder folder, int depth)
         {
             folder.Depth = depth;
@@ -384,15 +427,17 @@ public sealed class FolderTree
             {
                 // Closed: only the tab in front and the ones opened from it since it closed.
                 foreach (var tab in folder.AllTabs)
-                    if (tab == active || folder.Lingering.Contains(tab)) AddTab(tab, depth + 1);
+                    if (tab == active || folder.Lingering.Contains(tab) || activeRow is not null && RowOf(tab) == activeRow) AddTab(tab, depth + 1);
             }
         }
         void AddTab(IFolderTab tab, int depth)
         {
-            tab.Depth = depth;
-            rows.Add(tab);
+            if (RowOf(tab) is not { } row || !shown.Add(row)) return;
+            row.Depth = depth;
+            rows.Add(row);
         }
-        foreach (var folder in _folders) AddFolder(folder, 0);
+        foreach (var folder in _folders)
+            if (pinned is not { } side || folder.IsPinned == side) AddFolder(folder, 0);
         return rows;
     }
 }

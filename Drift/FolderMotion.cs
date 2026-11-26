@@ -36,6 +36,8 @@ public sealed partial class MainWindow
 
     private sealed class FolderMotion
     {
+        // The group list it's in: the pinned groups' or the others'.
+        public required ListView List;
         public required int Level;
         public required MotionRow Header;
         public required List<MotionRow> Rows;
@@ -67,14 +69,16 @@ public sealed partial class MainWindow
     private bool AnimateFolder(TabFolder folder)
     {
         FinishFolderMotion();
-        if (!_uiSettings.AnimationsEnabled || folder.IsRenaming || FolderList.ContainerFromItem(folder) is not ListViewItem) return false;
+        var list = GroupListOf(folder);
+        var listRows = GroupRowsOf(folder);
+        if (!_uiSettings.AnimationsEnabled || folder.IsRenaming || list.ContainerFromItem(folder) is not ListViewItem) return false;
         var opening = !folder.IsExpanded;
         // Closing with the tab in front in it: that tab stays under the header, so it just closes. And the
         // other way: closed but still showing tabs under it, it just opens (starting from the header alone,
         // the tabs showing went and the rows below jumped up, then all came back down).
         if (!opening && _active is IFolderTab front && folder.AllTabs.Contains(front)) return false;
-        var at0 = FolderRows.IndexOf(folder);
-        if (opening && at0 >= 0 && at0 + 1 < FolderRows.Count && DepthOf(FolderRows[at0 + 1]) > folder.Depth) return false;
+        var at0 = listRows.IndexOf(folder);
+        if (opening && at0 >= 0 && at0 + 1 < listRows.Count && DepthOf(listRows[at0 + 1]) > folder.Depth) return false;
 
         // The chevron turns now. Opening, the rows are laid out at once (and cut back to the header before
         // they're drawn); closing, they stay until the edge has come up over them.
@@ -82,41 +86,41 @@ public sealed partial class MainWindow
         double shutRoomBelow;
         if (opening)
         {
-            shutRoomBelow = FolderList.ContainerFromItem(folder) is ListViewItem shut ? shut.Margin.Bottom : RowGap;
+            shutRoomBelow = list.ContainerFromItem(folder) is ListViewItem shut ? shut.Margin.Bottom : RowGap;
             RefreshFolderRowsForMotion();
-            FolderList.UpdateLayout();
+            list.UpdateLayout();
         }
         else
         {
             // Where it'll be once shut: the room under its header then.
-            var next = _folderTree.Rows(_active);
+            var next = _folderTree.Rows(_active, folder.IsPinned, SplitRowInGroup);
             var cards = FolderCard.Layout(next.Select(CardInput).ToList());
             var index = next.ToList().IndexOf(folder);
             shutRoomBelow = RowGap + (index >= 0 ? cards[index].Ends * CardRoom : 0);
         }
-        if (FolderList.ContainerFromItem(folder) is not ListViewItem header)
+        if (list.ContainerFromItem(folder) is not ListViewItem header)
         {
             if (!opening) RefreshFolderRows();
             return true;
         }
 
-        var at = FolderRows.IndexOf(folder);
+        var at = listRows.IndexOf(folder);
         var end = at + 1;
-        while (at >= 0 && end < FolderRows.Count && DepthOf(FolderRows[end]) > folder.Depth) end++;
+        while (at >= 0 && end < listRows.Count && DepthOf(listRows[end]) > folder.Depth) end++;
         var rows = new List<MotionRow>();
         for (var i = at + 1; i < end; i++)
-            if (FolderList.ContainerFromItem(FolderRows[i]) is ListViewItem item)
-                rows.Add(Measure(FolderRows[i], item, item.TransformToVisual(header).TransformPoint(default).Y));
+            if (list.ContainerFromItem(listRows[i]) is ListViewItem item)
+                rows.Add(Measure(listRows[i], item, item.TransformToVisual(header).TransformPoint(default).Y));
         if (rows.Count == 0)
         {
             if (!opening) RefreshFolderRows();
             return true;
         }
-        // Under the folder: the folder list's rows after it, and the rest of the sidebar's list below it.
+        // Under the folder: its list's rows after it, and the rest of the sidebar below that list.
         var below = new List<UIElement>();
-        for (var i = end; i < FolderRows.Count; i++)
-            if (FolderList.ContainerFromItem(FolderRows[i]) is UIElement item) below.Add(item);
-        below.AddRange(SidebarScrollContent.Children.Where(c => Grid.GetRow((FrameworkElement)c) > Grid.GetRow(FolderList)));
+        for (var i = end; i < listRows.Count; i++)
+            if (list.ContainerFromItem(listRows[i]) is UIElement item) below.Add(item);
+        below.AddRange(SidebarScrollContent.Children.Where(c => Grid.GetRow((FrameworkElement)c) > Grid.GetRow(list)));
 
         var last = rows[^1];
         var openRoom = last.Top + last.Height + last.Item.Margin.Bottom;
@@ -131,6 +135,7 @@ public sealed partial class MainWindow
         }
         _folderMotion = new FolderMotion
         {
+            List = list,
             Level = folder.Depth,
             Header = Measure(folder, header, 0),
             Rows = rows,
@@ -235,7 +240,7 @@ public sealed partial class MainWindow
         {
             foreach (var element in row.Content) element.Clip = null;
             // Its own pieces of the cards back (recycled, it may be another row's by now: the list knows whose).
-            IndentFolderRow(row.Item, FolderList.ItemFromContainer(row.Item) ?? row.Row);
+            IndentFolderRow(row.Item, motion.List.ItemFromContainer(row.Item) ?? row.Row);
         }
         if (!motion.Opening) RefreshFolderRowsForMotion();
     }
