@@ -18,8 +18,9 @@ namespace Drift;
 /// Gmail, as in Arc: pin mail.google.com (in Essentials, pinned tabs or a folder) and hovering it
 /// shows your unread emails, newest first, beside it (a click opens one in the Gmail tab), with +
 /// to write a new one. They come from Gmail's unread feed, asked for in the background by a hidden
-/// view on Gmail's site (Integrations.cs), every two minutes, on hover, and soon after the Gmail
-/// tab moves on (reading an email there).
+/// view on Gmail's site (Integrations.cs): as soon as Google tells your Gmail tab something changed (GooglePushScript:
+/// new mail, mail read anywhere), on hover, soon after the Gmail tab moves on (reading an email there), and every two
+/// minutes in case the push was missed.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -57,7 +58,7 @@ public sealed partial class MainWindow
 
     private void MailTick()
     {
-        var tab = Settings.Current.PreviewGmail ? EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsMailTab) : null;
+        var tab = Settings.Current.PreviewGmail ? PinnedInEveryProfile.FirstOrDefault(IsMailTab) : null;
         if (tab != _mailTab)
         {
             _mailTab = tab;
@@ -89,7 +90,7 @@ public sealed partial class MainWindow
         _mailFetching = true;
         try
         {
-            var core = await HiddenSiteAsync(GmailFeed.Base);
+            var core = await HiddenSiteAsync(GmailFeed.Base, EngineOfIntegration(_mailTab));
             var xml = await MailFeedAsync(core);
             if (xml is null)
             {
@@ -128,6 +129,32 @@ public sealed partial class MainWindow
             _mailFetched = DateTimeOffset.Now;
         }
         if (_hoverCard == MailCard) RenderMailCard();
+        // Google said something changed while this was asking: asked again, for what this may have missed.
+        if (_mailPushedMeanwhile)
+        {
+            _mailPushedMeanwhile = false;
+            MailPushed();
+        }
+    }
+
+    // ---- Google's push ----
+
+    // The change reaches the feed a moment after the page hears of it: asked once it's there, and once for a burst.
+    private static readonly TimeSpan MailPushSettle = TimeSpan.FromSeconds(2);
+    private DispatcherQueueTimer? _mailPushTimer;
+    private bool _mailPushedMeanwhile;
+
+    /// <summary>Google said your mail changed: asked again once it's in the feed, or after the ask under way.</summary>
+    private void MailPushed()
+    {
+        if (_mailTab is null) return;
+        _mailPushTimer ??= OneShot(MailPushSettle, () =>
+        {
+            if (_mailFetching) _mailPushedMeanwhile = true;
+            else _ = FetchMailAsync();
+        });
+        _mailPushTimer.Stop();
+        _mailPushTimer.Start();
     }
 
     /// <summary>The feed's text, or null if Gmail won't give it (signed out, or not answering).</summary>
@@ -138,7 +165,7 @@ public sealed partial class MainWindow
               const stop = new AbortController();
               setTimeout(() => stop.abort(), 15000);
               try {
-                const r = await fetch('{{GmailFeed.FeedPath(MailAccount)}}', { credentials: 'include', signal: stop.signal });
+                const r = await fetch('{{GmailFeed.FeedPath(MailAccount)}}', { credentials: 'include', cache: 'no-store', signal: stop.signal });
                 return r.ok ? await r.text() : null;
               } catch { return null; }
             })()

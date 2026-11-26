@@ -22,10 +22,13 @@ public sealed partial class MainWindow
     /// A hidden view, its engine object held here for as long as the view lives: WebView2 calls back
     /// into the handler subscribed on it, so neither may be let go while it's open.
     /// </summary>
-    private sealed class HiddenSite(CoreWebView2Controller controller, CoreWebView2 core)
+    private sealed class HiddenSite(CoreWebView2Controller controller, CoreWebView2 core, string? engine)
     {
         public CoreWebView2Controller Controller { get; } = controller;
         public CoreWebView2 Core { get; } = core;
+
+        /// <summary>The engine profile it's signed in with (null: the engine's own, Default).</summary>
+        public string? Engine { get; } = engine;
 
         /// <summary>The page being waited for, done when it's loaded (or the next one's asked for).</summary>
         public TaskCompletionSource<bool>? Loading { get; set; }
@@ -42,20 +45,37 @@ public sealed partial class MainWindow
 
     // ---- Hidden views ----
 
+    /// <summary>The engine profile an integration's tab is in, for its hidden view to be signed in as the tab is.</summary>
+    private string? EngineOfIntegration(BrowserTab? tab) =>
+        tab is not null && EngineOf(tab) is { IsEngineDefault: false } engine ? engine.Id : null;
+
     /// <summary>
-    /// The hidden view on <paramref name="start"/>'s site, started (at <paramref name="start"/>) the first time,
-    /// <paramref name="setUp"/> first having its say.
+    /// The hidden view on <paramref name="start"/>'s site, in <paramref name="engine"/>'s profile (null: Default), so
+    /// it's signed in as the tab it's for is; started (at <paramref name="start"/>) the first time, <paramref name="setUp"/>
+    /// first having its say. One on another profile (its tab moved to another Profile) is closed first.
     /// </summary>
-    private async Task<CoreWebView2> HiddenSiteAsync(Uri start, Func<CoreWebView2, Task>? setUp = null)
+    private async Task<CoreWebView2> HiddenSiteAsync(Uri start, string? engine, Func<CoreWebView2, Task>? setUp = null)
     {
-        if (_hiddenSites.TryGetValue(start.Host, out var open)) return open.Core;
+        if (_hiddenSites.TryGetValue(start.Host, out var open))
+        {
+            if (open.Engine == engine) return open.Core;
+            CloseHiddenSite(start.Host);
+        }
         var environment = await EnvironmentAsync();
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        var controller = await environment.CreateCoreWebView2ControllerAsync(CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)hwnd));
+        var window = CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)hwnd);
+        CoreWebView2Controller controller;
+        if (engine is null) controller = await environment.CreateCoreWebView2ControllerAsync(window);
+        else
+        {
+            var options = environment.CreateCoreWebView2ControllerOptions();
+            options.ProfileName = engine;
+            controller = await environment.CreateCoreWebView2ControllerAsync(window, options);
+        }
         controller.IsVisible = false;
         controller.Bounds = new Windows.Foundation.Rect(0, 0, 0, 0);
         var core = controller.CoreWebView2;
-        var site = new HiddenSite(controller, core);
+        var site = new HiddenSite(controller, core, engine);
         core.IsMuted = true;
         // A site asking for a password (Gmail's feed, signed out) gets no answer rather than waiting for one.
         core.BasicAuthenticationRequested += (_, e) => e.Cancel = true;

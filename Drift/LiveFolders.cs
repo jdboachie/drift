@@ -217,7 +217,7 @@ public sealed partial class MainWindow
         _liveAskedFor = false;
         try
         {
-            var core = await Deadline.Within<CoreWebView2?>(HiddenSiteAsync(GitHubPulls.Base), LiveOpenLimit, fallback: null);
+            var core = await Deadline.Within<CoreWebView2?>(HiddenSiteAsync(GitHubPulls.Base, engine: null), LiveOpenLimit, fallback: null);
             if (core is null)
             {
                 LiveLog("no answer: GitHub's page didn't open in time");

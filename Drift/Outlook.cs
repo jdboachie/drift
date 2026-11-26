@@ -65,7 +65,7 @@ public sealed partial class MainWindow
     /// <summary>The pinned tabs with Outlook's mail and calendar whose previews are on: the ones with cards.</summary>
     private (BrowserTab? Mail, BrowserTab? Calendar) PinnedOutlook()
     {
-        var pinned = EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).Where(t => t.IsPinned).ToList();
+        var pinned = PinnedInEveryProfile.Where(t => t.IsPinned).ToList();
         return (Settings.Current.PreviewOutlookMail ? pinned.FirstOrDefault(t => OutlookApi.IsMail(PageOf(t))) : null,
             Settings.Current.PreviewOutlookCalendar ? pinned.FirstOrDefault(t => OutlookApi.IsCalendar(PageOf(t))) : null);
     }
@@ -119,7 +119,7 @@ public sealed partial class MainWindow
         try
         {
             var host = OutlookHost;
-            var core = await HiddenSiteAsync(OutlookApi.Start(host), ListenToOutlookAsync);
+            var core = await HiddenSiteAsync(OutlookApi.Start(host), EngineOfIntegration(_outlookMailTab ?? _outlookCalendarTab), ListenToOutlookAsync);
             // Left at Microsoft's sign-in last time: tried again, since signing in to Outlook in a tab
             // signs this in too.
             if (!await OutlookReadyAsync(core) && !OutlookApi.IsOutlook(Uri.TryCreate(core.Source, UriKind.Absolute, out var at) ? at : null))

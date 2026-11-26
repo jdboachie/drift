@@ -29,8 +29,9 @@ namespace Drift;
 /// - a minute before a meeting, if the card can't be seen (the sidebar's hidden, or the card closed),
 ///   a notice says what it is, with Join.
 /// Your calendars come from Google's own export (Settings › Export), asked for in the background as
-/// the signed-in page would, by a hidden view on the calendar's site, every five minutes
-/// (CalendarFeed.cs reads it). Nothing to set up, and nothing leaves Drift.
+/// the signed-in page would, by a hidden view on the calendar's site (CalendarFeed.cs reads it): as soon as
+/// Google tells your calendar tab something changed (GooglePushScript), and every five minutes in case
+/// that was missed. Nothing to set up, and nothing leaves Drift.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -76,7 +77,7 @@ public sealed partial class MainWindow
         tab.IsPinned && GoogleCalendarLinks.IsCalendar(tab.HomeUri ?? (Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) ? u : null));
 
     private BrowserTab? FindCalendarTab() =>
-        Settings.Current.PreviewGoogleCalendar ? EssentialTabs.Concat(PinnedPages).Concat(FolderTabs).FirstOrDefault(IsCalendarTab) : null;
+        Settings.Current.PreviewGoogleCalendar ? PinnedInEveryProfile.FirstOrDefault(IsCalendarTab) : null;
 
     private int CalendarAccount => GoogleCalendarLinks.Account(_calendarTab?.HomeUri);
 
@@ -174,10 +175,10 @@ public sealed partial class MainWindow
         _calendarFetching = true;
         try
         {
-            var core = await HiddenSiteAsync(GoogleCalendarLinks.Base);
+            var core = await HiddenSiteAsync(GoogleCalendarLinks.Base, EngineOfIntegration(_calendarTab));
             var script = $$"""
                 (async () => {
-                  const r = await fetch('{{GoogleCalendarLinks.ExportPath(CalendarAccount)}}', { credentials: 'include' });
+                  const r = await fetch('{{GoogleCalendarLinks.ExportPath(CalendarAccount)}}', { credentials: 'include', cache: 'no-store' });
                   const type = r.headers.get('content-type') || '';
                   if (!r.ok || !type.includes('zip')) return { ok: false, status: r.status, type };
                   const bytes = new Uint8Array(await r.arrayBuffer());
@@ -217,6 +218,67 @@ public sealed partial class MainWindow
             _calendarFetching = false;
         }
         ShowCalendarNow();
+        // Google said something changed while this was asking: asked again, for what this may have missed.
+        if (_calendarPushedMeanwhile)
+        {
+            _calendarPushedMeanwhile = false;
+            CalendarPushed();
+        }
+    }
+
+    // ---- Google's push ----
+
+    // The change reaches the export a moment after the page hears of it: asked once it's there, and once for a burst.
+    private static readonly TimeSpan CalendarPushSettle = TimeSpan.FromSeconds(2);
+    private DispatcherQueueTimer? _calendarPushTimer;
+    private bool _calendarPushedMeanwhile;
+
+    /// <summary>The most a keep-alive (or other small note) on Google's channel takes: 43–116 bytes seen; a change is 276 or more.</summary>
+    private const int GoogleKeepAliveBytes = 200;
+
+    /// <summary>
+    /// In Google Calendar's and Gmail's pages (a tab's, in InputScript): Google's push. Each page keeps a channel open
+    /// to Google (signaler-pa…/punctual/multi-watch/channel), and when your calendar or mail changes (anywhere: your
+    /// phone, another browser), Google says so down it. Only how much arrives is looked at, never what; more than a
+    /// keep-alive tells Drift (CalendarPushed, MailPushed). Not the page's own ask for what changed that follows (Calendar's
+    /// sync.sync, Gmail's sync i/s): a page in the background can put it off for minutes, and Gmail's in front is held open
+    /// and asked again every 30s or so, change or not. Needs post and token.
+    /// </summary>
+    private static string GooglePushScript() => """
+          if (location.hostname === 'calendar.google.com' || location.hostname === 'mail.google.com') {
+            const pushed = token + (location.hostname === 'mail.google.com' ? ':mail-pushed' : ':calendar-pushed');
+            const measured = new WeakSet();
+            const googleOpen = XMLHttpRequest.prototype.open;
+            XMLHttpRequest.prototype.open = function (method, url) {
+              try {
+                const u = new URL(String(url), location.href);
+                if (/^signaler-pa\./.test(u.hostname) && /\/multi-watch\/channel$/.test(u.pathname)
+                  && String(method).toUpperCase() === 'GET' && !measured.has(this)) {
+                  // The channel arrives in pieces as Google sends them: each one measured on its way past.
+                  measured.add(this);
+                  let seen = 0;
+                  this.addEventListener('loadstart', () => { seen = 0; });
+                  this.addEventListener('progress', (e) => {
+                    try { const piece = e.loaded - seen; seen = e.loaded; if (piece > __KEEPALIVE__) post(pushed); } catch { }
+                  });
+                }
+              } catch { }
+              return googleOpen.apply(this, arguments);
+            };
+          }
+        """.Replace("__KEEPALIVE__", GoogleKeepAliveBytes.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>Google said a calendar changed: asked again once it's in the export, or after the ask under way.</summary>
+    private void CalendarPushed()
+    {
+        if (_calendarTab is null) return;
+        _calendarPushTimer ??= OneShot(CalendarPushSettle, () =>
+        {
+            if (_calendarFetching) _calendarPushedMeanwhile = true;
+            else _ = FetchCalendarAsync();
+        });
+        _calendarPushTimer.Stop();
+        _calendarPushTimer.Start();
     }
 
     private static List<string> Unzip(byte[] zip)

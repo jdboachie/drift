@@ -145,7 +145,7 @@ public sealed partial class MainWindow : Window
               } catch { }
             __PIP__
             })();
-            """.Replace("__PIP__", PipScript() + MediaScript() + OutlookPushScript() + SwipeScript()).Replace("__TOKEN__", ShortcutToken).Replace("__KEYS__", keys);
+            """.Replace("__PIP__", PipScript() + MediaScript() + OutlookPushScript() + GooglePushScript() + SwipeScript()).Replace("__TOKEN__", ShortcutToken).Replace("__KEYS__", keys);
     }
 
     // Each view's copy of the script, so it can be swapped when shortcuts change.
@@ -309,6 +309,14 @@ public sealed partial class MainWindow : Window
 
     /// <summary>The pinned tabs, those in a split too (its row is in their place in the pinned list).</summary>
     private IEnumerable<BrowserTab> PinnedPages => PinnedTabs.SelectMany(RegularTabsOf).Where(t => t.Place == TabPlace.Pinned);
+
+    /// <summary>
+    /// Every Profile's Essentials, pinned tabs and tab groups' tabs, the Profiles in order: where the integrations
+    /// (Gmail, the calendars, Outlook) find their tabs, so they follow them whichever Profile is on screen.
+    /// </summary>
+    private IEnumerable<BrowserTab> PinnedInEveryProfile => Profiles.SelectMany(p => p.Essentials
+        .Concat(p.Pinned.SelectMany(RegularTabsOf).Where(t => t.Place == TabPlace.Pinned))
+        .Concat(p.Tree.AllTabs.Cast<BrowserTab>()));
 
     /// <summary>
     /// A row of the tab list or the pinned list: its tab, or for a split's row (Split.cs), the split's
@@ -2512,6 +2520,18 @@ public sealed partial class MainWindow : Window
         if (command == "outlook-pushed")
         {
             OutlookPushed();
+            return;
+        }
+        // Google pushed a change to a Google Calendar tab (GooglePushScript).
+        if (command == "calendar-pushed")
+        {
+            CalendarPushed();
+            return;
+        }
+        // Google pushed a change to a Gmail tab (GooglePushScript).
+        if (command == "mail-pushed")
+        {
+            MailPushed();
             return;
         }
         if (command.StartsWith("link:", StringComparison.Ordinal))
