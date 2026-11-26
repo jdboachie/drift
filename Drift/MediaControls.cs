@@ -202,6 +202,10 @@ public sealed partial class MainWindow
             _mediaTab = tab;
             if (tab is null) CollapseMediaNow();
             MediaBarRow.Visibility = MediaCard.Visibility = tab is null ? Visibility.Collapsed : Visibility.Visible;
+            // The meeting card sits above it while it's there.
+            PlaceMeetingCard();
+            BindMeetingPush();
+            CutTabs();
             if (arriving)
             {
                 MediaCard.CenterPoint = new Vector3(100, CompactHeight / 2, 0);
@@ -394,36 +398,14 @@ public sealed partial class MainWindow
             _mediaGrow = compositor.CreatePropertySet();
             _mediaGrow.InsertScalar("T", 0);
         }
-        var shape = compositor.CreateRoundedRectangleGeometry();
-        shape.CornerRadius = new Vector2(8);
-        ExpressionAnimation Bind(string expression)
-        {
-            var animation = compositor.CreateExpressionAnimation(expression);
-            animation.SetReferenceParameter("p", _mediaGrow);
-            animation.SetScalarParameter("w", width);
-            animation.SetScalarParameter("h", height);
-            animation.SetScalarParameter("c", CompactHeight);
-            return animation;
-        }
-        shape.StartAnimation("Offset", Bind("Vector2(0, (h - c) * (1 - p.T))"));
-        shape.StartAnimation("Size", Bind("Vector2(w, c + (h - c) * p.T)"));
-        visual.Clip = compositor.CreateGeometricClip(shape);
-
-        // Past open, the cut rises above the card's top, and the card stretches up to fill it, from
-        // its foot; its contents stay where they are.
-        var back = ElementCompositionPreview.GetElementVisual(MediaCard.Back);
-        back.CenterPoint = new Vector3(0, height, 0);
-        back.StartAnimation("Scale", Bind("Vector3(1, 1 + Max(p.T - 1, 0) * (h - c) / h, 1)"));
+        BindGrow(MediaCard.Body, MediaCard.Back, _mediaGrow, width, height);
 
         // The card is see-through, like a selected tab, so the tabs it would cover are cut off above
-        // it as it rises: under it there's only the sidebar.
-        var tabs = ElementCompositionPreview.GetElementVisual(ProfileViewport);
-        if (tabs.Clip is not InsetClip cut)
-        {
-            cut = compositor.CreateInsetClip();
-            tabs.Clip = cut;
-        }
-        cut.StartAnimation("BottomInset", Bind("Max(p.T, 0) * (h - c)"));
+        // it as it rises: under it there's only the sidebar. A meeting card above it goes up with it
+        // (MeetingCard.cs).
+        _mediaGrowth = Math.Max(0, height - CompactHeight);
+        CutTabs();
+        BindMeetingPush();
 
         // The solid card and the new rows fade in as it opens, and out as it shuts.
         MediaCard.Plate.OpacityTransition ??= new ScalarTransition { Duration = TimeSpan.FromMilliseconds(150) };
@@ -459,12 +441,10 @@ public sealed partial class MainWindow
         var back = ElementCompositionPreview.GetElementVisual(MediaCard.Back);
         back.StopAnimation("Scale");
         back.Scale = Vector3.One;
-        // The Profiles' viewport keeps its clip (it cuts off the other Profiles' sidebars): only the cut goes.
-        if (ElementCompositionPreview.GetElementVisual(ProfileViewport).Clip is InsetClip cut)
-        {
-            cut.StopAnimation("BottomInset");
-            cut.BottomInset = 0;
-        }
+        _mediaGrow?.StopAnimation("T");
+        _mediaGrow?.InsertScalar("T", 0);
+        // Only the meeting card's part of the cut is left, if it has one.
+        CutTabs();
         StopMarquee();
     }
 

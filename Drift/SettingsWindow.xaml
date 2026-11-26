@@ -136,7 +136,7 @@
                             <!-- Not a preview (it comes by itself), so a group of its own. -->
                             <local:SettingsGroup>
                                 <local:SettingsRow Header="Remind me a minute before a meeting"
-                                                   Description="Works with a pinned Google or Outlook calendar">
+                                                   Description="When the sidebar's hidden or you've closed the meeting. Works with a pinned Google or Outlook calendar.">
                                     <ToggleSwitch x:Name="RemindersToggle" Toggled="RemindersToggle_Toggled" />
                                 </local:SettingsRow>
                             </local:SettingsGroup>

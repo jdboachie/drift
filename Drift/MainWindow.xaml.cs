@@ -361,6 +361,7 @@ public sealed partial class MainWindow : Window
         MediaCard.Owner = this;
         CaptionBar.Owner = this;
         MeetingNotice.Owner = this;
+        MeetingCard.Owner = this;
         CommandLayer.Owner = this;
         SwitcherLayer.Owner = this;
         Library.Owner = this;

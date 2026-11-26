@@ -431,11 +431,30 @@
                  upward over the tab list into a card with the title (scrolling by if it's long), the
                  artist or site, picture-in-picture and close, and a bar to seek with. MediaBarRow keeps
                  the compact bar's room in the sidebar; MediaCard is what shows, over it. -->
-            <Border x:Name="MediaBarRow"
-                    Grid.Row="8"
-                    Margin="0,4,4,0"
-                    Height="40"
-                    Visibility="Collapsed" />
+            <!-- The next meeting, above the mini player (MeetingCard.cs): a row with its name and countdown
+                 from up to an hour before. Hovered, or from ten minutes before, it grows upward the same way
+                 into a card with when, the call and who's coming, and Join. MeetingBarRow keeps the row's room;
+                 the mini player growing pushes MeetingCard up. -->
+            <StackPanel Grid.Row="8">
+                <Border x:Name="MeetingBarRow"
+                        Margin="0,4,4,0"
+                        Height="40"
+                        Visibility="Collapsed" />
+                <Border x:Name="MediaBarRow"
+                        Margin="0,4,4,0"
+                        Height="40"
+                        Visibility="Collapsed" />
+            </StackPanel>
+            <local:MeetingCardView x:Name="MeetingCard"
+                                   Grid.Row="7"
+                                   Grid.RowSpan="2"
+                                   Margin="0,4,4,0"
+                                   Height="40"
+                                   VerticalAlignment="Bottom"
+                                   Visibility="Collapsed"
+                                   PointerEntered="MeetingCard_PointerEntered"
+                                   PointerExited="MeetingCard_PointerExited"
+                                   SizeChanged="MeetingCard_SizeChanged" />
             <local:MediaCardView x:Name="MediaCard"
                                  Grid.Row="7"
                                  Grid.RowSpan="2"
@@ -444,7 +463,8 @@
                                  VerticalAlignment="Bottom"
                                  Visibility="Collapsed"
                                  PointerEntered="MediaCard_PointerEntered"
-                                 PointerExited="MediaCard_PointerExited" />
+                                 PointerExited="MediaCard_PointerExited"
+                                 SizeChanged="MediaCard_SizeChanged" />
 
             <!-- The library (bookmarks, downloads and history), like Zen's button in the same place. -->
             <Button x:Name="LibraryButton"

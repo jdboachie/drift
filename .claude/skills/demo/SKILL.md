@@ -49,6 +49,10 @@ For refactors, compare the demo before and after on the same fixed session:
 3. `capture.ps1`, then `compare.ps1 -Before a.png -After b.png -Region x,y,w,h -Diff diff.png`. It compares edges, not raw colours, since the acrylic backdrop shows what's behind the window and changes between captures. Translucent strokes (dividers, card borders) can still differ when the backdrop does; read the diff image.
 4. Drive the changed behaviour with UI Automation (open, press, close) and diff the before and after output.
 
+## A calendar to show
+
+The demo isn't signed in to a Google calendar of its own. Set `DRIFT_DEMO_CALENDAR` to an .ics file's path before `build.ps1` or `run.ps1` (the demo inherits it) and its pinned Google Calendar reads that file instead, again every 15 seconds: rewrite the file to move a meeting about (12 minutes out shows the meeting card's row, 8 opens it, 4 brings Join, 0.5 the reminder when the sidebar's hidden). Use `X-GOOGLE-CONFERENCE:` for a Meet link and `ATTENDEE;CN=Name:mailto:…` lines for faces.
+
 Hover states need the mouse, so ask before checking them.
 
 Hover cards (folders, Gmail, calendars) need a real hover, which needs the mouse, so ask first.

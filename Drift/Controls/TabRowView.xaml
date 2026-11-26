@@ -59,15 +59,10 @@
                        AutomationProperties.Name="Tab name"
                        KeyDown="TabName_KeyDown"
                        LostFocus="TabName_LostFocus" />
-            <!-- A calendar's next meeting (GoogleCalendar.cs): "in 5m", then Join. -->
+            <!-- A calendar's next meeting (GoogleCalendar.cs): "in 5m". Join is on the meeting card (MeetingCard.cs). -->
             <TextBlock Grid.Column="2" Text="{x:Bind Tab.MeetingText, Mode=OneWay}" FontSize="12"
                        VerticalAlignment="Center" Foreground="{ThemeResource DriftSecondaryTextBrush}"
                        Visibility="{x:Bind Tab.MeetingTextVisibility, Mode=OneWay}" />
-            <Button Grid.Column="2" Content="Join" Tag="{x:Bind Tab, Mode=OneWay}" Click="MeetingJoin_Click"
-                    Style="{StaticResource AccentButtonStyle}"
-                    FontSize="12" Padding="10,1,10,2" MinHeight="0" MinWidth="0" CornerRadius="10"
-                    VerticalAlignment="Center"
-                    Visibility="{x:Bind Tab.JoinVisibility, Mode=OneWay}" />
         <!-- New in a live folder (LiveFolders.cs), until it's opened. -->
         <Ellipse Grid.Column="2" Width="6" Height="6" Margin="0,0,6,0"
                  VerticalAlignment="Center"

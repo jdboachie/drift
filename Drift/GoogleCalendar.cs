@@ -23,9 +23,11 @@ namespace Drift;
 /// <summary>
 /// Google Calendar, as in Arc: pin calendar.google.com (in Essentials, pinned tabs or a folder) and
 /// sign in, and
-/// - its tile counts down to your next meeting ("in 5m"), with Join once it can be joined;
+/// - its tile counts down to your next meeting ("in 5m");
+/// - the meeting card at the foot of the sidebar has the meeting, opening itself with Join (MeetingCard.cs);
 /// - hovering it shows today's meetings, beside it, with Join on the one about to start;
-/// - a minute before a meeting a notice says what it is, with Join.
+/// - a minute before a meeting, if the card can't be seen (the sidebar's hidden, or the card closed),
+///   a notice says what it is, with Join.
 /// Your calendars come from Google's own export (Settings › Export), asked for in the background as
 /// the signed-in page would, by a hidden view on the calendar's site, every five minutes
 /// (CalendarFeed.cs reads it). Nothing to set up, and nothing leaves Drift.
@@ -83,7 +85,7 @@ public sealed partial class MainWindow
         var tab = FindCalendarTab();
         if (tab != _calendarTab)
         {
-            _calendarTab?.SetMeeting(null, null);
+            _calendarTab?.SetMeeting(null);
             _calendarTab = tab;
             _calendarTabUrl = null;
             _calendarNextFetch = default;
@@ -93,6 +95,7 @@ public sealed partial class MainWindow
             _calendarEvents = [];
             if (_hoverCard == CalendarCard && (_hoverTab is null || HoverCardFor(_hoverTab) is null)) HideHoverCard();
             CloseHiddenSite(GoogleCalendarLinks.Host);
+            UpdateMeetingCard();
             return;
         }
         // Moved on in its tab (as saving an event there does): fetched again, to show what changed.
@@ -121,16 +124,21 @@ public sealed partial class MainWindow
         ShowNoticeAndCardNow();
     }
 
-    /// <summary>A calendar tab's countdown (or Join), and reminders of its meetings that are due.</summary>
+    /// <summary>
+    /// A calendar tab's countdown, the meeting card, and reminders of its meetings that are due. The card
+    /// has the meeting, with Join, wherever it can be seen, so the reminder is only for when it can't.
+    /// </summary>
     private void ShowMeetings(BrowserTab tab, IReadOnlyList<CalendarEvent> events)
     {
         var now = DateTimeOffset.Now;
         var next = MeetingClock.Upcoming(events, now);
-        tab.SetMeeting(next is null ? null : MeetingClock.Countdown(next, now),
-            next is not null && MeetingClock.CanJoin(next, now) ? next.JoinUrl : null);
+        tab.SetMeeting(next is null ? null : MeetingClock.Countdown(next, now));
+        UpdateMeetingCard();
         foreach (var due in MeetingClock.DueReminders(events, now, _remindedMeetings))
         {
             if (!Settings.Current.MeetingReminders) break;
+            // Not marked as reminded: hide the sidebar or close the card while it's due, and it comes then.
+            if (MeetingCardShows(due)) continue;
             _remindedMeetings.Add(MeetingClock.Key(due));
             ShowMeetingNotice(due, tab);
         }
@@ -145,12 +153,24 @@ public sealed partial class MainWindow
             else MeetingNotice.When.Text = MeetingClock.Countdown(shown, now);
         }
         if (_hoverCard == CalendarCard) RenderCalendarCard(scroll: false);
+        UpdateMeetingCard();
     }
 
     // ---- Fetching ----
 
     private async Task FetchCalendarAsync()
     {
+        // The demo copy (.claude/skills/demo) isn't signed in to a calendar: it can be handed one to show, read
+        // again every 15 seconds, so a test can move its meetings about.
+        if (Environment.GetEnvironmentVariable("DRIFT_DEMO_CALENDAR") is { Length: > 0 } demo && File.Exists(demo))
+        {
+            _calendarFiles = [File.ReadAllText(demo)];
+            _calendarState = CalendarState.Ready;
+            _calendarNextFetch = DateTimeOffset.Now + TimeSpan.FromSeconds(15);
+            WorkOutCalendarDay();
+            ShowCalendarNow();
+            return;
+        }
         _calendarFetching = true;
         try
         {
@@ -210,11 +230,6 @@ public sealed partial class MainWindow
     }
 
     // ---- Join, open ----
-
-    internal void MeetingJoin_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.Tag is BrowserTab { MeetingJoinUrl: { } url }) JoinMeeting(url);
-    }
 
     private void JoinMeeting(string url)
     {

@@ -21,16 +21,11 @@
         <Image Source="{x:Bind Tab.Favicon, Mode=OneWay}" Width="18" Height="18"
                Margin="{x:Bind Tab.FaviconMargin, Mode=OneWay}"
                Opacity="{x:Bind Tab.ContentOpacity, Mode=OneWay}" />
-        <!-- A calendar's next meeting (GoogleCalendar.cs): "in 5m", then Join. -->
+        <!-- A calendar's next meeting (GoogleCalendar.cs): "in 5m". Join is on the meeting card (MeetingCard.cs). -->
         <TextBlock Text="{x:Bind Tab.MeetingText, Mode=OneWay}" FontSize="10"
                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,5"
                    Foreground="{ThemeResource DriftSecondaryTextBrush}"
                    Visibility="{x:Bind Tab.MeetingTextVisibility, Mode=OneWay}" />
-        <Button Content="Join" Tag="{x:Bind Tab, Mode=OneWay}" Click="MeetingJoin_Click"
-                Style="{StaticResource AccentButtonStyle}"
-                FontSize="10" Padding="8,0,8,1" MinHeight="0" MinWidth="0" CornerRadius="8"
-                HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,3"
-                Visibility="{x:Bind Tab.JoinVisibility, Mode=OneWay}" />
         <!-- While this tab has a page open in Peek, that page's icon sits on the corner. -->
         <Border Width="22" Height="22"
                 Margin="0,-4,-4,0"

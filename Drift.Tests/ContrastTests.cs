@@ -33,6 +33,20 @@ public class ContrastTests
         Assert.True(Ratio(faded, Parse(sidebar)) >= 3, $"{theme}: {Ratio(faded, Parse(sidebar)):N2}");
     }
 
+    [Theory]
+    [InlineData("Light")]
+    [InlineData("Dark")]
+    public void A_meeting_s_faces_read_in_white(string theme)
+    {
+        var keys = Enumerable.Range(0, MeetingBar.FaceColors).Select(i => $"DriftFace{i}Brush").Append("DriftFaceMoreBrush");
+        foreach (var key in keys)
+        {
+            var face = Brush(theme, key);
+            var ratio = Ratio((255, 255, 255), (face.r, face.g, face.b));
+            Assert.True(ratio >= 4.5, $"{theme} {key}: {ratio:N2}");
+        }
+    }
+
     private static (double r, double g, double b, double a) Brush(string theme, string key)
     {
         var xaml = File.ReadAllText(Path.Combine(RepoRoot(), "Drift", "Styles", "Colors.xaml"));

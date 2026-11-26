@@ -46,6 +46,16 @@
             <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.16" />
             <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.24" />
             <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.2" />
+            <!-- The people coming to a meeting (MeetingCardView): an initial in white on one of these, the same
+                 one every time for the same name, ringed in the card's colour; then "+3" on the last. -->
+            <SolidColorBrush x:Key="DriftFace0Brush" Color="#B4421A" />
+            <SolidColorBrush x:Key="DriftFace1Brush" Color="#0F766E" />
+            <SolidColorBrush x:Key="DriftFace2Brush" Color="#6D28D9" />
+            <SolidColorBrush x:Key="DriftFace3Brush" Color="#1D4ED8" />
+            <SolidColorBrush x:Key="DriftFace4Brush" Color="#9D174D" />
+            <SolidColorBrush x:Key="DriftFace5Brush" Color="#4D7C0F" />
+            <SolidColorBrush x:Key="DriftFaceMoreBrush" Color="#475569" />
+            <SolidColorBrush x:Key="DriftFaceRingBrush" Color="#F6F6F6" />
             <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#F3F3F3" />
             <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#EBEBEB" />
@@ -90,6 +100,14 @@
             <SolidColorBrush x:Key="DriftCalendarEventBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.28" />
             <SolidColorBrush x:Key="DriftCalendarEventHoverBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.38" />
             <SolidColorBrush x:Key="DriftCalendarEventPressedBrush" Color="{ThemeResource SystemAccentColor}" Opacity="0.33" />
+            <SolidColorBrush x:Key="DriftFace0Brush" Color="#B4421A" />
+            <SolidColorBrush x:Key="DriftFace1Brush" Color="#0F766E" />
+            <SolidColorBrush x:Key="DriftFace2Brush" Color="#6D28D9" />
+            <SolidColorBrush x:Key="DriftFace3Brush" Color="#1D4ED8" />
+            <SolidColorBrush x:Key="DriftFace4Brush" Color="#9D174D" />
+            <SolidColorBrush x:Key="DriftFace5Brush" Color="#4D7C0F" />
+            <SolidColorBrush x:Key="DriftFaceMoreBrush" Color="#475569" />
+            <SolidColorBrush x:Key="DriftFaceRingBrush" Color="#2E2E2E" />
             <SolidColorBrush x:Key="DriftPeekButtonBrush" Color="#2D2D2D" />
             <SolidColorBrush x:Key="DriftPeekButtonHoverBrush" Color="#383838" />
             <SolidColorBrush x:Key="DriftPeekButtonPressedBrush" Color="#323232" />

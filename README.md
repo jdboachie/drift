@@ -140,10 +140,14 @@ Same split as Arc: an unmodified engine with your own UI on top.
   ⋯ › Reopen closed tab) brings back the last tab closed, in its group and place; closed tabs are
   remembered across restarts.
 - **Google Calendar**, as in Arc: pin calendar.google.com (Essentials, pinned tabs or a folder)
-  and sign in there. Its tile counts down to your next meeting within the hour ("in 12m"), then
-  shows Join from five minutes before; hovering it shows today's meetings beside it, with Join on
-  the one about to start, a click on any opening it in the calendar tab, and + for a new event; a
-  minute before a meeting a notice says what it is, with Join. Drift reads your calendars from
+  and sign in there. Its tile counts down to your next meeting within the hour ("in 12m"), and the
+  meeting shows at the foot of the sidebar, above the mini player: a row with its name and
+  countdown that grows into a card on hover (when, the call, who's coming), opens itself ten
+  minutes before, and has Join from five minutes before; ⌄ collapses it, × closes it, and either
+  way it's back with Join. Hovering the tile shows today's meetings beside it, with Join on the one
+  about to start, a click on any opening it in the calendar tab, and + for a new event; a minute
+  before a meeting, if the sidebar's hidden or you've closed the card, a notice says what it is,
+  with Join. Drift reads your calendars from
   Google's own export (Settings › Export) through a hidden view signed in as your tabs are, every
   five minutes and whenever the calendar tab moves on (saving an event there). Meetings you've
   declined are left out; subscribed calendars (holidays, other people's) aren't in the export.
@@ -152,7 +156,7 @@ Same split as Arc: an unmodified engine with your own UI on top.
   one. From Gmail's unread feed, through a hidden view signed in as your tabs are, every two
   minutes, on hover, and soon after the Gmail tab moves on.
 - **Outlook** (work and school accounts), as in Arc: pin Outlook's calendar and it works like the
-  Google Calendar one (countdown, Join with the Teams link, today's meetings on hover, reminders);
+  Google Calendar one (countdown, the meeting card with Join on the Teams link, today's meetings on hover, reminders);
   pin Outlook's mail and hovering it shows your unread emails. From Outlook's own API, called from a
   hidden Outlook page with the sign-in its own calls carry (that never leaves the page), every two
   minutes, on hover, and soon after either tab moves on. If your organisation doesn't offer "Stay
@@ -313,7 +317,8 @@ Under `Drift/`:
 | `Library.cs` | The library: opening and closing it (a spring the compositor runs), the swipe, Downloads and History |
 | `Pip.cs` | Automatic picture-in-picture: the page side (what's playing), floating a video in Chromium's window on leaving its tab, Back to tab |
 | `MediaControls.cs` | Mini player: the speaker on a playing tab's row (mute), and the controller at the bottom of the sidebar |
-| `GoogleCalendar.cs` | Google Calendar: fetching your calendars, the tile's countdown and Join, the hover card, the reminder (Core/CalendarFeed.cs reads the export, Core/MeetingClock.cs times things) |
+| `GoogleCalendar.cs` | Google Calendar: fetching your calendars, the tile's countdown, the hover card, the reminder (Core/CalendarFeed.cs reads the export, Core/MeetingClock.cs times things) |
+| `MeetingCard.cs` | The next meeting at the foot of the sidebar: the row, the card it grows into, opening itself, collapse and close, and the mini player pushing it up (Core/MeetingBar.cs has its rules) |
 | `Gmail.cs` | Gmail: fetching your unread emails (Core/GmailFeed.cs reads the feed) and the hover card |
 | `Integrations.cs` | What the integrations share: hidden signed-in views on their sites, and the card hovering their tab shows |
 | `Outlook.cs` | Outlook mail and calendar: the hidden Outlook page, its API (Core/OutlookApi.cs reads it), Outlook's push to its own pages (OutlookPushScript, in the page), shared cards |

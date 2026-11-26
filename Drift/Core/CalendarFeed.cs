@@ -15,6 +15,9 @@ public sealed record CalendarEvent(
 {
     /// <summary>Its page, where the calendar gives one (Outlook).</summary>
     public string? WebLink { get; init; }
+
+    /// <summary>Who's invited, by name (or the start of their address), you among them; no rooms.</summary>
+    public IReadOnlyList<string> People { get; init; } = [];
 }
 
 /// <summary>
@@ -111,7 +114,28 @@ public static class CalendarFeed
     private static CalendarEvent Make(List<Prop> e, string uid, DateTimeOffset start, TimeSpan duration, bool allDay, string? owner, DateTimeOffset? instance)
     {
         var title = Get(e, "SUMMARY")?.Value is { Length: > 0 } s ? Unescape(s) : "(No title)";
-        return new CalendarEvent(uid, title, start, start + duration, allDay, JoinLink(e), Eid(uid, instance, allDay, owner, Get(e, "RRULE") is not null || Get(e, "RECURRENCE-ID") is not null));
+        return new CalendarEvent(uid, title, start, start + duration, allDay, JoinLink(e), Eid(uid, instance, allDay, owner, Get(e, "RRULE") is not null || Get(e, "RECURRENCE-ID") is not null))
+        {
+            People = People(e),
+        };
+    }
+
+    /// <summary>The people invited (ATTENDEE), by their name where it's given; rooms and other resources left out.</summary>
+    private static List<string> People(List<Prop> e) => e
+        .Where(p => p.Name == "ATTENDEE" && p.Param("CUTYPE")?.ToUpperInvariant() is not ("RESOURCE" or "ROOM"))
+        .Select(p => PersonName(p.Param("CN"), p.Value.Replace("mailto:", "", StringComparison.OrdinalIgnoreCase)))
+        .Where(n => n.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>A person's name, or the part of their address before the @ when that's all there is.</summary>
+    public static string PersonName(string? name, string? address)
+    {
+        name = name?.Trim();
+        if (!string.IsNullOrEmpty(name) && !name.Contains('@')) return name;
+        var mail = (string.IsNullOrEmpty(name) ? address : name)?.Trim() ?? "";
+        var at = mail.IndexOf('@');
+        return at > 0 ? mail[..at] : mail;
     }
 
     private static string? Eid(string uid, DateTimeOffset? instance, bool allDay, string? owner, bool repeating)

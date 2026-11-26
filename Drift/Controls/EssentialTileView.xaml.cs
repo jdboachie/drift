@@ -23,7 +23,6 @@ public sealed partial class EssentialTileView : UserControl
     // What's done in it, handled by the window it's in.
     private void IntegrationAnchor_PointerEntered(object sender, PointerRoutedEventArgs e) => MainWindow.Of(this).IntegrationAnchor_PointerEntered(sender, e);
     private void IntegrationAnchor_PointerExited(object sender, PointerRoutedEventArgs e) => MainWindow.Of(this).IntegrationAnchor_PointerExited(sender, e);
-    private void MeetingJoin_Click(object sender, RoutedEventArgs e) => MainWindow.Of(this).MeetingJoin_Click(sender, e);
     private void SidebarMenu_Closed(object? sender, object e) => MainWindow.Of(this).SidebarMenu_Closed(sender, e);
     private void SidebarMenu_Opened(object? sender, object e) => MainWindow.Of(this).SidebarMenu_Opened(sender, e);
     private void TabAudio_Click(object sender, RoutedEventArgs e) => MainWindow.Of(this).TabAudio_Click(sender, e);

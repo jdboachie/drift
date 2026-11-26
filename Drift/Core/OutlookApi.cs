@@ -26,7 +26,7 @@ public static class OutlookApi
 
     public static Uri CalendarView(string host, DateTimeOffset from, DateTimeOffset to) => new(
         $"https://{host}/api/beta/me/calendarview?startDateTime={Iso(from)}&endDateTime={Iso(to)}&$top=200"
-        + "&$select=Subject,Start,End,IsAllDay,IsCancelled,ResponseStatus,OnlineMeeting,OnlineMeetingUrl,Location,BodyPreview,WebLink");
+        + "&$select=Subject,Start,End,IsAllDay,IsCancelled,ResponseStatus,OnlineMeeting,OnlineMeetingUrl,Location,BodyPreview,WebLink,Attendees,Organizer");
 
     /// <summary>The most unread emails one ask brings.</summary>
     public const int UnreadTop = 50;
@@ -75,9 +75,27 @@ public static class OutlookApi
             events.Add(new CalendarEvent(Str(e, "Id") ?? "", Str(e, "Subject") is { Length: > 0 } t ? t : "(No title)", s, f, allDay, join)
             {
                 WebLink = Str(e, "WebLink"),
+                People = People(e),
             });
         }
         return events.OrderBy(e => e.Start).ToList();
+    }
+
+    /// <summary>The organizer and the people invited, by name; rooms and other resources left out.</summary>
+    private static List<string> People(JsonElement e)
+    {
+        var people = new List<string>();
+        void Add(JsonElement who)
+        {
+            if (who.ValueKind != JsonValueKind.Object || !who.TryGetProperty("EmailAddress", out var mail) || mail.ValueKind != JsonValueKind.Object) return;
+            var name = CalendarFeed.PersonName(Str(mail, "Name"), Str(mail, "Address"));
+            if (name.Length > 0 && !people.Contains(name, StringComparer.OrdinalIgnoreCase)) people.Add(name);
+        }
+        if (e.TryGetProperty("Organizer", out var organizer)) Add(organizer);
+        if (e.TryGetProperty("Attendees", out var attendees) && attendees.ValueKind == JsonValueKind.Array)
+            foreach (var a in attendees.EnumerateArray())
+                if (!string.Equals(Str(a, "Type"), "Resource", StringComparison.OrdinalIgnoreCase)) Add(a);
+        return people;
     }
 
     /// <summary>

@@ -75,7 +75,7 @@ public sealed partial class MainWindow
         var (mail, calendar) = PinnedOutlook();
         if (calendar != _outlookCalendarTab)
         {
-            _outlookCalendarTab?.SetMeeting(null, null);
+            _outlookCalendarTab?.SetMeeting(null);
             _outlookCalendarTab = calendar;
             _outlookCalendarUrl = null;
             _outlookNextFetch = default;
@@ -92,6 +92,7 @@ public sealed partial class MainWindow
             _outlookMail = [];
             if (_hoverTab is { } t && HoverCardFor(t) is null) HideHoverCard();
             foreach (var host in new[] { "outlook.cloud.microsoft", "outlook.office.com", "outlook.office365.com" }) CloseHiddenSite(host);
+            UpdateMeetingCard();
             return;
         }
         // Moved on in its tab (reading an email, saving a meeting): fetched again soon.

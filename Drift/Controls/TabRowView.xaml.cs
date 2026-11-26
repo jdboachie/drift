@@ -22,7 +22,6 @@ public sealed partial class TabRowView : UserControl
 
     // What's done in it, handled by the window it's in.
     private void CloseSplitHalf_Click(object sender, RoutedEventArgs e) => MainWindow.Of(this).CloseSplitHalf_Click(sender, e);
-    private void MeetingJoin_Click(object sender, RoutedEventArgs e) => MainWindow.Of(this).MeetingJoin_Click(sender, e);
     private void RowAction_Click(object sender, RoutedEventArgs e) => MainWindow.Of(this).RowAction_Click(sender, e);
     private void SidebarMenu_Closed(object? sender, object e) => MainWindow.Of(this).SidebarMenu_Closed(sender, e);
     private void SidebarMenu_Opened(object? sender, object e) => MainWindow.Of(this).SidebarMenu_Opened(sender, e);

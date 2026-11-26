@@ -580,27 +580,21 @@ public sealed class BrowserTab : INotifyPropertyChanged, IFolderTab
     private string? _meetingText;
 
     /// <summary>
-    /// A calendar tab's next meeting (GoogleCalendar.cs): "in 5m" under its icon, or Join once it
-    /// can be joined (<see cref="MeetingJoinUrl"/>).
+    /// A calendar tab's next meeting (GoogleCalendar.cs): "in 5m" under its icon. Join is the meeting
+    /// card's, at the foot of the sidebar (MeetingCard.cs), not the tab's.
     /// </summary>
-    public void SetMeeting(string? text, string? joinUrl)
+    public void SetMeeting(string? text)
     {
-        if (_meetingText == text && MeetingJoinUrl == joinUrl) return;
+        if (_meetingText == text) return;
         _meetingText = text;
-        MeetingJoinUrl = text is null ? null : joinUrl;
         OnPropertyChanged(nameof(MeetingText));
         OnPropertyChanged(nameof(MeetingTextVisibility));
-        OnPropertyChanged(nameof(JoinVisibility));
         OnPropertyChanged(nameof(FaviconMargin));
     }
 
-    public string? MeetingJoinUrl { get; private set; }
-
     public string MeetingText => _meetingText ?? "";
 
-    public Visibility MeetingTextVisibility => _meetingText is not null && MeetingJoinUrl is null ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility JoinVisibility => MeetingJoinUrl is not null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility MeetingTextVisibility => _meetingText is not null ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>On an Essentials tile, the icon moves up to make room for the countdown below it.</summary>
     public Thickness FaviconMargin => _meetingText is null ? new Thickness(0) : new Thickness(0, 0, 0, 16);
