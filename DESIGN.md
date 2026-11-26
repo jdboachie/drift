@@ -57,6 +57,10 @@ Rules learned from building Drift, each with why. Read before building or changi
   Why: the user asked for Arc's latest Spaces, copied; its layout and words were read from Arc for Windows 1.133, and its paging recorded frame by frame against it (the first slide drew over the page, faded, left the sidebar empty, then popped the next Space in nearly finished).
   <!-- 2026-11-24: "lets work on spaces ... see how arc did it (in the latest one) and copy it" · "go ahead with the paging rework. also, lets add rubber banding between the boundaries to its clear" · then "remove the rubber banding... i don't like your implementation" -->
 
+- **A row in the sidebar's flow that opens into a card (the meeting card, and any later one like it) switches from its tint to WinUI's Card brushes (`CardBackgroundFillColorDefaultBrush` with a `CardStrokeColorDefaultBrush` hairline), the tint fading out as it opens. An open card is never left on an accent tint.** Panels floating over the window keep `FloatingPanelStyle`.
+  Why: "use winui3's styling"; a tint left under the card turned it peach.
+  <!-- 2026-11-26: "i don't like the design of the expanded card… use winui3's styling. i'm just referring to the color of the card itself", then "card" over flyout and accent · generalized with "write all" -->
+
 - **Every popup and flyout has rounded corners (8px). A custom `FlyoutPresenter` style must set `CornerRadius`**, since its own style drops the default. Checked by `Drift.Tests/PopupStyleTests.cs`.
   Why: a popup with sharp corners looks broken next to the rest.
   <!-- 2026-11-17: "it also opens with sharp borders" (the Change icon popover) -->
@@ -96,6 +100,10 @@ Rules learned from building Drift, each with why. Read before building or changi
 - **Keep Drift dense and quiet: list rows as tall as a sidebar tab (38px), 2–3px apart; shadows faint (the selected tab's is #05000000 in light mode).**
   Why: Arc's density; heavy shadows and spacing read as clumsy.
   <!-- 2026-11-16: "reduce the command bar items's heght. it seems really spaced out" · "reduce teh tab shadows and the main web area's shadow" -->
+
+- **When a row grows into a card, each extra line gets its own icon in the row icon's column (16px wide, at the row's left padding), its text starting where the row's title does. Never leave an empty indent under the icon.** (The meeting card: a clock, a camera, people.)
+  Why (inferred, approved): an empty 36px indent reads as wasted space, and the icons let the card's lines be scanned at a glance.
+  <!-- 2026-11-26: "[screenshot] this margin.. lets looks at different ways of redesigning it to remove the margin", then "icon column" -->
 
 ## Motion
 
@@ -140,6 +148,18 @@ Rules learned from building Drift, each with why. Read before building or changi
 - **Never add buttons or menu items for features Drift doesn't have yet; put the feature in `Drift/ROADMAP.md`.**
   Why: a button that leads nowhere promises something Drift can't do.
   <!-- 2026-11-17: "you can hold off on extensions. we haven't built those yet" -->
+
+- **In a stack of avatars or chips, each item has its own tooltip and automation name. The overflow count ("+3") has neither. Never one tooltip for the whole stack.**
+  Why: "for stacked avatars like that, each avatar should have its own tooltip"; the count has nothing to name, and listing the hidden people in a tooltip would be a hidden list (inferred, approved).
+  <!-- 2026-11-26: "[screenshot] the tooltip lol" · "oh add a tooltip. i'm just saying its designed wrong. for stackedavatars like that, each avatar should have its owntooltip" · "the +3 shouldn't have a tooltip" -->
+
+- **An action lives on one surface. When a new surface takes it over, remove it from the old ones.** (Join is the meeting card's alone; the calendar's tile and pinned row only count down.)
+  Why (inferred, approved): two Join buttons for one meeting compete for attention, and it isn't clear which is the real one.
+  <!-- 2026-11-26: "(and i think the join button on the essential's tile has to go?)" · "yes." -->
+
+- **A notice or toast never repeats what's already on screen; it shows only when the surface carrying that information is hidden or closed.** (The meeting reminder comes only when the meeting card can't be seen.)
+  Why (inferred, approved): a toast over a card saying the same thing is noise, and teaches you to ignore toasts.
+  <!-- 2026-11-26: "we also have to discuss what happens to the toast notification when there's a meeting in 5 minutes" · "yes." -->
 
 ## Copy
 
